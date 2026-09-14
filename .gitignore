@@ -1,0 +1,22 @@
+target/
+*.class
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 测试数据（体积大且可由 DataGenerator / DataGenerator2 重新生成）
+data/*.csv
+
+# 保留手写的 sample.csv
+!data/sample.csv
+
+# 前端依赖与产物
+tinyquery-frontend/node_modules/
+tinyquery-frontend/dist/
