@@ -18,8 +18,7 @@
     <packaging>jar</packaging>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -52,11 +51,11 @@
 
     <dependencies>
 
-        <!-- 单元测试 -->
+        <!-- 测试：包含 JUnit 5 + AssertJ + Mockito + MockMvc，
+             比裸的 junit-jupiter 更完整，且版本由 parent 统一管理 -->
         <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>5.10.0</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -81,33 +80,18 @@
 
     <build>
         <plugins>
-            <!-- 编译插件 -->
+            <!-- Spring Boot 可执行 jar 打包插件。
+                 它会产出 BOOT-INF 结构的 fat jar，并自动合并各依赖中的
+                 AutoConfiguration.imports / spring.factories / META-INF/services。
+                 不要改用 maven-shade-plugin：shade 遇重名资源默认丢弃而非合并，
+                 会导致部分自动配置随机失效 -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-            </plugin>
-
-            <!-- 打包成可执行JAR -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.tinyquery.launcher.Launcher</mainClass>
-                                </transformer>
-                            </transformers>
-                        </configuration>
-                    </execution>
-                </executions>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <!-- 版本由 spring-boot-starter-parent 统一管理，无需声明 -->
+                <configuration>
+                    <mainClass>com.tinyquery.TinyQueryApplication</mainClass>
+                </configuration>
             </plugin>
         </plugins>
     </build>
