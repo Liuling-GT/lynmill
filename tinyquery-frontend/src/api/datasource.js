@@ -38,3 +38,10 @@ export const registerDataSource = (config) => request.post('/datasource', config
 // 删除数据源
 export const removeDataSource = (name) =>
   request.delete(`/datasource/${encodeURIComponent(name)}`)
+
+// 重新加载数据源（数据文件或数据库内容变化后同步）
+export const refreshDataSource = (name) =>
+  request.post(`/datasource/${encodeURIComponent(name)}/refresh`)
+
+// 测试数据源配置是否可用（不注册、不加载数据）
+export const testDataSource = (config) => request.post('/datasource/test', config)

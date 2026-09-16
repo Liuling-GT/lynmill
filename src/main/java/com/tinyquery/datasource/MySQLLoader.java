@@ -48,6 +48,74 @@ public class MySQLLoader implements DataLoader {
     }
 
     @Override
+    public ConnectionTestResult test(DataSourceConfig config) {
+        // 与 load() 相同的参数校验顺序，保证「测得过」就等于「注册得了」
+        String host = config.getString("host");
+        if (host == null) {
+            return ConnectionTestResult.fail("未填写主机地址");
+        }
+        int port = config.getInt("port", 3306);
+        String database = config.getString("database");
+        if (database == null) {
+            return ConnectionTestResult.fail("未填写数据库名");
+        }
+        String table = config.getString("table");
+        if (table == null) {
+            return ConnectionTestResult.fail("未填写表名");
+        }
+        String username = config.getString("username");
+        if (username == null) {
+            return ConnectionTestResult.fail("未填写用户名");
+        }
+        String password = config.getString("password");
+        if (password == null) {
+            password = "";
+        }
+
+        try {
+            requireIdentifier(database, "数据库名");
+            requireIdentifier(table, "表名");
+            if (!host.matches(HOST_PATTERN)) {
+                return ConnectionTestResult.fail("主机地址不合法：" + host);
+            }
+            if (port <= 0 || port > 65535) {
+                return ConnectionTestResult.fail("端口不合法：" + port);
+            }
+        } catch (DataSourceException e) {
+            // 校验类失败转成测试结果，不向上抛
+            return ConnectionTestResult.fail(e.getMessage());
+        }
+
+        String url = buildJdbcUrl(host, port, database);
+
+        // SELECT 1 ... LIMIT 0：只做元数据探测，不返回任何行，
+        // 因此耗时是常量级，大表也不会因此变慢。
+        // 用 LIMIT 0 而非 EXPLAIN 是为了让「表不存在」也走标准 SQLException
+        String probeSql = "SELECT * FROM " + table + " LIMIT 0";
+
+        try (Connection conn = DriverManager.getConnection(url, username, password);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(probeSql)) {
+
+            // 拿到列数即证明表可读
+            int columnCount = rs.getMetaData().getColumnCount();
+            return ConnectionTestResult.ok(
+                    "连接成功，表 " + table + " 可读（探测到 " + columnCount + " 列）");
+        } catch (SQLException e) {
+            // MySQL 的 SQLException 消息本身已包含原因（Access denied / Unknown database / Table doesn't exist）
+            return ConnectionTestResult.fail("连接失败：" + e.getMessage());
+        }
+    }
+
+    //拼装 JDBC URL。测试与加载共用，避免两处参数不一致
+    private String buildJdbcUrl(String host, int port, String database) {
+        // tinyInt1isBit=false 让 TINYINT(1) 返回 Integer 而非 Boolean，
+        // 避免落入 ValueNormalizer 的 Boolean 降级分支
+        return "jdbc:mysql://" + host + ":" + port + "/" + database
+                + "?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&tinyInt1isBit=false";
+    }
+
+    @Override
     public ColumnStore load(DataSourceConfig config) {
         String host = config.requireString("host");
         int port = config.getInt("port", 3306);
@@ -73,10 +141,8 @@ public class MySQLLoader implements DataLoader {
             throw new DataSourceException("数据源 [" + config.name() + "] 的端口不合法：" + port);
         }
 
-        // tinyInt1isBit=false 让 TINYINT(1) 返回 Integer 而非 Boolean，
-        // 避免落入 ValueNormalizer 的 Boolean 降级分支
-        String url = "jdbc:mysql://" + host + ":" + port + "/" + database
-                + "?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&tinyInt1isBit=false";
+        // 与 test() 共用同一份 URL 拼装逻辑
+        String url = buildJdbcUrl(host, port, database);
 
         ColumnStore store = new ColumnStore();
 

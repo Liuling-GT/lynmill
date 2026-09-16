@@ -1,9 +1,6 @@
 package com.tinyquery.api;
 
-import com.tinyquery.datasource.DataSourceConfig;
-import com.tinyquery.datasource.DataSourceInfo;
-import com.tinyquery.datasource.DataSourceManager;
-import com.tinyquery.datasource.DataSourceTypeInfo;
+import com.tinyquery.datasource.*;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,6 +27,13 @@ public class DataSourceController {
         return DataSourceResponse.success(config.name());
     }
 
+    // 测试数据源配置是否可用（不注册、不加载数据）
+    @Operation(summary = "Test Data Source", description = "Probe the connection and target object without loading data")
+    @PostMapping("/test")
+    public DataSourceResponse<ConnectionTestResult> test(@RequestBody DataSourceConfig config) {
+        return DataSourceResponse.success(manager.test(config));
+    }
+
     // 列出所有数据源（敏感字段已脱敏）
     @Operation(summary = "Enumerate Data Sources", description = "Return the list of registered data sources with sensitive fields masked")
     @GetMapping
@@ -42,6 +46,14 @@ public class DataSourceController {
     @GetMapping("/types")
     public DataSourceResponse<List<DataSourceTypeInfo>> types() {
         return DataSourceResponse.success(manager.listTypes());
+    }
+
+    // 重新加载数据源（用于数据文件或数据库内容变化后同步）
+    @Operation(summary = "Refresh Data Source", description = "Reload a registered data source to pick up changes in the underlying file or table")
+    @PostMapping("/{name}/refresh")
+    public DataSourceResponse<String> refresh(@PathVariable String name) {
+        manager.refresh(name);
+        return DataSourceResponse.success(name);
     }
 
     // 删除数据源

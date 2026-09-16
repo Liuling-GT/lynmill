@@ -1,4 +1,4 @@
-package com.tinyquery;
+package com.tinyquery.tools;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;

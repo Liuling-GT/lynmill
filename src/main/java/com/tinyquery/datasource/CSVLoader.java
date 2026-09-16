@@ -6,9 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,16 +15,12 @@ import java.util.Map;
 
 /**
  * CSV 数据源加载器。
- *
- * <p>CSV 没有强制标准，不同工具导出的形态差异很大。本加载器针对非标准形态提供开关，
- * <b>默认全部关闭</b>，以避免误伤真正的数据：</p>
- * <ul>
- *   <li>注释行：默认不识别。开启后只认「trim 之后的整行前缀」，如 #、//、--</li>
- *   <li>引号感知：默认关闭。开启后引号内的分隔符不再切分，" " 内的 "" 表示字面引号</li>
- *   <li>分隔符：默认逗号，可改为分号、制表符等</li>
- * </ul>
- *
- * <p>已默认处理：UTF-8 BOM 剥离、短行补空（避免 ColumnStore 列错位）。</p>
+ * CSV 没有强制标准，不同工具导出的形态差异很大。本加载器针对非标准形态提供开关，
+ * 默认全部关闭，以避免误伤真正的数据
+ * 注释行：默认不识别。开启后只认「trim 之后的整行前缀」，如 #、//、--
+ * 引号感知：默认关闭。开启后引号内的分隔符不再切分，" " 内的 "" 表示字面引号
+ * 分隔符：默认逗号，可改为分号、制表符等
+ * 已默认处理：UTF-8 BOM 剥离、短行补空（避免 ColumnStore 列错位）
  */
 @Component
 public class CSVLoader implements DataLoader {
@@ -74,6 +69,65 @@ public class CSVLoader implements DataLoader {
     }
 
     @Override
+    public ConnectionTestResult test(DataSourceConfig config) {
+        // 路径读不到就直接给出原因，不抛异常
+        String path = config.getString("path");
+        if (path == null) {
+            return ConnectionTestResult.fail("未填写文件路径");
+        }
+
+        File file = new File(path);
+        if (!file.exists()) {
+            return ConnectionTestResult.fail("文件不存在：" + file.getAbsolutePath());
+        }
+        if (!file.isFile()) {
+            return ConnectionTestResult.fail("该路径不是文件：" + file.getAbsolutePath());
+        }
+        if (!file.canRead()) {
+            return ConnectionTestResult.fail("文件不可读（请检查权限）：" + file.getAbsolutePath());
+        }
+        if (file.length() == 0) {
+            return ConnectionTestResult.fail("文件为空：" + file.getAbsolutePath());
+        }
+
+        // 与 load() 使用完全相同的切分与注释规则，保证「测得出」就等于「读得到」
+        char delimiter = resolveDelimiter(config);
+        List<String> commentPrefixes = resolveCommentPrefixes(config);
+        boolean quoteAware = config.getBoolean("quoteAware", false);
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            boolean firstLine = true;
+
+            while ((line = reader.readLine()) != null) {
+                if (firstLine) {
+                    firstLine = false;
+                    if (line.startsWith(UTF8_BOM)) {
+                        line = line.substring(UTF8_BOM.length());
+                    }
+                }
+
+                String trimmedLine = line.trim();
+                // 空行与注释行都不是表头，跳过
+                if (trimmedLine.isEmpty() || isComment(trimmedLine, commentPrefixes)) {
+                    continue;
+                }
+
+                List<String> headers = splitLine(line, delimiter, quoteAware).fields();
+                if (headers.isEmpty()) {
+                    return ConnectionTestResult.fail("未能解析出表头");
+                }
+                return ConnectionTestResult.ok("文件可读，共 " + headers.size() + " 列");
+            }
+        } catch (IOException e) {
+            return ConnectionTestResult.fail("文件读取失败：" + e.getMessage());
+        }
+
+        return ConnectionTestResult.fail("未找到表头（文件只有空行或注释行）");
+    }
+
+    @Override
     public ColumnStore load(DataSourceConfig config) {
         String filePath = config.requireString("path");
         char delimiter = resolveDelimiter(config);
@@ -81,7 +135,10 @@ public class CSVLoader implements DataLoader {
         boolean quoteAware = config.getBoolean("quoteAware", false);
 
         ColumnStore store = new ColumnStore();
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+        // 显式指定 UTF-8，不依赖平台默认编码。
+        // FileReader 用平台默认编码，中文 Windows 上是 GBK，读 UTF-8 文件会乱码
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new FileInputStream(filePath), StandardCharsets.UTF_8))) {
             String line;
             List<String> headers = null;
             boolean firstLine = true;

@@ -61,6 +61,34 @@ public class DataSourceManager {
         }
     }
 
+    // 重新加载已注册的数据源。
+    // 用途：CSV 文件被改写、MySQL 表数据变化后，让内存里的快照跟上。
+    // 与原 register 的区别：允许覆盖同名数据源，但必须已经存在。
+    public void refresh(String name) {
+        DataSourceEntry existing = entries.get(name);
+        if (existing == null) {
+            throw new DataSourceException("数据源不存在：" + name);
+        }
+
+        DataSourceConfig config = existing.config();
+        DataLoader loader = findLoader(config.type());
+
+        // 加载失败会抛 DataSourceException，此时直接返回，
+        // 旧数据保持不变 —— 刷新失败不应该把原有数据源弄坏
+        ColumnStore store = loader.load(config);
+
+        // 用新快照整体替换。entries 是 ConcurrentHashMap，单次 put 即原子，
+        // 查询方要么看到旧数据，要么看到新数据，不会看到半新半旧
+        entries.put(name, new DataSourceEntry(config, store));
+    }
+
+    // 测试数据源配置是否可用（不注册、不加载数据）。
+    // 按 type 分发到对应加载器，Manager 不感知任何具体数据源类型
+    public ConnectionTestResult test(DataSourceConfig config) {
+        DataLoader loader = findLoader(config.type());
+        return loader.test(config);
+    }
+
     // 按精确名称获取数据，合法性已接受注册校验
     public ColumnStore get(String name) {
         return findEntry(name).store();

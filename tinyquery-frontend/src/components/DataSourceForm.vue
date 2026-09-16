@@ -75,9 +75,20 @@
     </el-form-item>
 
     <el-form-item>
+      <el-button :loading="testing" @click="handleTest">测试可用性</el-button>
       <el-button type="primary" :loading="submitting" @click="handleSubmit">注册</el-button>
       <el-button @click="handleReset">重置</el-button>
     </el-form-item>
+
+    <!-- 测试结果常驻显示：改参数时用户需要对照着看错误原文，toast 一闪就没了 -->
+    <el-alert
+      v-if="testResult"
+      :type="testResult.success ? 'success' : 'error'"
+      show-icon
+      :closable="false"
+      :title="testResult.success ? '测试通过' : '测试未通过'"
+      :description="testResult.message"
+    />
   </el-form>
 </template>
 
@@ -85,7 +96,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
-import { listDataSources, registerDataSource } from '../api/datasource'
+import { listDataSources, registerDataSource, testDataSource } from '../api/datasource'
 
 const props = defineProps({
   // 后端下发的类型描述列表
@@ -100,6 +111,9 @@ const emit = defineEmits(['registered'])
 const formRef = ref(null)
 const form = ref({ name: '', type: '', properties: {} })
 const submitting = ref(false)
+const testing = ref(false)
+// 测试结果：null 表示尚未测试
+const testResult = ref(null)
 
 // 外层字段的校验规则。
 // 名称不允许含 '.'：后端 resolveTableName 靠后缀区分表名与数据源，含 '.' 会产生歧义
@@ -168,9 +182,10 @@ const rulesFor = (field) => {
   return rules
 }
 
-// 切换类型时清空配置项与残留校验状态，避免把上一个数据源的字段带过去
+// 切换类型时清空配置项与残留状态，避免把上一个数据源的字段带过去
 const handleTypeChange = () => {
   form.value.properties = {}
+  testResult.value = null
   if (formRef.value) {
     formRef.value.clearValidate('properties')
   }
@@ -178,8 +193,51 @@ const handleTypeChange = () => {
 
 const handleReset = () => {
   form.value = { name: '', type: '', properties: {} }
+  testResult.value = null
   if (formRef.value) {
     formRef.value.clearValidate()
+  }
+}
+
+// 校验配置项本身是否填写完整（不含名称，测试不需要名字）
+const validateProperties = async () => {
+  if (!formRef.value) {
+    return false
+  }
+  // 只校验配置项字段，名称留到注册时再校验
+  const props_ = currentFields.value.map((field) => `properties.${field.name}`)
+  if (props_.length === 0) {
+    return true
+  }
+  try {
+    await formRef.value.validateField(props_)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const handleTest = async () => {
+  if (!form.value.type) {
+    ElMessage.warning('请先选择数据源类型')
+    return
+  }
+  if (!(await validateProperties())) {
+    return
+  }
+
+  testing.value = true
+  try {
+    testResult.value = await testDataSource({
+      name: form.value.name || 'connection-test',
+      type: form.value.type,
+      properties: form.value.properties,
+    })
+  } catch (error) {
+    // 接口层面的失败（如类型不支持）也呈现为一条测试结果
+    testResult.value = { success: false, message: error.message }
+  } finally {
+    testing.value = false
   }
 }
 
