@@ -12,6 +12,15 @@ public class SQLParser {
     private static final Pattern LIMIT_OFFSET_PATTERN =
             Pattern.compile("\\s+limit\\s+\\d+\\s*,\\s*\\d+\\s*$", Pattern.CASE_INSENSITIVE);
 
+    // ORDER BY 同样从末尾剥离，且必须在 LIMIT 之后剥离 ——
+    // 先把 LIMIT 摘掉，ORDER BY 才落到语句末尾
+    private static final Pattern ORDER_BY_PATTERN =
+            Pattern.compile("\\s+order\\s+by\\s+(\\S+)(?:\\s+(asc|desc))?\\s*$", Pattern.CASE_INSENSITIVE);
+
+    // 用于判断「出现了 order by 但没被上面的模式匹配到」的写法
+    private static final Pattern CONTAINS_ORDER_BY =
+            Pattern.compile("\\border\\s+by\\b", Pattern.CASE_INSENSITIVE);
+
     public QueryStatement parse(String sql) {
 
         // 预处理
@@ -34,6 +43,14 @@ public class SQLParser {
         Integer limit = parseLimit(sql);
         if (limit != null) {
             Matcher matcher = LIMIT_PATTERN.matcher(sql);
+            matcher.find();
+            sql = sql.substring(0, matcher.start()).trim();
+        }
+
+        // ORDER BY 在 LIMIT 之后剥离（此时它才位于末尾），同样必须在 WHERE 之前
+        SortSpec sort = parseOrderBy(sql);
+        if (sort != null) {
+            Matcher matcher = ORDER_BY_PATTERN.matcher(sql);
             matcher.find();
             sql = sql.substring(0, matcher.start()).trim();
         }
@@ -83,9 +100,17 @@ public class SQLParser {
         if (wherePart != null && !wherePart.isEmpty()) {
             condition = parseCondition(wherePart);
         }
-        return new QueryStatement(columns, tableName, condition, limit);
+        return new QueryStatement(columns, tableName, condition, sort, limit);
     }
 
+    /**
+     * 解析语句末尾的 LIMIT 子句。
+     *
+     * <p>用「行首 limit + 数字 + 语句结束」的锚定匹配，因此
+     * {@code WHERE note = 'limit 10'} 这类字符串字面量不会被误判。</p>
+     *
+     * @return 解析出的行数上限；未指定时返回 null
+     */
     private Integer parseLimit(String sql) {
         // offset 形式属于分页语义，静默忽略 offset 会给出错误结果，故明确拒绝
         if (LIMIT_OFFSET_PATTERN.matcher(sql).find()) {
@@ -103,6 +128,32 @@ public class SQLParser {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("error:LIMIT 数值超出范围：" + raw);
         }
+    }
+
+    /**
+     * 解析语句末尾的 ORDER BY 子句。
+     *
+     * <p>同样用锚定匹配，避免 {@code WHERE note = 'a order by b'} 这类字面量被误判。
+     * 排序列名取第一个非空白片段，方向缺省为升序。</p>
+     *
+     * @return 排序规格；未指定时返回 null
+     */
+    private SortSpec parseOrderBy(String sql) {
+        Matcher matcher = ORDER_BY_PATTERN.matcher(sql);
+        if (!matcher.find()) {
+            // 没有匹配到完整形式，但语句里确实出现了 order by，
+            // 说明写法不受支持。不静默忽略，否则表名会被污染成「t order by」这种难以理解的形态
+            if (CONTAINS_ORDER_BY.matcher(sql).find()) {
+                throw new IllegalArgumentException(
+                        "error:ORDER BY 写法不受支持，只支持单列排序，形如 order by 列名 [asc|desc]");
+            }
+            return null;
+        }
+
+        String column = matcher.group(1).trim();
+        // 方向缺省为升序
+        boolean desc = "desc".equalsIgnoreCase(matcher.group(2));
+        return new SortSpec(column, desc);
     }
 
     private Condition parseCondition(String expr) {

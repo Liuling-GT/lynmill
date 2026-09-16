@@ -3,7 +3,8 @@ package com.tinyquery.parser;
 import java.util.ArrayList;
 import java.util.List;
 
-public record QueryStatement(String[] selectColumns, String tableName, Condition condition, Integer limit) {
+public record QueryStatement(String[] selectColumns, String tableName, Condition condition,
+                             SortSpec sort, Integer limit) {
 
     public QueryStatement {
         // limit 为 null 表示未显式指定，由 QueryEngine 套用默认上限
@@ -14,6 +15,11 @@ public record QueryStatement(String[] selectColumns, String tableName, Condition
 
     public boolean hasWhere() {
         return condition != null;
+    }
+
+    // 是否指定了排序
+    public boolean hasOrderBy() {
+        return sort != null;
     }
 
     // 是否显式指定了 LIMIT
