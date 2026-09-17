@@ -76,6 +76,29 @@
             <artifactId>mysql-connector-j</artifactId>
             <version>8.3.0</version>
         </dependency>
+
+        <!-- MariaDB 驱动。与 MySQL 驱动并存：
+     两者协议兼容但不完全等同，各自用官方驱动更稳妥，
+     尤其 MySQL 8 的 caching_sha2_password 认证插件 -->
+        <dependency>
+            <groupId>org.mariadb.jdbc</groupId>
+            <artifactId>mariadb-java-client</artifactId>
+            <version>3.3.3</version>
+        </dependency>
+
+        <!-- PostgreSQL 驱动 -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.3</version>
+        </dependency>
+
+        <!-- SQLite 驱动。注意这是 JNI 驱动，jar 内含多平台原生库，约 10MB -->
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.45.1.0</version>
+        </dependency>
     </dependencies>
 
     <build>
