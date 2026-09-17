@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -199,17 +200,27 @@ class CSVLoaderTest {
                 () -> loader.load(new DataSourceConfig("t", "csv", Map.of())));
     }
 
-    // ==================== 元数据与自检 ====================
-
     @Test
-    @DisplayName("fields() 声明四个配置项，path 必填")
+    @DisplayName("fields() 声明五个配置项，path 必填，encoding 为下拉且非必填")
     void fieldsMetadata() {
         List<FieldSpec> fields = loader.fields();
 
-        assertEquals(4, fields.size());
+        assertEquals(5, fields.size());
+
+        // 文件路径：必填文本
         assertEquals("path", fields.get(0).name());
         assertTrue(fields.get(0).required());
+
+        // 文件编码：下拉，非必填（缺省自动探测）
+        assertEquals("encoding", fields.get(1).name());
+        assertEquals(FieldValueType.ENUM, fields.get(1).valueType());
         assertFalse(fields.get(1).required());
+        assertEquals(3, fields.get(1).options().size());
+
+        // 其余三项均非必填
+        for (int i = 2; i < fields.size(); i++) {
+            assertFalse(fields.get(i).required(), fields.get(i).name() + " 不应为必填");
+        }
     }
 
     // ==================== 以下三个需要连接测试功能，没做就删掉 ====================
@@ -242,5 +253,27 @@ class CSVLoaderTest {
 
         assertTrue(result.success());
         assertTrue(result.message().contains("2 列"));
+    }
+
+    @Test
+    @DisplayName("GBK 文件在自动探测下正常读取")
+    void autoDetectsGbk() throws IOException {
+        Path file = tempDir.resolve("gbk.csv");
+        Files.write(file, "name\n张三\n".getBytes(Charset.forName("GBK")));
+
+        ColumnStore store = loader.load(config(file.toString(), Map.of()));
+
+        assertEquals("张三", store.getColumns("name").get(0));
+    }
+
+    @Test
+    @DisplayName("显式指定 UTF-8 时，GBK 文件读成乱码 —— 证明手动选择确实生效")
+    void explicitUtf8OnGbkFileProducesGarbled() throws IOException {
+        Path file = tempDir.resolve("gbk.csv");
+        Files.write(file, "name\n张三\n".getBytes(Charset.forName("GBK")));
+
+        ColumnStore store = loader.load(config(file.toString(), Map.of("encoding", "UTF-8")));
+
+        assertNotEquals("张三", store.getColumns("name").get(0));
     }
 }

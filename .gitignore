@@ -17,6 +17,11 @@ data/*.csv
 # 保留手写的 sample.csv
 !data/sample.csv
 
+# 本地测试用的数据库文件，可随时重建
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
 # 前端依赖与产物
 tinyquery-frontend/node_modules/
 tinyquery-frontend/dist/

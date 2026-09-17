@@ -3,7 +3,7 @@
     ref="formRef"
     :model="form"
     :rules="rules"
-    label-width="110px"
+    label-width="150px"
     @submit.prevent
   >
     <!-- 数据源类型：选项由后端 /datasource/types 下发 -->
@@ -25,7 +25,7 @@
     -->
     <el-form-item
       v-for="field in currentFields"
-      :key="field.name"
+      :key="`${form.type}-${field.name}`"
       :prop="'properties.' + field.name"
       :rules="rulesFor(field)"
     >
@@ -75,7 +75,7 @@
     </el-form-item>
 
     <el-form-item>
-      <el-button :loading="testing" @click="handleTest">测试可用性</el-button>
+      <el-button :loading="testing" @click="handleTest">连接测试</el-button>
       <el-button type="primary" :loading="submitting" @click="handleSubmit">注册</el-button>
       <el-button @click="handleReset">重置</el-button>
     </el-form-item>
@@ -182,10 +182,18 @@ const rulesFor = (field) => {
   return rules
 }
 
-// 切换类型时清空配置项与残留状态，避免把上一个数据源的字段带过去
+// 切换类型时清空配置项与残留状态，避免把上一个数据源的字段带过去。
+// 同时给枚举字段填上第一个选项作为默认值 —— 用户不点也应有一个合法值，
+// 否则必填字段会因为 undefined 被拦下，而报错信息用户看不懂
 const handleTypeChange = () => {
   form.value.properties = {}
-  testResult.value = null
+
+  for (const field of currentFields.value) {
+    if (field.valueType === 'ENUM' && field.options.length > 0) {
+      form.value.properties[field.name] = field.options[0]
+    }
+  }
+
   if (formRef.value) {
     formRef.value.clearValidate('properties')
   }
@@ -193,7 +201,14 @@ const handleTypeChange = () => {
 
 const handleReset = () => {
   form.value = { name: '', type: '', properties: {} }
-  testResult.value = null
+
+  // 重置后同样补上枚举默认值，保持与刚选中类型时一致的状态
+  for (const field of currentFields.value) {
+    if (field.valueType === 'ENUM' && field.options.length > 0) {
+      form.value.properties[field.name] = field.options[0]
+    }
+  }
+
   if (formRef.value) {
     formRef.value.clearValidate()
   }

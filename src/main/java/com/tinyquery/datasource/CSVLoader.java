@@ -7,7 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.charset.*;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,6 +38,16 @@ public class CSVLoader implements DataLoader {
     // 默认分隔符
     private static final char DEFAULT_DELIMITER = ',';
 
+    // 编码配置的可选值。GBK 覆盖 Excel 中文版另存的 CSV，
+    // 这类文件在按 UTF-8 读取时会整片乱码
+    private static final String ENCODING_AUTO = "自动";
+    private static final String ENCODING_UTF8 = "UTF-8";
+    private static final String ENCODING_GBK = "GBK";
+
+    // 探测用的样本大小。取文件头部若干字节尝试解码，
+    // 不必读完整文件即可判断编码
+    private static final int ENCODING_PROBE_BYTES = 8192;
+
     @Override
     public String type() {
         return "csv";
@@ -54,6 +65,11 @@ public class CSVLoader implements DataLoader {
                 FieldSpec.text("path", "文件路径", true,
                         "CSV 文件的绝对路径或相对运行目录的路径",
                         "data/sample.csv"),
+                // 文件编码：默认自动探测，探测不准时可手动指定
+                FieldSpec.select("encoding", "文件编码", false,
+                        "默认自动探测。若查询结果出现乱码（如「寮犱笁」这类无意义字符），"
+                                + "可尝试改为 GBK。这是 CSV 文件自身的编码，与数据库无关",
+                        List.of(ENCODING_AUTO, ENCODING_UTF8, ENCODING_GBK)),
                 // 注释前缀：默认关闭，避免误伤以 # 开头的数据行
                 FieldSpec.text("commentPrefixes", "注释前缀", false,
                         "多个前缀用英文逗号分隔，留空则不识别注释",
@@ -61,7 +77,7 @@ public class CSVLoader implements DataLoader {
                 // 引号感知：默认关闭。描述只讲行为与例子，不展开转义规则
                 FieldSpec.bool("quoteAware", "引号感知", false,
                         "引号内的分隔符不切分，例如 a,\"b,c\",d 解析为 3 列。文件中引号不成对时请关闭"),
-                // 分隔符：默认英文逗号，把“反斜杠加字母 t”写清楚，避免用户去按 Tab 键
+                // 分隔符：默认英文逗号，把"反斜杠加字母 t"写清楚，避免用户去按 Tab 键
                 FieldSpec.text("delimiter", "分隔符", false,
                         "默认英文逗号；填 \\t（反斜杠加字母 t 两个字符）表示制表符",
                         ",")
@@ -96,7 +112,7 @@ public class CSVLoader implements DataLoader {
         boolean quoteAware = config.getBoolean("quoteAware", false);
 
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                new InputStreamReader(new FileInputStream(file), resolveCharset(file, config)))) {
             String line;
             boolean firstLine = true;
 
@@ -135,10 +151,10 @@ public class CSVLoader implements DataLoader {
         boolean quoteAware = config.getBoolean("quoteAware", false);
 
         ColumnStore store = new ColumnStore();
-        // 显式指定 UTF-8，不依赖平台默认编码。
-        // FileReader 用平台默认编码，中文 Windows 上是 GBK，读 UTF-8 文件会乱码
+// 显式指定编码，不依赖平台默认编码。
+// FileReader 用平台默认编码，中文 Windows 上是 GBK，读 UTF-8 文件会乱码
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(filePath), StandardCharsets.UTF_8))) {
+                new InputStreamReader(new FileInputStream(filePath), resolveCharset(new File(filePath), config)))) {
             String line;
             List<String> headers = null;
             boolean firstLine = true;
@@ -280,5 +296,82 @@ public class CSVLoader implements DataLoader {
                     "数据源 [" + config.name() + "] 的分隔符必须是单个字符：" + raw);
         }
         return value.charAt(0);
+    }
+
+    /**
+     * 解析文件编码。
+     *
+     * <p>配置为「自动」或缺省时做一次探测：按 UTF-8 严格解码文件头部，
+     * 出现非法字节序列说明不是 UTF-8，回退到 GBK。</p>
+     *
+     * <p>探测只读文件头部若干字节，不会为判断编码而读整个文件。</p>
+     */
+    private Charset resolveCharset(File file, DataSourceConfig config) {
+        String configured = resolveEncodingName(config);
+
+        if (ENCODING_GBK.equals(configured)) {
+            return Charset.forName(ENCODING_GBK);
+        }
+        if (ENCODING_UTF8.equals(configured)) {
+            return StandardCharsets.UTF_8;
+        }
+
+        // 自动探测
+        return detectCharset(file);
+    }
+
+    // 读取配置里的编码名。缺失或为「自动」时返回自动标记
+    private String resolveEncodingName(DataSourceConfig config) {
+        String raw = config == null ? null : config.getString("encoding");
+        if (raw == null || ENCODING_AUTO.equals(raw)) {
+            return ENCODING_AUTO;
+        }
+        if (ENCODING_GBK.equalsIgnoreCase(raw)) {
+            return ENCODING_GBK;
+        }
+        if (ENCODING_UTF8.equalsIgnoreCase(raw)) {
+            return ENCODING_UTF8;
+        }
+        throw new DataSourceException("不支持的文件编码：" + raw + "，可选 " + ENCODING_AUTO + " / "
+                + ENCODING_UTF8 + " / " + ENCODING_GBK);
+    }
+
+    /**
+     * 探测文件编码。
+     *
+     * <p>用 UTF-8 解码器的严格模式解码头部的若干字节：能干净解完就认为是 UTF-8，
+     * 出现非法字节序列则判定为 GBK。探测失败一律回退 UTF-8，保持默认行为不变。</p>
+     */
+    private Charset detectCharset(File file) {
+        if (!file.isFile() || file.length() == 0) {
+            return StandardCharsets.UTF_8;
+        }
+
+        byte[] head = new byte[ENCODING_PROBE_BYTES];
+        int read;
+        try (InputStream in = new FileInputStream(file)) {
+            read = in.read(head);
+        } catch (IOException e) {
+            // 探测失败不影响后续读取，按默认编码继续
+            return StandardCharsets.UTF_8;
+        }
+        if (read <= 0) {
+            return StandardCharsets.UTF_8;
+        }
+
+        // 严格解码：非法字节序列会抛异常，而不是静默替换成 U+FFFD
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+
+        try {
+            // 末尾可能截断多字节字符，只取已解码的前缀，末字符被丢弃也无妨
+            decoder.decode(ByteBuffer.wrap(head, 0, read));
+            return StandardCharsets.UTF_8;
+        } catch (CharacterCodingException e) {
+            // 合法的 UTF-8 编码序列被破坏，判定为 GBK
+            log.info("文件 {} 不是有效的 UTF-8，按 GBK 读取", file.getPath());
+            return Charset.forName(ENCODING_GBK);
+        }
     }
 }
