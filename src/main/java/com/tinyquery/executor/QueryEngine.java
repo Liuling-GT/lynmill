@@ -11,6 +11,23 @@ public record QueryEngine(ColumnStore store) {
     // AVG 结果的保留位数，超出部分四舍五入
     private static final int AVG_SCALE = 10;
 
+    // 推断列类型时的抽样行数。百万行全扫没必要，前 200 行足够定类型
+    private static final int TYPE_SAMPLE_SIZE = 200;
+
+    // 图表聚合的默认上限。柱状图 50 根柱子还能看，再多就没法读了
+    private static final int DEFAULT_CHART_TOP_N = 50;
+
+    // 数值维度分桶的目标段数。实际段数会浮动 ——
+    // 步长取整后才能保证桶边界是整数，段数因此不会是精确的 7
+    private static final int TARGET_BUCKETS = 7;
+
+    // 分桶的兜底上限。步长算法本身会把段数收敛到 4~10，
+    // 这里只是防御性约束，防止异常数据导致段数失控
+    private static final int MAX_BUCKETS = 30;
+
+    // 维度值为 null 或空串时显示的类别名，避免前端出现一个空白的类别
+    private static final String EMPTY_LABEL = "(空)";
+
     // 投影时列的种类。在行循环外判定一次即可，
     // 否则每行每列都要做一次 colName.matches("\\d+") 的正则匹配
     private static final int COL_FIELD = 0;
@@ -32,7 +49,8 @@ public record QueryEngine(ColumnStore store) {
         // 聚合结果固定一行，分页对它没有意义
         if (stmt.isAggregate()) {
             List<String[]> rows = executeAggregate(stmt);
-            return new QueryResult(resolveColumnNames(stmt), rows, rows.size(), false);
+            List<String> names = resolveColumnNames(stmt);
+            return new QueryResult(names, numberTypes(names.size()), rows, rows.size(), false);
         }
 
         List<Integer> indexes = filter(stmt);
@@ -64,8 +82,13 @@ public record QueryEngine(ColumnStore store) {
 
         boolean hasMore = (long) page * pageSize < totalRows;
 
-        return new QueryResult(resolveColumnNames(stmt), selectColumns(stmt, pageIndexes),
-                totalRows, hasMore);
+        // 投影列只解析一次，行投影与类型推断共用
+        ProjectionColumns cols = prepareColumns(stmt);
+
+        // 类型从「全部命中行」抽样，而不是只看当前页 ——
+        // 当前页可能整列都是空值，会把它判成 empty
+        return new QueryResult(resolveColumnNames(stmt), resolveColumnTypes(cols, indexes),
+                buildRows(cols, pageIndexes), totalRows, hasMore);
     }
 
     /**
@@ -110,6 +133,72 @@ public record QueryEngine(ColumnStore store) {
             }
         }
         return names;
+    }
+
+    // ==================== 列类型推断 ====================
+
+    // 聚合结果的列类型：聚合值一律是数值
+    private static List<String> numberTypes(int size) {
+        List<String> types = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            types.add("number");
+        }
+        return types;
+    }
+
+    /**
+     * 推断投影列的值类型，供前端选择图表轴
+     * 只抽样前若干行：全扫百万行成本不低，而类型在前几行就定了。
+     * 字面量列的类型是已知的，不用抽样
+     *
+     * @return 与列一一对应的类型：number / string / empty
+     */
+    private List<String> resolveColumnTypes(ProjectionColumns cols, List<Integer> indexes) {
+        int colCount = cols.names().length;
+        List<String> types = new ArrayList<>(colCount);
+
+        for (int i = 0; i < colCount; i++) {
+            int kind = cols.kinds()[i];
+            if (kind == COL_NUMBER_LITERAL) {
+                types.add("number");
+            } else if (kind == COL_STRING_LITERAL) {
+                types.add("string");
+            } else {
+                types.add(inferType(cols.columns().get(i), indexes));
+            }
+        }
+        return types;
+    }
+
+    /**
+     * 从样本推断列类型
+     * ValueNormalizer 只产出 Integer / BigDecimal / String 三种，
+     * 因此非数值一律视为字符串。遇到第一个非空值即可定论
+     */
+    private static String inferType(List<Object> column, List<Integer> indexes) {
+        int sample = Math.min(indexes.size(), TYPE_SAMPLE_SIZE);
+        for (int k = 0; k < sample; k++) {
+            Object value = column.get(indexes.get(k));
+            if (value == null) {
+                continue;
+            }
+            return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
+        }
+
+        // 样本里全是空值。退回扫描整列，避免因为头部空值把数值列误判成 empty
+        for (int idx : indexes) {
+            Object value = column.get(idx);
+            if (value == null) {
+                continue;
+            }
+            return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
+        }
+        return "empty";
+    }
+
+    // 该列是否是数值列。用于判断维度要不要分桶
+    private static boolean isNumericColumn(List<Object> column, List<Integer> indexes) {
+        return "number".equals(inferType(column, indexes));
     }
 
     //根据 where 条件返回行号列表
@@ -467,8 +556,7 @@ public record QueryEngine(ColumnStore store) {
 
     // ==================== 投影列预解析（供导出复用） ====================
     /**
-     * 预先解析好的投影列。
-     *
+     * 预先解析好的投影列
      * 导出时每行都要投影，列的种类判定与列引用必须在循环外做一次，
      * 否则会退化成「每行每列都做一次正则匹配 + HashMap 查找」
      */
@@ -522,17 +610,19 @@ public record QueryEngine(ColumnStore store) {
         return row;
     }
 
-    //列选择：根据行号和列名，取出数据
-    private List<String[]> selectColumns(QueryStatement stmt, List<Integer> indexes) {
+    // 按已解析的列信息投影多行
+    private List<String[]> buildRows(ProjectionColumns cols, List<Integer> indexes) {
         List<String[]> result = new ArrayList<>(indexes.size());
-
-        // 复用导出的预解析逻辑，避免两处各维护一份投影规则
-        ProjectionColumns cols = prepareColumns(stmt);
-
         for (int idx : indexes) {
             result.add(buildRow(cols, idx));
         }
         return result;
+    }
+
+    //列选择：根据行号和列名，取出数据
+    private List<String[]> selectColumns(QueryStatement stmt, List<Integer> indexes) {
+        // 复用导出的预解析逻辑，避免两处各维护一份投影规则
+        return buildRows(prepareColumns(stmt), indexes);
     }
 
     // ==================== 聚合 ====================
@@ -644,6 +734,366 @@ public record QueryEngine(ColumnStore store) {
             stripped = stripped.setScale(0);
         }
         return stripped.toPlainString();
+    }
+
+    // ==================== 图表聚合 ====================
+
+    /** 度量引用：列名 + 已解析的列数据，避免在多处按名字重复查表 */
+    private record MeasureRef(String name, List<Object> column) {
+    }
+
+    /**
+     * 按维度列分组、对度量列聚合，供图表使用
+     * 与 SQL 聚合的区别：分组键来自界面上的下拉框，不是 SQL 里的 GROUP BY，
+     * 因此不需要动 parser。分组在内存里完成，数据已在 ColumnStore 中
+     * 维度是数值列时走分桶（直方图），文本列时走分组。
+     * 两种模式对前端是同一种形状：类别标签 + 每个度量一列值
+     * @param dimension   维度列名（分组键）
+     * @param measures    度量列名，最多两个；aggregation 为 count 时忽略
+     * @param aggregation 聚合方式：sum / avg / count / max / min，多个度量共用
+     * @param topN        文本维度下最多返回多少个分组；为 null 时取默认值
+     */
+    public ChartResult aggregateForChart(QueryStatement stmt, String dimension, List<String> measures,
+                                         String aggregation, Integer topN) {
+        List<Integer> indexes = filter(stmt);
+
+        List<Object> dimColumn = store.getColumns(dimension);
+        boolean countMode = "count".equals(aggregation);
+
+        // 度量列只解析一次。count 模式不需要任何度量列，
+        // 此时 measureRefs 为空，系列数按 1 算（就是那一列计数）
+        List<MeasureRef> measureRefs = new ArrayList<>();
+        if (!countMode && measures != null) {
+            for (String name : measures) {
+                measureRefs.add(new MeasureRef(name, store.getColumns(name)));
+            }
+        }
+
+        // 数值维度分桶。整列都是非数值时回退到分组，避免得到一张空图
+        if (isNumericColumn(dimColumn, indexes)) {
+            return bucketAndAggregate(indexes, dimColumn, measureRefs, aggregation);
+        }
+        return groupAndAggregate(indexes, dimColumn, measureRefs, aggregation, topN);
+    }
+
+    /**
+     * 文本维度：按值分组，尾部合并「其他」
+     * 分组数超过上限时只做合并，不做截断丢弃 —— 丢掉的那部分必须
+     * 计入「其他」，否则总值对不上，用户会以为数据少了
+     */
+    private ChartResult groupAndAggregate(List<Integer> indexes, List<Object> dimColumn,
+                                          List<MeasureRef> measureRefs, String aggregation,
+                                          Integer topN) {
+        int limit = (topN == null || topN <= 0) ? DEFAULT_CHART_TOP_N : topN;
+        // 系列数：count 只有一列数，其余每个度量一条
+        int seriesCount = Math.max(1, measureRefs.size());
+
+        // 分桶累加。用 LinkedHashMap 保证同值时的顺序稳定
+        Map<String, GroupAcc> buckets = new LinkedHashMap<>();
+        for (int idx : indexes) {
+            Object raw = dimColumn.get(idx);
+            String key = (raw == null || String.valueOf(raw).isEmpty())
+                    ? EMPTY_LABEL : String.valueOf(raw);
+
+            buckets.computeIfAbsent(key, k -> new GroupAcc(seriesCount)).add(measureRefs, idx);
+        }
+
+        // 按第一个度量的值降序。多系列时只用一个口径排 ——
+        // 各系列各排各的会让柱子对不上位，图就废了
+        List<String> names = new ArrayList<>(buckets.keySet());
+        List<GroupAcc> accs = new ArrayList<>(buckets.values());
+
+        Integer[] order = new Integer[names.size()];
+        for (int i = 0; i < order.length; i++) {
+            order[i] = i;
+        }
+        Arrays.sort(order, (a, b) -> accs.get(b).sortValue(aggregation)
+                .compareTo(accs.get(a).sortValue(aggregation)));
+
+        int totalGroups = names.size();
+        boolean truncated = totalGroups > limit;
+
+        // 摊平：类别一列，每个系列一列
+        List<String> categories = new ArrayList<>(Math.min(totalGroups, limit) + 1);
+        List<List<BigDecimal>> seriesValues = new ArrayList<>(seriesCount);
+        for (int s = 0; s < seriesCount; s++) {
+            seriesValues.add(new ArrayList<>());
+        }
+
+        GroupAcc otherAcc = new GroupAcc(seriesCount);
+        for (int i = 0; i < totalGroups; i++) {
+            int at = order[i];
+            if (truncated && i >= limit) {
+                // 超出的部分整体并入「其他」，每个系列都要并
+                otherAcc.merge(accs.get(at));
+                continue;
+            }
+            categories.add(names.get(at));
+            for (int s = 0; s < seriesCount; s++) {
+                seriesValues.get(s).add(accs.get(at).seriesValue(s, aggregation));
+            }
+        }
+        if (truncated) {
+            categories.add(ChartResult.OTHER);
+            for (int s = 0; s < seriesCount; s++) {
+                seriesValues.get(s).add(otherAcc.seriesValue(s, aggregation));
+            }
+        }
+
+        return assemble(categories, seriesValues, measureRefs, aggregation,
+                totalGroups, truncated, false);
+    }
+
+    /**
+     * 数值维度：分桶成直方图
+     * 桶边界必须落在整数上，否则 X 轴标签会变成 "19-22.71" 这种没法看的东西。
+     * 代价是段数不固定 —— 步长取整后，7 段可能变成 4~10 段中的任意一个
+     * 分桶后段数本来就少，因此不做「其他」合并
+     */
+    private ChartResult bucketAndAggregate(List<Integer> indexes, List<Object> dimColumn,
+                                           List<MeasureRef> measureRefs, String aggregation) {
+        int seriesCount = Math.max(1, measureRefs.size());
+
+        // 1. 求 min / max。非数值落不到任何一个桶里，直接跳过
+        BigDecimal min = null;
+        BigDecimal max = null;
+        for (int idx : indexes) {
+            BigDecimal value = toBigDecimal(dimColumn.get(idx));
+            if (value == null) {
+                continue;
+            }
+            if (min == null || value.compareTo(min) < 0) {
+                min = value;
+            }
+            if (max == null || value.compareTo(max) > 0) {
+                max = value;
+            }
+        }
+
+        // 兜底：走到这里说明 isNumericColumn 判过是数值列，理论上不会全空
+        if (min == null) {
+            return new ChartResult(List.of(), List.of(), 0, false, true);
+        }
+
+        // 2. 步长与桶边界。start 向下取整到步长的整数倍，保证边界是「好看」的值
+        BigDecimal step = niceStep(max.subtract(min));
+        BigDecimal start = min.divide(step, 0, RoundingMode.FLOOR).multiply(step);
+
+        int bucketCount = max.subtract(start)
+                .divide(step, 0, RoundingMode.CEILING)
+                .intValue();
+        if (bucketCount < 1) {
+            // min == max 时跨度为 0，退化成单桶
+            bucketCount = 1;
+        }
+        if (bucketCount > MAX_BUCKETS) {
+            bucketCount = MAX_BUCKETS;
+        }
+
+        // 3. 落桶累加。左闭右开 [from, to)，最后一桶闭区间，保证 max 不被漏掉
+        GroupAcc[] buckets = new GroupAcc[bucketCount];
+        for (int i = 0; i < bucketCount; i++) {
+            buckets[i] = new GroupAcc(seriesCount);
+        }
+
+        for (int idx : indexes) {
+            BigDecimal value = toBigDecimal(dimColumn.get(idx));
+            if (value == null) {
+                continue;
+            }
+            int b = value.subtract(start)
+                    .divide(step, 0, RoundingMode.FLOOR)
+                    .intValue();
+            if (b < 0) {
+                b = 0;
+            }
+            if (b >= bucketCount) {
+                b = bucketCount - 1;
+            }
+            buckets[b].add(measureRefs, idx);
+        }
+
+        // 4. 生成标签。空桶保留不删 —— 直方图的意义就是看分布，
+        // 「这一段没有数据」本身是重要信息
+        List<String> categories = new ArrayList<>(bucketCount);
+        List<List<BigDecimal>> seriesValues = new ArrayList<>(seriesCount);
+        for (int s = 0; s < seriesCount; s++) {
+            seriesValues.add(new ArrayList<>(bucketCount));
+        }
+
+        for (int i = 0; i < bucketCount; i++) {
+            BigDecimal from = start.add(step.multiply(BigDecimal.valueOf(i)));
+            BigDecimal to = from.add(step);
+            categories.add(formatNumber(from) + "-" + formatNumber(to));
+            for (int s = 0; s < seriesCount; s++) {
+                seriesValues.get(s).add(buckets[i].seriesValue(s, aggregation));
+            }
+        }
+
+        return assemble(categories, seriesValues, measureRefs, aggregation,
+                bucketCount, false, true);
+    }
+
+    // 把摊平后的结果组装成 ChartResult。两种聚合模式共用
+    private static ChartResult assemble(List<String> categories, List<List<BigDecimal>> seriesValues,
+                                        List<MeasureRef> measureRefs, String aggregation,
+                                        int totalGroups, boolean truncated, boolean bucketed) {
+        List<ChartSeries> series = new ArrayList<>(seriesValues.size());
+        for (int s = 0; s < seriesValues.size(); s++) {
+            series.add(new ChartSeries(seriesName(measureRefs, s, aggregation), seriesValues.get(s)));
+        }
+        return new ChartResult(categories, series, totalGroups, truncated, bucketed);
+    }
+
+    // 系列名：count 没有度量列，其余写成 sum(salary) 这样的表达式，前端直接当图例
+    private static String seriesName(List<MeasureRef> measureRefs, int index, String aggregation) {
+        if ("count".equals(aggregation) || index >= measureRefs.size()) {
+            return "计数";
+        }
+        return aggregation + "(" + measureRefs.get(index).name() + ")";
+    }
+
+    /**
+     * 把理想步长向上取到「好看的值」：1、2、5 乘以 10 的整数次幂
+     * 例：跨度 26、目标 7 段 → 理想步长 3.71 → 取 5，得 6 段
+     *     跨度 17000        → 理想 2428 → 取 5000，得 4 段
+     * 全程用 BigDecimal，不经过 double —— 浮点误差会让 0.1 变成
+     * 0.1000000000000000055，桶边界就会出现 "19-22.700000000000003"
+     */
+    private static BigDecimal niceStep(BigDecimal span) {
+        if (span == null || span.signum() <= 0) {
+            return BigDecimal.ONE;
+        }
+
+        BigDecimal ideal = span.divide(BigDecimal.valueOf(TARGET_BUCKETS), 10, RoundingMode.HALF_UP);
+
+        // 找到不超过 ideal 的最大的 10 的幂
+        BigDecimal base = BigDecimal.ONE;
+        if (ideal.compareTo(BigDecimal.ONE) >= 0) {
+            while (base.multiply(BigDecimal.TEN).compareTo(ideal) <= 0) {
+                base = base.multiply(BigDecimal.TEN);
+            }
+        } else {
+            while (base.compareTo(ideal) > 0) {
+                base = base.movePointLeft(1);
+            }
+        }
+
+        // 候选步长：1×base、2×base、5×base，取第一个不小于 ideal 的。
+        // 都不满足时落到 10×base（理论上到不了，防御性保留）
+        for (BigDecimal mantissa : new BigDecimal[]{
+                BigDecimal.ONE, new BigDecimal("2"), new BigDecimal("5")}) {
+            BigDecimal candidate = base.multiply(mantissa);
+            if (candidate.compareTo(ideal) >= 0) {
+                return candidate;
+            }
+        }
+        return base.multiply(BigDecimal.TEN);
+    }
+
+    /**
+     * 分组累加器
+     * 每个度量一个 MeasureAcc，索引与请求里的度量顺序一一对应。
+     * 用数组而不是 Map，是因为度量个数在分组开始前就定死了
+     */
+    private static final class GroupAcc {
+        private final MeasureAcc[] accs;
+        private int rowCount;   // 该分组的行数（count 用）
+
+        GroupAcc(int seriesCount) {
+            // 至少留一个位置：count 模式下没有度量列，
+            // 但 sortValue / seriesValue 会走到 accs[0]，留个空壳省去到处判空
+            accs = new MeasureAcc[Math.max(1, seriesCount)];
+            for (int i = 0; i < accs.length; i++) {
+                accs[i] = new MeasureAcc();
+            }
+        }
+
+        /**
+         * 累加一行的度量值
+         * count 模式传空列表 —— 只需要 rowCount
+         * 非数值单元格只计行数、不参与求和，与 aggregateNumber 的判定保持一致
+         */
+        void add(List<MeasureRef> measureRefs, int rowIndex) {
+            rowCount++;
+            for (int i = 0; i < measureRefs.size() && i < accs.length; i++) {
+                accs[i].add(measureRefs.get(i).column().get(rowIndex));
+            }
+        }
+
+        // 排序用的值：取第一个度量的聚合值。count 模式取行数
+        BigDecimal sortValue(String aggregation) {
+            return seriesValue(0, aggregation);
+        }
+
+        // 第 seriesIndex 个系列的聚合值
+        BigDecimal seriesValue(int seriesIndex, String aggregation) {
+            if ("count".equals(aggregation)) {
+                return BigDecimal.valueOf(rowCount);
+            }
+            if (seriesIndex >= accs.length) {
+                return BigDecimal.ZERO;
+            }
+            return accs[seriesIndex].value(aggregation);
+        }
+
+        // 把另一个累加器并入自身，用于「其他」的合并。每个度量都要并
+        void merge(GroupAcc other) {
+            rowCount += other.rowCount;
+            for (int i = 0; i < accs.length && i < other.accs.length; i++) {
+                accs[i].merge(other.accs[i]);
+            }
+        }
+    }
+
+    /**
+     * 单个度量的累加器
+     * sum / min / max / 计数分别记录，因为不同聚合方式需要的中间量不同，
+     * 而且「其他」合并时 avg 必须按行数加权，不能把平均值直接相加
+     */
+    private static final class MeasureAcc {
+        BigDecimal sum = BigDecimal.ZERO;
+        BigDecimal min;
+        BigDecimal max;
+        int count;      // 参与累加的数值单元格数（avg 的分母）
+
+        void add(Object cell) {
+            BigDecimal value = toBigDecimal(cell);
+            if (value == null) {
+                return;
+            }
+            sum = sum.add(value);
+            count++;
+            if (min == null || value.compareTo(min) < 0) {
+                min = value;
+            }
+            if (max == null || value.compareTo(max) > 0) {
+                max = value;
+            }
+        }
+
+        // 按聚合方式算出最终值。空分组一律返回 0，避免排序时 NPE
+        BigDecimal value(String aggregation) {
+            return switch (aggregation) {
+                case "sum" -> sum;
+                case "avg" -> count == 0 ? BigDecimal.ZERO
+                        : sum.divide(BigDecimal.valueOf(count), AVG_SCALE, RoundingMode.HALF_UP);
+                case "max" -> max == null ? BigDecimal.ZERO : max;
+                case "min" -> min == null ? BigDecimal.ZERO : min;
+                default -> BigDecimal.ZERO;
+            };
+        }
+
+        void merge(MeasureAcc other) {
+            sum = sum.add(other.sum);
+            count += other.count;
+            if (other.min != null && (min == null || other.min.compareTo(min) < 0)) {
+                min = other.min;
+            }
+            if (other.max != null && (max == null || other.max.compareTo(max) > 0)) {
+                max = other.max;
+            }
+        }
     }
 
     // ==================== 控制台打印 ====================

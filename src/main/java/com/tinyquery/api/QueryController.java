@@ -1,5 +1,6 @@
 package com.tinyquery.api;
 
+import com.tinyquery.executor.ChartResult;
 import com.tinyquery.executor.ColumnStore;
 import com.tinyquery.executor.QueryEngine;
 import com.tinyquery.executor.QueryResult;
@@ -15,7 +16,10 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Tag(name = "Query API", description = "Execute SQL Query")
 @RestController
@@ -28,6 +32,13 @@ public class QueryController {
     // 分页的默认与上限。上限是服务端硬约束，防止前端传个极大的 pageSize 把浏览器打崩
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 1000;
+
+    // 图表分组的服务端硬上限。柱状图 50 根还能看，再多就必须靠「其他」合并
+    private static final int MAX_CHART_GROUPS = 50;
+
+    // 图表最多支持的度量个数。三种图里两个系列还能分清，
+    // 再多柱子会挤成一团，双 Y 轴也没法分
+    private static final int MAX_CHART_MEASURES = 2;
 
     private final DataSourceManager manager;
     private final SQLParser parser = new SQLParser();
@@ -56,11 +67,76 @@ public class QueryController {
 
             long elapsed = System.currentTimeMillis() - start;
 
-            return new QueryResponse(0, "success", result.columns(), result.rows(),
+            return new QueryResponse(0, "success", result.columns(), result.columnTypes(), result.rows(),
                     result.hasMore(), result.totalRows(), page, pageSize, elapsed);
         } catch (Exception e) {
-            return new QueryResponse(1, e.getMessage(), null, null, false, 0, 0, 0, 0);
+            return new QueryResponse(1, e.getMessage(), null, null, null, false, 0, 0, 0, 0);
         }
+    }
+
+    /**
+     * 按维度与度量聚合，供图表使用。
+     *
+     * <p>与 /query 的区别：这里不返回明细行，只返回绘图所需的数据。
+     * 分组在全部命中行上完成，与分页无关 —— 图表看到的是完整数据，
+     * 不会随表格翻页而变。</p>
+     */
+    @Operation(summary = "Aggregate for Chart",
+            description = "Group by a dimension and aggregate up to two measures, for chart rendering")
+    @PostMapping("/query/chart")
+    public ChartResponse chart(@RequestBody ChartRequest request) {
+        try {
+            long start = System.currentTimeMillis();
+
+            String aggregation = normalizeAggregation(request.aggregation());
+
+            // 度量个数收进上限。前端切到饼图时会主动只传一个，
+            // 这里是服务端硬约束，防止绕过
+            List<String> measures = normalizeMeasures(request.measures());
+
+            // count 不需要度量列，其余必须给。
+            // 前端在自动重绘，这条失败会静默发生，所以错误信息要能说清原因
+            if (!"count".equals(aggregation) && measures.isEmpty()) {
+                return new ChartResponse(1, "请选择度量列", null, null, 0, false, false, 0);
+            }
+
+            QueryStatement stmt = parser.parse(request.sql());
+
+            ColumnStore store = manager.getByTableName(stmt.tableName());
+            QueryEngine engine = new QueryEngine(store);
+
+            ChartResult result = engine.aggregateForChart(stmt, request.dimension(), measures,
+                    aggregation, normalizeChartTopN(request.topN()));
+
+            long elapsed = System.currentTimeMillis() - start;
+
+            return new ChartResponse(0, "success", result.categories(), result.series(),
+                    result.totalGroups(), result.truncated(), result.bucketed(), elapsed);
+        } catch (Exception e) {
+            return new ChartResponse(1, e.getMessage(), null, null, 0, false, false, 0);
+        }
+    }
+
+    // 度量列清洗：去空、去重、截到上限
+    private List<String> normalizeMeasures(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+
+        // 用 LinkedHashSet 保序去重：同一个度量选两次会让两条系列完全重合，
+        // 而且系列名一样，图例分不出来
+        Set<String> unique = new LinkedHashSet<>();
+        for (String name : raw) {
+            if (name != null && !name.isBlank()) {
+                unique.add(name.trim());
+            }
+        }
+
+        List<String> result = new ArrayList<>(unique);
+        if (result.size() > MAX_CHART_MEASURES) {
+            return result.subList(0, MAX_CHART_MEASURES);
+        }
+        return result;
     }
 
     // 把请求里的 pageSize 收进合法区间。非法值一律退回默认值，不报错
@@ -69,6 +145,26 @@ public class QueryController {
             return DEFAULT_PAGE_SIZE;
         }
         return Math.min(raw, MAX_PAGE_SIZE);
+    }
+
+    // 聚合方式白名单。不认识的写法一律当求和，避免前端传错值导致空图
+    private String normalizeAggregation(String raw) {
+        if (raw == null) {
+            return "sum";
+        }
+        return switch (raw) {
+            case "avg", "count", "max", "min" -> raw;
+            default -> "sum";
+        };
+    }
+
+    // 图表分组数收进合法区间。上限是服务端硬约束，
+    // 防止前端传个大值绕过「其他」合并
+    private Integer normalizeChartTopN(Integer raw) {
+        if (raw == null || raw <= 0) {
+            return null;    // 交给 QueryEngine 取默认值
+        }
+        return Math.min(raw, MAX_CHART_GROUPS);
     }
 
     /**
@@ -176,7 +272,8 @@ public class QueryController {
         // 与 QueryResponse 的失败形态保持一致，前端拦截器可统一处理
         response.getWriter().write("{\"code\":1,\"message\":\""
                 + escapeJson(message)
-                + "\",\"columns\":null,\"data\":null,\"hasMore\":false,\"totalRows\":0,\"page\":0,\"pageSize\":0,\"elapsed\":0}");
+                + "\",\"columns\":null,\"columnTypes\":null,\"data\":null,\"hasMore\":false,"
+                + "\"totalRows\":0,\"page\":0,\"pageSize\":0,\"elapsed\":0}");
         response.getWriter().flush();
     }
 

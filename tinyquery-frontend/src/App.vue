@@ -100,6 +100,36 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <!--
+      图表独立成一框，与表格平级。
+      它和表格的数据范围不同：表格是分页的当前页，图表是全量聚合，
+      放在同一组 tab 里会让人以为是同一份数据
+    -->
+    <el-card shadow="never" class="section">
+      <template #header>
+        <div class="panel-header">
+          <span>图表</span>
+          <!-- 导出按钮放卡片头：与配置区、画布分开，不抢横向空间。
+               能否导出由 ChartPanel 算好后传上来 —— 动画途中会截到半张图 -->
+          <el-button
+            size="small"
+            :disabled="!chartCanExport"
+            @click="handleExportChart"
+          >
+            导出 PNG
+          </el-button>
+        </div>
+      </template>
+
+      <ChartPanel
+        ref="chartPanelRef"
+        :executed-sql="executedSql"
+        :columns="columns"
+        :column-types="columnTypes"
+        @can-export="chartCanExport = $event"
+      />
+    </el-card>
   </div>
 </template>
 
@@ -108,17 +138,23 @@ import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
 import DataSourceForm from './components/DataSourceForm.vue'
 import DataSourcePanel from './components/DataSourcePanel.vue'
+import ChartPanel from './components/ChartPanel.vue'
 import { listDataSourceTypes } from './api/datasource'
+import { queryTable } from './api/query'
 
 const sql = ref('select count(*) from huge.csv')
 
 // 结果状态
 const columns = ref([])
+const columnTypes = ref([])
 const data = ref([])
 const totalRows = ref(0)
 const hasMore = ref(false)
 const errorMessage = ref('')
 const activeTab = ref('table')
+
+// 上次执行成功的 SQL。图表用它聚合，避免文本框改动后图表与表格不一致
+const executedSql = ref('')
 
 // 后端分页状态
 const currentPage = ref(1)
@@ -130,6 +166,12 @@ const exporting = ref(false)
 // 后端下发的数据源类型描述，驱动配置表单动态渲染
 const types = ref([])
 const panelRef = ref(null)
+
+// 图表实例的引用。导出按钮在卡片头，得跨组件调 ChartPanel 的方法
+const chartPanelRef = ref(null)
+
+// 图表能否导出（有图且不在动画中）。由 ChartPanel 算好后传上来
+const chartCanExport = ref(false)
 
 // 本次实际返回的行数
 const returnedRows = computed(() => data.value.length)
@@ -180,6 +222,7 @@ const rawJson = computed(() => {
       code: 0,
       message: 'success',
       columns: columns.value,
+      columnTypes: columnTypes.value,
       data: data.value,
       hasMore: hasMore.value,
       totalRows: totalRows.value,
@@ -213,24 +256,23 @@ const executeQuery = async (resetToFirstPage = false) => {
   }
   errorMessage.value = ''
 
+  // 记下这次请求的 SQL，成功后才写进 executedSql ——
+  // 失败时保留上一次成功的值，图表不会突然变成空
+  const requestSql = sql.value
+
   try {
-    const response = await axios.post('/api/query', {
-      sql: sql.value,
+    const body = await queryTable({
+      sql: requestSql,
       page: currentPage.value,
       pageSize: pageSize.value,
     })
-    const body = response.data
-
-    if (body.code !== 0) {
-      resetResult()
-      errorMessage.value = body.message || '查询失败'
-      return
-    }
 
     columns.value = Array.isArray(body.columns) ? body.columns : []
+    columnTypes.value = Array.isArray(body.columnTypes) ? body.columnTypes : []
     data.value = Array.isArray(body.data) ? body.data : []
     totalRows.value = body.totalRows || 0
     hasMore.value = body.hasMore === true
+    executedSql.value = requestSql
 
     // 后端会收窄非法的 pageSize（上限 1000），以响应为准回写
     if (body.pageSize > 0) {
@@ -258,9 +300,17 @@ const handleSizeChange = (size) => {
 // 清空上一批结果，避免失败时旧数据残留造成误读
 const resetResult = () => {
   columns.value = []
+  columnTypes.value = []
   data.value = []
   totalRows.value = 0
   hasMore.value = false
+}
+
+// 导出图表 PNG。真正的绘制在 ChartPanel 里，这里只负责转发点击
+const handleExportChart = () => {
+  if (chartPanelRef.value) {
+    chartPanelRef.value.exportPng()
+  }
 }
 
 // 导出走独立的流式接口，不经过 JSON 解析，因此不受分页与行数上限影响。
@@ -333,6 +383,13 @@ const resolveFileName = (disposition) => {
 
 .section {
   margin-bottom: 16px;
+}
+
+/* 卡片头：标题左、操作右 */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .result-alert {
