@@ -42,17 +42,23 @@ public class SQLParser {
         // 整段当作条件，LIMIT 留在里面会让条件解析直接失败
         Integer limit = parseLimit(sql);
         if (limit != null) {
+            // parseLimit 已用同一模式在同一语句上确认匹配成功，这里的 find()
+            // 必然为真。仍然判断返回值，是因为直接调 start() 依赖了那层跨方法契约 ——
+            // 契约一旦被改动，抛出的 IllegalStateException 会落在本方法里，
+            // 与真正的改动点隔了一层调用，排查时很难往回找
             Matcher matcher = LIMIT_PATTERN.matcher(sql);
-            matcher.find();
-            sql = sql.substring(0, matcher.start()).trim();
+            if (matcher.find()) {
+                sql = sql.substring(0, matcher.start()).trim();
+            }
         }
 
         // ORDER BY 在 LIMIT 之后剥离（此时它才位于末尾），同样必须在 WHERE 之前
         SortSpec sort = parseOrderBy(sql);
         if (sort != null) {
             Matcher matcher = ORDER_BY_PATTERN.matcher(sql);
-            matcher.find();
-            sql = sql.substring(0, matcher.start()).trim();
+            if (matcher.find()) {
+                sql = sql.substring(0, matcher.start()).trim();
+            }
         }
 
         // where 部分

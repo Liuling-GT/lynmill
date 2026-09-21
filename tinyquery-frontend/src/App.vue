@@ -135,7 +135,6 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import axios from 'axios'
 import DataSourceForm from './components/DataSourceForm.vue'
 import DataSourcePanel from './components/DataSourcePanel.vue'
 import ChartPanel from './components/ChartPanel.vue'
@@ -325,6 +324,14 @@ const exportQuery = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: sql.value }),
     })
+
+    // 网关或容器返回的 4xx/5xx 不带 CSV 的 Content-Type，也不会走后端的
+    // JSON 错误体分支（后端失败时回的也是 200）。不拦的话会被下面的
+    // blob() 当成数据，下载成一个内容是错误页的 .csv
+    if (!response.ok) {
+      errorMessage.value = `导出失败：服务端返回 ${response.status}`
+      return
+    }
 
     // 后端在解析或过滤阶段失败时，会用 JSON 错误体回包而不是 CSV
     const contentType = response.headers.get('Content-Type') || ''

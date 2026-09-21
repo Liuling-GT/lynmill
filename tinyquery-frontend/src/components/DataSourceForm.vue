@@ -137,7 +137,11 @@ const rules = {
         listDataSources()
           .then((list) => {
             const exists = list.some((item) => item.name === value)
-            exists ? callback(new Error('该名称已被占用')) : callback()
+            if (exists) {
+              callback(new Error('该名称已被占用'))
+            } else {
+              callback()
+            }
           })
           .catch(() => callback())
       },
@@ -173,7 +177,11 @@ const rulesFor = (field) => {
           callback()
           return
         }
-        Number.isFinite(Number(value)) ? callback() : callback(new Error('请输入数字'))
+        if (Number.isFinite(Number(value))) {
+          callback()
+        } else {
+          callback(new Error('请输入数字'))
+        }
       },
       trigger: 'change',
     })

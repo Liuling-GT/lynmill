@@ -103,7 +103,7 @@ public record QueryEngine(ColumnStore store) {
         return buildRow(cols, rowIndex);
     }
 
-    //解析结果表的列名
+    // 解析结果表的列名
     private List<String> resolveColumnNames(QueryStatement stmt) {
         // 聚合：直接用表达式原文作为表头，如 count(*) / avg(粉丝数)
         if (stmt.isAggregate()) {
@@ -201,7 +201,7 @@ public record QueryEngine(ColumnStore store) {
         return "number".equals(inferType(column, indexes));
     }
 
-    //根据 where 条件返回行号列表
+    // 根据 where 条件返回行号列表
     private List<Integer> filter(QueryStatement stmt) {
         // 行数在循环外取一次：getColumnIndex() 内部要做两次集合查找，
         // 直接写在 for 的循环条件里会随每一行重复执行
@@ -359,7 +359,7 @@ public record QueryEngine(ColumnStore store) {
      * 避免在行循环里重复做这些「每行结果都相同」的工作。</p>
      */
     private interface BoundCondition {
-        //判断第 rowIndex 行是否满足本节点
+        // 判断第 rowIndex 行是否满足本节点
         boolean test(int rowIndex);
     }
 
@@ -413,7 +413,7 @@ public record QueryEngine(ColumnStore store) {
         }
     }
 
-    //绑定后的 AND 节点
+    // 绑定后的 AND 节点
     private record BoundAnd(BoundCondition left, BoundCondition right) implements BoundCondition {
         @Override
         public boolean test(int rowIndex) {
@@ -421,7 +421,7 @@ public record QueryEngine(ColumnStore store) {
         }
     }
 
-    //绑定后的 OR 节点
+    // 绑定后的 OR 节点
     private record BoundOr(BoundCondition left, BoundCondition right) implements BoundCondition {
         @Override
         public boolean test(int rowIndex) {
@@ -429,7 +429,7 @@ public record QueryEngine(ColumnStore store) {
         }
     }
 
-    //绑定后的 NOT 节点
+    // 绑定后的 NOT 节点
     private record BoundNot(BoundCondition inner) implements BoundCondition {
         @Override
         public boolean test(int rowIndex) {
@@ -437,7 +437,7 @@ public record QueryEngine(ColumnStore store) {
         }
     }
 
-    //未知条件类型：一律视为不匹配，与原实现保持一致
+    // 未知条件类型：一律视为不匹配，与原实现保持一致
     private record BoundNever() implements BoundCondition {
         @Override
         public boolean test(int rowIndex) {
@@ -476,7 +476,7 @@ public record QueryEngine(ColumnStore store) {
         return new BoundNever();
     }
 
-    //数值比较
+    // 数值比较
     private static boolean matchNumber(BigDecimal cell, String op, BigDecimal value) {
         int cmp = cell.compareTo(value);
         return switch (op) {
@@ -490,7 +490,7 @@ public record QueryEngine(ColumnStore store) {
         };
     }
 
-    //字符串比较
+    // 字符串比较
     private static boolean matchString(String cell, String op, String value) {
         return switch (op) {
             case "="  -> cell.equals(value);
@@ -503,7 +503,7 @@ public record QueryEngine(ColumnStore store) {
         };
     }
 
-    //把单元格转成 BigDecimal，非数值返回 null
+    // 把单元格转成 BigDecimal，非数值返回 null
     private static BigDecimal toBigDecimal(Object cell) {
         if (cell instanceof BigDecimal decimal) {
             return decimal;
@@ -520,7 +520,7 @@ public record QueryEngine(ColumnStore store) {
         return null;
     }
 
-    //解析 SQL 中的数值字面量，非数值返回 null
+    // 解析 SQL 中的数值字面量，非数值返回 null
     private static BigDecimal parseNumber(String value) {
         try {
             return new BigDecimal(value.trim());
@@ -529,7 +529,7 @@ public record QueryEngine(ColumnStore store) {
         }
     }
 
-    //解析布尔字面量，使 BOOLEAN 列（已归一为 1/0）也能用 = 'true' 这类写法查询
+    // 解析布尔字面量，使 BOOLEAN 列（已归一为 1/0）也能用 = 'true' 这类写法查询
     private static BigDecimal parseBooleanLiteral(String value) {
         String lower = value.trim().toLowerCase();
         if ("true".equals(lower)) {
@@ -541,7 +541,7 @@ public record QueryEngine(ColumnStore store) {
         return null;
     }
 
-    //能精确转成 long 时返回该值，否则返回 null（走 BigDecimal 通用路径）
+    // 能精确转成 long 时返回该值，否则返回 null（走 BigDecimal 通用路径）
     private static Long toLongExact(BigDecimal value) {
         if (value == null) {
             return null;
@@ -563,7 +563,7 @@ public record QueryEngine(ColumnStore store) {
     public record ProjectionColumns(String[] names, int[] kinds, String[] literals, List<List<Object>> columns) {
     }
 
-    //解析 SELECT 列表，得到投影所需的全部信息
+    // 解析 SELECT 列表，得到投影所需的全部信息
     public ProjectionColumns prepareColumns(QueryStatement stmt) {
         String[] colNames = stmt.selectColumns();
         boolean selectAll = (colNames.length == 1 && "*".equals(colNames[0]));
@@ -597,7 +597,7 @@ public record QueryEngine(ColumnStore store) {
         return new ProjectionColumns(actualCols, kinds, literals, columns);
     }
 
-    //按预解析的列信息投影一行
+    // 按预解析的列信息投影一行
     private String[] buildRow(ProjectionColumns cols, int rowIndex) {
         int colCount = cols.names().length;
         String[] row = new String[colCount];
@@ -617,12 +617,6 @@ public record QueryEngine(ColumnStore store) {
             result.add(buildRow(cols, idx));
         }
         return result;
-    }
-
-    //列选择：根据行号和列名，取出数据
-    private List<String[]> selectColumns(QueryStatement stmt, List<Integer> indexes) {
-        // 复用导出的预解析逻辑，避免两处各维护一份投影规则
-        return buildRows(prepareColumns(stmt), indexes);
     }
 
     // ==================== 聚合 ====================
@@ -703,7 +697,7 @@ public record QueryEngine(ColumnStore store) {
         };
     }
 
-    //统计某列在命中行中「非空」的单元格数，对应 SQL 的 COUNT(列) 语义
+    // 统计某列在命中行中「非空」的单元格数，对应 SQL 的 COUNT(列) 语义
     private int countPresent(String columnName, List<Integer> indexes) {
         List<Object> column = store.getColumns(columnName);
         int present = 0;
@@ -715,7 +709,7 @@ public record QueryEngine(ColumnStore store) {
         return present;
     }
 
-    //判断单元格是否有值：null 与空串（CSV 空字段归一后的形态）都视为无值
+    // 判断单元格是否有值：null 与空串（CSV 空字段归一后的形态）都视为无值
     private boolean isPresent(Object cell) {
         if (cell == null) {
             return false;
@@ -726,7 +720,7 @@ public record QueryEngine(ColumnStore store) {
         return true;
     }
 
-    //格式化数值结果：去掉多余的尾零，且不使用科学计数法
+    // 格式化数值结果：去掉多余的尾零，且不使用科学计数法
     private String formatNumber(BigDecimal value) {
         BigDecimal stripped = value.stripTrailingZeros();
         // stripTrailingZeros 会把 100 变成 1E+2，补回 0 位保证输出可读
@@ -1094,69 +1088,5 @@ public record QueryEngine(ColumnStore store) {
                 max = other.max;
             }
         }
-    }
-
-    // ==================== 控制台打印 ====================
-
-    //打印结果表格
-    public void printResult(List<String[]> rows, QueryStatement stmt) {
-        if (rows == null || rows.isEmpty()) {
-            System.out.flush();
-            System.err.println("?==null");
-            return;
-        }
-
-        String[] colNames = stmt.selectColumns();
-        boolean selectAll = (colNames.length == 1 && "*".equals(colNames[0]));
-        if (selectAll) {
-            colNames = store.getColumnNames().toArray(new String[0]);
-        }
-
-        int[] colWidths = new int[colNames.length];
-
-        //取列名长度整齐打印
-        for (int i = 0; i < colNames.length; i++) {
-            colWidths[i] = colNames[i].length();
-        }
-        for (String[] row : rows) {
-            for (int i = 0; i < row.length; i++) {
-                if (row[i].length() > colWidths[i]) {
-                    colWidths[i] = row[i].length();
-                }
-            }
-        }
-
-        //打印表格
-        printSeparator(colWidths);
-        printRow(colNames, colWidths);
-        printSeparator(colWidths);
-
-        for (String[] row : rows) {
-            printRow(row, colWidths);
-        }
-
-        printSeparator(colWidths);
-        System.out.println(rows.size() + " records in total");
-    }
-
-    //表格规则
-    private void printSeparator(int[] widths) {
-        System.out.print("+");
-        for (int w : widths) {
-            System.out.print("-".repeat(w + 2) + "+");
-        }
-        System.out.println();
-    }
-
-    private void printRow(String[] row, int[] widths) {
-        System.out.print("|");
-        for (int i = 0; i < row.length; i++) {
-            System.out.print(" " + padRight(row[i], widths[i]) + " |");
-        }
-        System.out.println();
-    }
-
-    private String padRight(String s, int width) {
-        return String.format("%-" + width + "s", s);
     }
 }
