@@ -1,5 +1,8 @@
-package com.tinyquery.datasource;
+package com.tinyquery.datasource.loader;
 
+import com.tinyquery.datasource.spec.DataSourceConfig;
+import com.tinyquery.datasource.spec.DataSourceException;
+import com.tinyquery.datasource.spec.FieldSpec;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

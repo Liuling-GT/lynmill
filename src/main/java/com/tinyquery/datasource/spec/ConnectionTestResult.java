@@ -1,4 +1,4 @@
-package com.tinyquery.datasource;
+package com.tinyquery.datasource.spec;
 
 /**
  * 连接可用性测试结果。

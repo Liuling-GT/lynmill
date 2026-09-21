@@ -1,5 +1,7 @@
 package com.tinyquery.datasource;
 
+import com.tinyquery.datasource.loader.CSVLoader;
+import com.tinyquery.datasource.spec.*;
 import com.tinyquery.executor.ColumnStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

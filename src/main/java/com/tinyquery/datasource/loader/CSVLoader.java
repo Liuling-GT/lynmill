@@ -1,5 +1,7 @@
-package com.tinyquery.datasource;
+package com.tinyquery.datasource.loader;
 
+import com.tinyquery.datasource.*;
+import com.tinyquery.datasource.spec.*;
 import com.tinyquery.executor.ColumnStore;
 
 import org.slf4j.Logger;

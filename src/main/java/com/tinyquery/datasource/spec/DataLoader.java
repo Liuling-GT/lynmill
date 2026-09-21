@@ -1,4 +1,4 @@
-package com.tinyquery.datasource;
+package com.tinyquery.datasource.spec;
 
 import com.tinyquery.executor.ColumnStore;
 

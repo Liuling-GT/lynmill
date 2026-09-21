@@ -2,6 +2,10 @@ package com.tinyquery.api;
 
 import com.tinyquery.datasource.*;
 
+import com.tinyquery.datasource.spec.ConnectionTestResult;
+import com.tinyquery.datasource.spec.DataSourceConfig;
+import com.tinyquery.datasource.spec.DataSourceInfo;
+import com.tinyquery.datasource.spec.DataSourceTypeInfo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;

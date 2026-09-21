@@ -1,4 +1,4 @@
-package com.tinyquery.datasource;
+package com.tinyquery.datasource.spec;
 
 public class DataSourceException extends RuntimeException {
 

@@ -1,6 +1,6 @@
 package com.tinyquery.api;
 
-import com.tinyquery.datasource.DataSourceException;
+import com.tinyquery.datasource.spec.DataSourceException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

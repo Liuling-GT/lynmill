@@ -1,5 +1,6 @@
 package com.tinyquery.datasource;
 
+import com.tinyquery.datasource.spec.*;
 import com.tinyquery.executor.ColumnStore;
 
 import org.springframework.stereotype.Component;
