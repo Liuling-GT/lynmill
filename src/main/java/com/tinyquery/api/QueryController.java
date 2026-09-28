@@ -47,7 +47,7 @@ public class QueryController {
         this.manager = manager;
     }
 
-    @Operation(summary = "Execute SQL Query", description = "Pass in a SQL statement and return the query resul")
+    @Operation(summary = "Execute SQL Query", description = "Pass in a SQL statement and return the query result")
     @PostMapping("/query")
     public QueryResponse query(@RequestBody QueryRequest request) {
         try {

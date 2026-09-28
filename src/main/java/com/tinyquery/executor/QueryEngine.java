@@ -1,6 +1,8 @@
 package com.tinyquery.executor;
 
 import com.tinyquery.parser.*;
+import com.tinyquery.parser.where.*;
+import com.tinyquery.parser.SortSpec;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -102,6 +104,8 @@ public record QueryEngine(ColumnStore store) {
     public String[] projectRow(QueryStatement stmt, ProjectionColumns cols, int rowIndex) {
         return buildRow(cols, rowIndex);
     }
+
+
 
     // 解析结果表的列名
     private List<String> resolveColumnNames(QueryStatement stmt) {
@@ -232,10 +236,9 @@ public record QueryEngine(ColumnStore store) {
     // ==================== 排序 ====================
 
     /**
-     * 按条件过滤并排序，返回全部命中行号（不做行数截断）。
-     *
-     * <p>供导出复用。导出必须与查询保持同样的行序，
-     * 否则「先看一眼再导出」两边结果对不上。</p>
+     * 按条件过滤并排序，返回全部命中行号（不做行数截断）
+     * 供导出复用。导出必须与查询保持同样的行序
+     * 否则「先看一眼再导出」两边结果对不上
      */
     public List<Integer> listRows(QueryStatement stmt) {
         List<Integer> indexes = filter(stmt);
@@ -247,11 +250,10 @@ public record QueryEngine(ColumnStore store) {
     }
 
     /**
-     * 排序并截断。
-     *
-     * <p>结果集不超过上限时直接整体排序；超过时用容量为 limit 的有界堆，
-     * 只保留最优的 N 个，复杂度从 O(n log n) 降到 O(n log k)。
-     * 在 limit 远小于命中行数时（如百万行取前 10）收益显著。</p>
+     * 排序并截断
+     * 结果集不超过上限时直接整体排序；超过时用容量为 limit 的有界堆
+     * 只保留最优的 N 个，复杂度从 O(n log n) 降到 O(n log k)
+     * 在 limit 远小于命中行数时（如百万行取前 10）收益显著
      */
     private List<Integer> sortAndLimit(List<Integer> indexes, SortSpec sort, int limit) {
         // LIMIT 0 表示不要任何行；空结果也无需排序。
@@ -272,8 +274,8 @@ public record QueryEngine(ColumnStore store) {
 
         // 堆里保留「最不该出现在结果里」的那些行，堆顶即当前最差的一行；
         // 新行只要优于堆顶就替换掉它，最终堆里就是最优的 N 行。
-        //   升序取最小 N 个 → 最差的是最大值 → 用最大堆
-        //   降序取最大 N 个 → 最差的是最小值 → 用最小堆
+        // 升序取最小 N 个 → 最差的是最大值 → 用最大堆
+        // 降序取最大 N 个 → 最差的是最小值 → 用最小堆
         // 两种情况都等价于「按目标顺序反转」
         Comparator<Integer> worstFirst = comparator(column, sort.desc()).reversed();
         PriorityQueue<Integer> heap = new PriorityQueue<>(limit, worstFirst);
@@ -353,10 +355,9 @@ public record QueryEngine(ColumnStore store) {
     // ==================== 条件编译 ====================
 
     /**
-     * 编译后的条件节点。
-     *
-     * <p>把解析产物 Condition 转换成执行形态，转换时一次性解析好列引用与比较值，
-     * 避免在行循环里重复做这些「每行结果都相同」的工作。</p>
+     * 编译后的条件节点
+     * 把解析产物 Condition 转换成执行形态，转换时一次性解析好列引用与比较值，
+     * 避免在行循环里重复做这些「每行结果都相同」的工作
      */
     private interface BoundCondition {
         // 判断第 rowIndex 行是否满足本节点
@@ -364,8 +365,7 @@ public record QueryEngine(ColumnStore store) {
     }
 
     /**
-     * 绑定后的简单条件。
-     *
+     * 绑定后的简单条件
      * @param column       已解析的列数据，行循环内直接按行号取值
      * @param op           比较运算符
      * @param numberValue  预解析的数值比较值，无法解析为数值时为 null
@@ -394,7 +394,8 @@ public record QueryEngine(ColumnStore store) {
                 };
             }
 
-            // 通用路径：大数、小数走 BigDecimal 比较
+            // 通用路径
+            // ：大数、小数走 BigDecimal 比较
             BigDecimal cellNumber = toBigDecimal(cell);
             if (cellNumber != null) {
                 // 列是数值但条件值不是数字。此处才报错是刻意的：
@@ -446,10 +447,9 @@ public record QueryEngine(ColumnStore store) {
     }
 
     /**
-     * 把解析出的条件树编译成绑定形态。
-     *
-     * <p>只做「解析」，不做「校验」：条件值是否合法要等真的遇到数值单元格才知道，
-     * 放在这里提前判断会误伤纯字符串条件。</p>
+     * 把解析出的条件树编译成绑定形态
+     * 只做「解析」，不做「校验」：条件值是否合法要等真的遇到数值单元格才知道
+     * 放在这里提前判断会误伤纯字符串条件
      */
     private BoundCondition bind(Condition cond) {
         if (cond instanceof SimpleCondition sc) {
@@ -557,7 +557,7 @@ public record QueryEngine(ColumnStore store) {
     // ==================== 投影列预解析（供导出复用） ====================
     /**
      * 预先解析好的投影列
-     * 导出时每行都要投影，列的种类判定与列引用必须在循环外做一次，
+     * 导出时每行都要投影，列的种类判定与列引用必须在循环外做一次
      * 否则会退化成「每行每列都做一次正则匹配 + HashMap 查找」
      */
     public record ProjectionColumns(String[] names, int[] kinds, String[] literals, List<List<Object>> columns) {
@@ -738,7 +738,7 @@ public record QueryEngine(ColumnStore store) {
 
     /**
      * 按维度列分组、对度量列聚合，供图表使用
-     * 与 SQL 聚合的区别：分组键来自界面上的下拉框，不是 SQL 里的 GROUP BY，
+     * 与 SQL 聚合的区别：分组键来自界面上的下拉框，不是 SQL 里的 GROUP BY
      * 因此不需要动 parser。分组在内存里完成，数据已在 ColumnStore 中
      * 维度是数值列时走分桶（直方图），文本列时走分组。
      * 两种模式对前端是同一种形状：类别标签 + 每个度量一列值
@@ -840,7 +840,7 @@ public record QueryEngine(ColumnStore store) {
 
     /**
      * 数值维度：分桶成直方图
-     * 桶边界必须落在整数上，否则 X 轴标签会变成 "19-22.71" 这种没法看的东西。
+     * 桶边界必须落在整数上，否则 X 轴标签会变成 "19-22.71" 这种没法看的东西
      * 代价是段数不固定 —— 步长取整后，7 段可能变成 4~10 段中的任意一个
      * 分桶后段数本来就少，因此不做「其他」合并
      */
@@ -950,7 +950,7 @@ public record QueryEngine(ColumnStore store) {
     /**
      * 把理想步长向上取到「好看的值」：1、2、5 乘以 10 的整数次幂
      * 例：跨度 26、目标 7 段 → 理想步长 3.71 → 取 5，得 6 段
-     *     跨度 17000        → 理想 2428 → 取 5000，得 4 段
+     *  跨度 17000  → 理想 2428 → 取 5000，得 4 段
      * 全程用 BigDecimal，不经过 double —— 浮点误差会让 0.1 变成
      * 0.1000000000000000055，桶边界就会出现 "19-22.700000000000003"
      */
@@ -987,7 +987,7 @@ public record QueryEngine(ColumnStore store) {
 
     /**
      * 分组累加器
-     * 每个度量一个 MeasureAcc，索引与请求里的度量顺序一一对应。
+     * 每个度量一个 MeasureAcc，索引与请求里的度量顺序一一对应
      * 用数组而不是 Map，是因为度量个数在分组开始前就定死了
      */
     private static final class GroupAcc {
@@ -1042,7 +1042,7 @@ public record QueryEngine(ColumnStore store) {
 
     /**
      * 单个度量的累加器
-     * sum / min / max / 计数分别记录，因为不同聚合方式需要的中间量不同，
+     * sum / min / max / 计数分别记录，因为不同聚合方式需要的中间量不同
      * 而且「其他」合并时 avg 必须按行数加权，不能把平均值直接相加
      */
     private static final class MeasureAcc {

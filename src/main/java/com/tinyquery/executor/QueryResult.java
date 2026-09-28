@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * 查询执行结果
- * 相比直接返回 List&lt;String[]&gt;，额外携带列名、列类型与分页信息，
+ * 相比直接返回 List;String[];，额外携带列名、列类型与分页信息，
  * 让调用方无需自行推断表头，也能判断是否还有下一页
  * @param columns     结果表头。select * 时取自 ColumnStore 的列名，
  *                    聚合时取自聚合表达式原文（如 count(*)），

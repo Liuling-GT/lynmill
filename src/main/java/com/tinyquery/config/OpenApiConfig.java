@@ -13,7 +13,7 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("TinyQuery API")
-                        .description("轻量级本地 CSV 查询引擎")
+                        .description("轻量级本地查询引擎")
                         .version("1.0.0"));
     }
 }

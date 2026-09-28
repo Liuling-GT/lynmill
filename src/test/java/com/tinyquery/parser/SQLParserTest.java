@@ -1,5 +1,9 @@
 package com.tinyquery.parser;
 
+import com.tinyquery.parser.where.AndCondition;
+import com.tinyquery.parser.where.NotCondition;
+import com.tinyquery.parser.where.OrCondition;
+import com.tinyquery.parser.where.SimpleCondition;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

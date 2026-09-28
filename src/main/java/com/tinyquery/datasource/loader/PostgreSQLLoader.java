@@ -8,11 +8,10 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * PostgreSQL 数据源加载器。
- *
- * <p>与 MySQL 的主要差异：
- * 标识符在不加引号时会被折叠成小写，因此 Table/Column 名请用小写书写；
- * 表引用通常需要 schema 前缀，本加载器提供 schema 配置项，默认 public。</p>
+ * PostgreSQL 数据源加载器
+ * 与 MySQL 的主要差异：
+ * 标识符在不加引号时会被折叠成小写，因此 Table/Column 名请用小写书写
+ * 表引用通常需要 schema 前缀，本加载器提供 schema 配置项，默认 public
  */
 @Component
 public class PostgreSQLLoader extends JdbcLoader {

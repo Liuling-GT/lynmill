@@ -8,11 +8,10 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * MySQL 系数据源加载器，同时支持 MySQL 与 MariaDB。
- *
- * <p>两者线协议兼容、默认端口同为 3306，差异只在 JDBC URL 的前缀与部分连接参数，
+ * MySQL 系数据源加载器，同时支持 MySQL 与 MariaDB
+ * 两者线协议兼容、默认端口同为 3306，差异只在 JDBC URL 的前缀与部分连接参数
  * 因此共用一个加载器，由「驱动」配置项区分。不拆成两个类是因为
- * 拆分后会产生两个 95% 重复的实现，后续修 bug 容易只改一处。</p>
+ * 拆分后会产生两个 95% 重复的实现，后续修 bug 容易只改一处
  */
 @Component
 public class MySQLLoader extends JdbcLoader {
@@ -97,10 +96,9 @@ public class MySQLLoader extends JdbcLoader {
     }
 
     /**
-     * 解析驱动配置。
-     *
-     * <p>缺失或为空时返回 MySQL —— 这是刻意的：既有数据源没有 driver 字段，
-     * 默认走 MySQL 可保证它们的行为完全不变。</p>
+     * 解析驱动配置
+     * 缺失或为空时返回 MySQL —— 这是刻意的：既有数据源没有 driver 字段
+     * 默认走 MySQL 可保证它们的行为完全不变
      */
     private String resolveDriver(DataSourceConfig config) {
         String raw = config.getString("driver");

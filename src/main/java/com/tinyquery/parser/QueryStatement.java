@@ -1,5 +1,7 @@
 package com.tinyquery.parser;
 
+import com.tinyquery.parser.where.Condition;
+
 import java.util.ArrayList;
 import java.util.List;
 

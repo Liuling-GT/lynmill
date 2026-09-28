@@ -301,12 +301,10 @@ public class CSVLoader implements DataLoader {
     }
 
     /**
-     * 解析文件编码。
-     *
-     * <p>配置为「自动」或缺省时做一次探测：按 UTF-8 严格解码文件头部，
-     * 出现非法字节序列说明不是 UTF-8，回退到 GBK。</p>
-     *
-     * <p>探测只读文件头部若干字节，不会为判断编码而读整个文件。</p>
+     * 解析文件编码
+     * 配置为「自动」或缺省时做一次探测：按 UTF-8 严格解码文件头部，
+     * 出现非法字节序列说明不是 UTF-8，回退到 GBK
+     * 探测只读文件头部若干字节，不会为判断编码而读整个文件
      */
     private Charset resolveCharset(File file, DataSourceConfig config) {
         String configured = resolveEncodingName(config);
@@ -339,10 +337,9 @@ public class CSVLoader implements DataLoader {
     }
 
     /**
-     * 探测文件编码。
-     *
-     * <p>用 UTF-8 解码器的严格模式解码头部的若干字节：能干净解完就认为是 UTF-8，
-     * 出现非法字节序列则判定为 GBK。探测失败一律回退 UTF-8，保持默认行为不变。</p>
+     * 探测文件编码
+     * 用 UTF-8 解码器的严格模式解码头部的若干字节：能干净解完就认为是 UTF-8
+     * 出现非法字节序列则判定为 GBK。探测失败一律回退 UTF-8，保持默认行为不变
      */
     private Charset detectCharset(File file) {
         if (!file.isFile() || file.length() == 0) {

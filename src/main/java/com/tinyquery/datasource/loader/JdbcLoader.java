@@ -14,12 +14,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * JDBC 类数据源加载器的公共骨架。
- * <p>各源之间的差异只有「连接串」与「表名的组成方式」两处，
- * 建连、探测、遍历结果集、归一化这些流程完全相同。放在基类里之后，
- * 修一处 bug 对所有 JDBC 源同时生效；子类只需给出连接串与配置项清单。</p>
- *
- * <p>子类实现 resolveUrl 即可；有 schema 前缀、无凭据等差异通过覆写相应的钩子表达。</p>
+ * JDBC 类数据源加载器的公共骨架
+ * 各源之间的差异只有「连接串」与「表名的组成方式」两处
+ * 建连、探测、遍历结果集、归一化这些流程完全相同。放在基类里之后
+ * 修一处 bug 对所有 JDBC 源同时生效；子类只需给出连接串与配置项清单
+ * 子类实现 resolveUrl 即可；有 schema 前缀、无凭据等差异通过覆写相应的钩子表达
  */
 public abstract class JdbcLoader implements DataLoader {
 
@@ -30,10 +29,9 @@ public abstract class JdbcLoader implements DataLoader {
     protected static final String HOST_PATTERN = "[A-Za-z0-9_.\\-]+";
 
     /**
-     * 默认端口。
-     *
-     * <p>返回 null 表示这个源不使用网络端口（如 SQLite）。
-     * 无端口的源必须在 fields() 里省略 port 字段，二者要保持一致。</p>
+     * 默认端口
+     * 返回 null 表示这个源不使用网络端口（如 SQLite）
+     * 无端口的源必须在 fields() 里省略 port 字段，二者要保持一致
      */
     protected abstract Integer defaultPort();
 
@@ -41,19 +39,17 @@ public abstract class JdbcLoader implements DataLoader {
     protected abstract String resolveUrl(DataSourceConfig config);
 
     /**
-     * 拼装用于 SQL 的表引用。
-     *
-     * <p>默认直接取 table 配置项；PostgreSQL 会覆写成 schema.table</p>
+     * 拼装用于 SQL 的表引用
+     * 默认直接取 table 配置项；PostgreSQL 会覆写成 schema.table
      */
     protected String resolveTableRef(DataSourceConfig config) {
         return config.requireString("table");
     }
 
     /**
-     * 子类自己的配置校验。
-     *
-     * <p>基类已完成表名与端口的基础校验，此钩子只放子类特有的部分
-     * （如 schema 校验、SQLite 的文件存在性检查）</p>
+     * 子类自己的配置校验
+     * 基类已完成表名与端口的基础校验，此钩子只放子类特有的部分
+     * （如 schema 校验、SQLite 的文件存在性检查）
      */
     protected void validateExtra(DataSourceConfig config) {
     }
@@ -74,8 +70,8 @@ public abstract class JdbcLoader implements DataLoader {
         String username = config.getString("username");
         String password = config.getString("password");
 
-        // SELECT * ... LIMIT 0：LIMIT 0 保证零行返回，因此不拉任何数据，
-        // 耗时与表大小无关；同时结果集带完整列定义，列数即表的真实列数。
+        // SELECT * ... LIMIT 0：LIMIT 0 保证零行返回，因此不拉任何数据
+        // 耗时与表大小无关；同时结果集带完整列定义，列数即表的真实列数
         // 注意不能写成 SELECT 1，那样结果集只有字面量一列，与表结构无关
         String probeSql = "SELECT * FROM " + tableRef + " LIMIT 0";
 
@@ -145,10 +141,9 @@ public abstract class JdbcLoader implements DataLoader {
     }
 
     /**
-     * 所有 JDBC 源共有的校验：表名与端口。
-     *
-     * <p>读的是原始 table 配置项而不是 resolveTableRef 的结果 ——
-     * PostgreSQL 的引用带 schema 前缀，含点号，会通不过标识符白名单。</p>
+     * 所有 JDBC 源共有的校验：表名与端口
+     * 读的是原始 table 配置项而不是 resolveTableRef 的结果
+     * PostgreSQL 的引用带 schema 前缀，含点号，会通不过标识符白名单
      */
     protected final void validateCommon(DataSourceConfig config) {
         requireIdentifier(config.requireString("table"), "表名");

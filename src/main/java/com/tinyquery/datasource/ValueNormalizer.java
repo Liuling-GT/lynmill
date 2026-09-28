@@ -9,15 +9,15 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 /**
- * 数据源值类型归一器：CSV 与 MySQL 共用这一条路径，不存在「CSV 保持原样、MySQL 单独转」的分叉。
+ * 数据源值类型归一器：CSV 与 MySQL 共用这一条路径，不存在「CSV 保持原样、MySQL 单独转」的分叉
  * 输出只可能是 Integer / BigDecimal / String / null 四种
  * 整数值 → Integer，保留 QueryEngine 的快速比较路径
  * 大数、小数 → BigDecimal
- * 避免字典序比较（"9" &gt; "10"）给出错误结果</li>
- * 布尔 → Integer 1/0，与 MySQL 中 BOOLEAN 即 TINYINT(1) 的语义一致</li>
- * 日期时间、字节流、其余类型 → String</li>
+ * 避免字典序比较（"9" &gt; "10"）给出错误结果
+ * 布尔 → Integer 1/0，与 MySQL 中 BOOLEAN 即 TINYINT(1) 的语义一致
+ * 日期时间、字节流、其余类型 → String
  * 本类的输出类型必须与 QueryEngine 的比较、聚合逻辑一致，
- * 两者不能分阶段单独修改，否则中间态会出现「条件永远不匹配」的静默错误。</p>
+ * 两者不能分阶段单独修改，否则中间态会出现「条件永远不匹配」的静默错误
  */
 public final class ValueNormalizer {
 

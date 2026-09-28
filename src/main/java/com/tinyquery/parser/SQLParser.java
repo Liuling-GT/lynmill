@@ -1,5 +1,7 @@
 package com.tinyquery.parser;
 
+import com.tinyquery.parser.where.*;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 

@@ -4,8 +4,11 @@ import java.util.*;
 
 public class ColumnStore {
 
+    //存储列数据，保持列的出现顺序
     private final Map<String, List<Object>> columns = new LinkedHashMap<>();
+    //列的有序名字列表，支持按索引访问列名
     private final List<String> columnNames = new ArrayList<>();
+    //列名哈希表，快速判断某列是否已存在，去重
     private final Set<String> columnNameSet = new HashSet<>();
 
     public void addRow(Map<String, Object> row) {

@@ -9,11 +9,10 @@ import java.io.File;
 import java.util.List;
 
 /**
- * SQLite 数据源加载器。
- *
- * <p>SQLite 是文件数据库：没有主机、端口、账号与密码，整个库就是一个文件，
- * 因此配置项与其余 JDBC 源完全不同，也是本加载器最想验证的一点 ——
- * 前端表单能否完全由后端下发的字段清单驱动，而不依赖任何具体源的假设。</p>
+ * SQLite 数据源加载器
+ * SQLite 是文件数据库：没有主机、端口、账号与密码，整个库就是一个文件
+ * 因此配置项与其余 JDBC 源完全不同，也是本加载器最想验证的一点
+ * 前端表单能否完全由后端下发的字段清单驱动，而不依赖任何具体源的假设
  */
 @Component
 public class SQLiteLoader extends JdbcLoader {
@@ -50,8 +49,8 @@ public class SQLiteLoader extends JdbcLoader {
     }
 
     /**
-     * SQLite 是文件数据库，路径写错时驱动会静默新建一个空库，
-     * 直到查询报「表不存在」才发现。这里提前拦下，给出明确原因。
+     * SQLite 是文件数据库，路径写错时驱动会静默新建一个空库
+     * 直到查询报「表不存在」才发现。这里提前拦下，给出明确原因
      */
     @Override
     protected void validateExtra(DataSourceConfig config) {

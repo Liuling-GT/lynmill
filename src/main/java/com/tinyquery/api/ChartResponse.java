@@ -5,10 +5,9 @@ import com.tinyquery.executor.ChartSeries;
 import java.util.List;
 
 /**
- * 图表聚合响应。
- *
- * <p>与 QueryResponse 分开，是因为它不携带表格数据 ——
- * 图表只需要类别与各系列的聚合值，返回整个结果集是浪费。</p>
+ * 图表聚合响应
+ * 与 QueryResponse 分开，是因为它不携带表格数据
+ * 图表只需要类别与各系列的聚合值，返回整个结果集是浪费
  *
  * @param code        0 表示成功，非 0 表示失败
  * @param message     提示信息
