@@ -1,0 +1,137 @@
+/**
+ * 设计令牌：全站颜色与尺度的唯一来源。
+ *
+ * 分三层：
+ *   1. 原始色阶 —— 中性灰 + 遐蝶紫，字面色值只在这里出现
+ *   2. 语义别名 —— 按用途命名，组件只用这一层
+ *   3. Element Plus 变量覆盖 —— 让 el-* 组件跟随同一套主题
+ *
+ * 组件里不要再写死色值。换主题只改本文件。
+ */
+
+:root {
+  /* ==================== 1. 中性色阶 ==================== */
+  /*
+   * 整体比纯白/纯黑各收一档 ——
+   * 纯黑文字压在纯白面板上对比度接近 17:1，远超阅读所需的 4.5:1，
+   * 长时间盯着会累。收到 14:1 左右仍然清晰，但不刺眼。
+   * 同理面板不再是 #ffffff，而是带一点紫调的 #fbfafd
+   */
+  --ink: #2b2433;
+  --ink-2: #565064;
+  --ink-3: #8b8494;
+  --ink-4: #a8a2b3;
+  --line: #e4e0ec;
+  --line-soft: #edeaf3;
+  --surface: #fbfafd;
+  --page: #efeaf6;
+
+  /* ==================== 2. 主色 ==================== */
+  /* 遐蝶紫：冷调、带灰，不是饱和的紫红 */
+  --accent: #8b5cf6;
+  --accent-deep: #7c3aed;
+  --accent-soft: #ede9fe;
+  --accent-glow: rgba(139, 92, 246, 0.22);
+
+  /* 深紫近黑：侧栏选中态、重色块。压得住，不抢图表 */
+  --plum: #241a33;
+
+  /* ==================== 3. 玻璃层 ==================== */
+  /*
+   * 毛玻璃参数。saturate 不是"保持原样"而是"主动加浓" ——
+   * 180% 会把底色上那层淡紫放大到接近两倍，整屏因此发艳、发亮。
+   * 收到 115% 左右，紫调还在，但不发光了。
+   *
+   * 注意：侧栏已改为不透明实底，不再走毛玻璃。
+   * 半透明 + saturate 时最终颜色是「填的色 × 背后是什么 × 放大倍数」
+   * 三者相乘，这正是颜色反复出乎意料的原因；不透明填色 = 填什么就是什么
+   */
+  --glass-filter-light: blur(14px) saturate(115%);
+  --glass-bg-strong: rgba(251, 250, 253, 0.9);
+
+  /* 玻璃顶边那道内高光，被下面两条阴影引用 */
+  --glass-edge: rgba(255, 255, 255, 0.7);
+
+  /*
+   * 侧栏底色：浅灰紫。
+   *
+   * 与页面底色的区分主要来自「灰度」而非「明度」——
+   *   页面底 hsl(265, 40%, 94%) 偏艳
+   *   侧栏   hsl(256, 24%, 91%) 偏灰
+   * 明度只差 3%，不形成明暗断层，所以不晃眼；
+   * 饱和度差 16%，一眼能分出来。
+   * 深色之所以晃眼是饱和度的问题，不是深度 —— 所以降饱和才是解法。
+   *
+   * 太灰了就回 #e4dff0（约 30%），还嫌艳就往 #e8e5ee（约 19%）走
+   */
+  --sidebar-bg: #e6e3ee;
+
+  /* 侧栏分隔线。压在灰紫底上要更深一档才看得见 */
+  --sidebar-line: #d3cae4;
+
+  /* 水晶的棱：顶边一道内高光 + 两级投影。
+     投影压得比较轻 —— 影子重了会在浅色底上拉出硬边，
+     反而增加视觉噪音 */
+  --shadow-crystal:
+    inset 0 1px 0 var(--glass-edge),
+    0 1px 2px rgba(36, 26, 51, 0.03),
+    0 10px 28px rgba(36, 26, 51, 0.05);
+
+  /* ==================== 4. 尺度 ==================== */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* 侧栏宽度。改这一个值，整个布局跟着走 */
+  --sidebar-w: 224px;
+
+  /* ==================== 5. Element Plus 主题覆盖 ==================== */
+  /* 覆盖这组变量即可给全站 el-* 组件换肤，不必去跟组件内部样式打架。
+     light-3/5/7/8/9 是构建期算好的字面值，必须逐个显式覆盖，
+     否则按钮 hover、禁用态、tag 底色会残留默认蓝 */
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: #a78bfa;
+  --el-color-primary-light-5: #c4b5fd;
+  --el-color-primary-light-7: #ddd6fe;
+  --el-color-primary-light-8: #ede9fe;
+  --el-color-primary-light-9: #f5f3ff;
+  --el-color-primary-dark-2: var(--accent-deep);
+
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--ink-2);
+  --el-text-color-secondary: var(--ink-3);
+  --el-text-color-placeholder: var(--ink-4);
+  --el-text-color-disabled: var(--ink-4);
+
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line-soft);
+  --el-border-color-lighter: var(--line-soft);
+  --el-border-color-extra-light: var(--line-soft);
+  --el-border-color-dark: #ded9e6;
+  --el-border-color-darker: #d3cddd;
+
+  --el-fill-color: #f4f2f8;
+  --el-fill-color-light: #f7f5fa;
+  --el-fill-color-lighter: #faf9fc;
+  --el-fill-color-extra-light: #fcfbfd;
+  --el-fill-color-blank: var(--surface);
+  --el-fill-color-dark: #ece9f2;
+  --el-fill-color-darker: #e4e0ec;
+
+  /* 表格与弹层保持不透明白底 —— 密集小字压在毛玻璃上会很难读 */
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--page);
+  --el-bg-color-overlay: var(--surface);
+
+  --el-border-radius-base: var(--r-sm);
+  --el-border-radius-small: 4px;
+
+  --el-box-shadow-light: 0 2px 10px rgba(36, 26, 51, 0.06);
+  --el-box-shadow: 0 6px 22px rgba(36, 26, 51, 0.09);
+}

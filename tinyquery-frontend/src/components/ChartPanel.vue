@@ -84,15 +84,31 @@
               @click="activePaletteId = p.id"
             />
             <span class="swatch-custom" :class="{ 'is-active': activePaletteId === 'custom' }">
-                <el-color-picker
-                  v-model="activeCustomColor"
-                  size="small"
-                  :predefine="PRESET_COLORS"
-                  @change="activePaletteId = 'custom'"
-                />
-              </span>
+                  <el-color-picker
+                    v-model="activeCustomColor"
+                    size="small"
+                    :predefine="PRESET_COLORS"
+                    @change="activePaletteId = 'custom'"
+                  />
+                </span>
           </div>
         </div>
+
+        <!-- 突出显示：只在柱状图下有意义 —— 折线没有「一根根」的形态，
+             饼图已经有逐扇区取色了 -->
+        <el-checkbox v-if="chartType === 'bar'" v-model="highlightMode" size="small" class="cfg-check">
+          突出显示
+        </el-checkbox>
+
+        <!-- 点亮了好几根时，一根根点回去太麻烦 -->
+        <el-button
+          v-if="highlightMode && highlighted.length > 0"
+          link
+          size="small"
+          @click="clearHighlight"
+        >
+          清除点亮（{{ highlighted.length }}）
+        </el-button>
 
         <!-- 两个度量时才谈得上「统一」，单度量下开关没有意义 -->
         <el-checkbox v-if="hasTwoSeries" v-model="unifyScale" size="small" class="cfg-check">
@@ -104,7 +120,7 @@
         </el-checkbox>
       </div>
 
-      <!-- 提示：分桶说明、其他合并、标签隐藏、饼图点击改色 -->
+      <!-- 提示：分桶说明、其他合并、标签隐藏、饼图点击改色、柱子点亮 -->
       <el-alert
         v-if="hint && !errorMessage"
         type="info"
@@ -240,66 +256,28 @@ const DEFAULT_SECONDARY = '#91cc75'
 const SECTOR_POPUP_WIDTH = 230
 
 /**
- * 预设配色。
+ * 突出显示模式下，未被点亮的柱子用的灰。
  *
- * 每套都是手排的：主色打头，后面按色相拉开。没有用算法生成 ——
- * 预设的意义就是「开箱好看」，交给算法就失去意义了
+ * 不用纯灰 #999 —— 那和坐标轴、数据标签的灰会糊在一起。
+ * 取带一点紫调的中性灰，与整体主题同源，同时明显比文字灰亮，
+ * 一眼能看出「这是被压下去的柱子」而不是「没画出来的柱子」
  */
-const PRESET_PALETTES = [
-  {
-    id: 'default',
-    label: '默认',
-    colors: [
-      '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
-      '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#c4ccd3',
-    ],
-  },
-  {
-    id: 'indigo',
-    label: '靛蓝',
-    colors: [
-      '#2f54eb', '#40a9ff', '#13c2c2', '#52c41a', '#faad14',
-      '#f5222d', '#722ed1', '#eb2f96', '#597ef7', '#36cfc9',
-    ],
-  },
-  {
-    id: 'cyan',
-    label: '青绿',
-    colors: [
-      '#13c2c2', '#36cfc9', '#5cdbd3', '#52c41a', '#95de64',
-      '#faad14', '#ff7a45', '#f5222d', '#2f54eb', '#9254de',
-    ],
-  },
-  {
-    id: 'amber',
-    label: '暖橙',
-    colors: [
-      '#fa8c16', '#faad14', '#ffc53d', '#ff7a45', '#f5222d',
-      '#eb2f96', '#722ed1', '#2f54eb', '#13c2c2', '#52c41a',
-    ],
-  },
-  {
-    id: 'violet',
-    label: '紫罗兰',
-    colors: [
-      '#722ed1', '#9254de', '#b37feb', '#eb2f96', '#f5222d',
-      '#fa8c16', '#faad14', '#52c41a', '#13c2c2', '#2f54eb',
-    ],
-  },
-  {
-    id: 'morandi',
-    label: '莫兰迪',
-    colors: [
-      '#8c9ea8', '#a8b5bd', '#b8a99a', '#c9b8a8', '#9a9b8f',
-      '#a3ad9c', '#b5a3a3', '#8f9aad', '#b0a5b8', '#c4bcae',
-    ],
-  },
-]
+const MUTED_BAR_COLOR = '#c9c5d2'
 
-// 取色器的快捷色板。取的是各预设的主色，方便在自定义时直接点
+/**
+ * 取色器的快捷色板。取色面板底部的预设格，点一下就选中，不用手输色值。
+ *
+ * 按色相（HSL 的 H）升序排列，色相环上从橙黄一路扫到紫：
+ *   16° 橙红 → 51° 金黄 ×2 → 75° 青柠 → 190° 天青 → 211° 雾蓝
+ *   → 240° 石墨 → 261° 丁香 → 272° 深紫
+ *
+ * 两个已知瑕疵，都是刻意的：
+ *   - #f9d308 与 #ffd700 色相只差 0.5°，排完正好挨着，几乎分不出
+ *   - #222222 是无彩色（饱和度 0，没有色相），没法参与排序，收在最后
+ */
 const PRESET_COLORS = [
-  '#5470c6', '#2f54eb', '#13c2c2', '#52c41a', '#fa8c16',
-  '#f5222d', '#722ed1', '#eb2f96', '#8c9ea8', '#faad14',
+  '#ff4500', '#f9d308', '#ffd700', '#bfff00', '#00d4ff',
+  '#89c2ff', '#49495a', '#b19cd9', '#7b2cbf', '#222222',
 ]
 
 // 色相环上的黄金角。相邻两色相隔 137.5°，
@@ -310,19 +288,12 @@ const GOLDEN_ANGLE = 137.508
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
 /**
- * #rgb / #rrggbb 转 HSL。
+ * 0~1 的 RGB 转 [h, s, l]：h 为 0~360，s / l 为 0~100。
  *
  * 只写这一个方向就够了 —— 派生出的颜色直接用 hsl() 字符串交给 ECharts，
- * 不需要再转回 hex
+ * 不需要再转回去
  */
-const hexToHsl = (hex) => {
-  const raw = hex.replace('#', '')
-  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw
-
-  const r = parseInt(full.slice(0, 2), 16) / 255
-  const g = parseInt(full.slice(2, 4), 16) / 255
-  const b = parseInt(full.slice(4, 6), 16) / 255
-
+const rgbToHsl = (r, g, b) => {
   const max = Math.max(r, g, b)
   const min = Math.min(r, g, b)
   const delta = max - min
@@ -348,15 +319,55 @@ const hexToHsl = (hex) => {
 }
 
 /**
+ * 把颜色字符串解析成 [h, s, l]。
+ *
+ * 取色器默认回传十六进制，但这里同时认 rgb / hsl 两种写法 ——
+ * 派生出的颜色本身就是 hsl() 字符串，之后可能再被喂回来；
+ * 只认十六进制的话，substring 出来的是 "rg" / "hs"，
+ * parseInt 得到 NaN，整排颜色全废 —— 而且不报错，只是图变成一片黑
+ */
+const colorToHsl = (color) => {
+  const text = String(color || '').trim()
+
+  // rgb(r, g, b) / rgba(r, g, b, a)：alpha 在这里没有意义 ——
+  // 派生出的整排颜色都是不透明的，直接忽略
+  const rgbMatch = text.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i)
+  if (rgbMatch) {
+    return rgbToHsl(
+      Number(rgbMatch[1]) / 255,
+      Number(rgbMatch[2]) / 255,
+      Number(rgbMatch[3]) / 255,
+    )
+  }
+
+  // hsl(h, s%, l%)
+  const hslMatch = text.match(/^hsla?\(\s*([\d.]+)[\s,]+([\d.]+)%[\s,]+([\d.]+)%/i)
+  if (hslMatch) {
+    return [Number(hslMatch[1]), Number(hslMatch[2]), Number(hslMatch[3])]
+  }
+
+  // #rgb / #rrggbb
+  const raw = text.replace('#', '')
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw
+  return rgbToHsl(
+    parseInt(full.slice(0, 2), 16) / 255,
+    parseInt(full.slice(2, 4), 16) / 255,
+    parseInt(full.slice(4, 6), 16) / 255,
+  )
+}
+
+/**
  * 由一个主色派生出整套配色。
  *
  * 主色原样保留在第一位 —— 用户拿品牌色取色，第一根柱子就该是那个色，
  * 被算法改浅改深会显得没生效。
  *
- * 明度卡在 35%~70%：太暗会和深色文字打架，太亮会糊在 #ebeef5 的网格线上
+ * 明度卡在 35%~70%：太暗会和深色文字打架，太亮会糊在 #ebeef5 的网格线上。
+ * 饱和度下限 35% 是给「用户随手挑的色」兜底的 —— 代价是主色本身很灰时
+ * （如 #49495a 只有 10%）派生出的第二个色会明显跳艳
  */
 const derivePalette = (primary) => {
-  const [hue, saturation, lightness] = hexToHsl(primary)
+  const [hue, saturation, lightness] = colorToHsl(primary)
 
   return Array.from({ length: PALETTE_SIZE }, (_, i) => {
     if (i === 0) {
@@ -371,6 +382,52 @@ const derivePalette = (primary) => {
     return `hsl(${nextHue.toFixed(1)}, ${nextSat.toFixed(1)}%, ${nextLig.toFixed(1)}%)`
   })
 }
+
+/**
+ * 六套预设，按色相升序排 —— 色卡那一排看过去就是一道渐变，好找。
+ *
+ * 只存主色，整套 10 色由 derivePalette 现场派生：手排 60 个色值既难维护，
+ * 改一个主色还得重排其余九个。
+ *
+ * 放在 derivePalette 之后是必需的 —— 下面这行 map 在模块求值时就执行，
+ * 排到前面会落进暂时性死区
+ */
+const PRESET_MAIN_COLORS = [
+  { id: 'gold', label: '金黄', color: '#ffd700' },
+  { id: 'lime', label: '青柠', color: '#bfff00' },
+  { id: 'azure', label: '天青', color: '#00d4ff' },
+  { id: 'mist', label: '雾蓝', color: '#89c2ff' },
+  { id: 'graphite', label: '石墨', color: '#49495a' },
+  { id: 'lilac', label: '丁香', color: '#b19cd9' },
+]
+
+const PRESET_PALETTES = PRESET_MAIN_COLORS.map((preset) => ({
+  ...preset,
+  colors: derivePalette(preset.color),
+}))
+
+/**
+ * 柱子样式。
+ *
+ * 纯色填充，不做渐变也不做圆角。
+ *
+ * 试过的两条路都退回来了，记下来免得再走一遍：
+ *   - 纵向渐变：柱高不一，渐变被各自的柱高拉伸，矮柱子上几乎被压没，
+ *     整排看过去深浅不齐，像渲染出错
+ *   - 横向渐变 + 圆角：柱宽只有二十几像素，渐变能提供的视觉信息太少，
+ *     圆角在这个宽度下也看不出圆，只是把柱顶削掉两个角
+ *
+ * 唯一的装饰是描边，且必须纵向淡出 —— ECharts 的柱子描边四边都画、
+ * 没有单边配置，纯色描边会在底边留一道白线压在 X 轴上，看着像柱子悬空
+ */
+const barStyle = (base) => ({
+  color: base,
+  borderColor: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+    { offset: 0, color: 'rgba(255, 255, 255, 0.7)' },
+    { offset: 1, color: 'rgba(255, 255, 255, 0)' },
+  ]),
+  borderWidth: 1,
+})
 
 const chartRef = ref(null)
 const dimension = ref('')
@@ -390,10 +447,10 @@ const keepFullPrecision = ref(false)
  * 逐度量的配色。下标就是度量序号，所以柱/折线图里
  * 度量1 与度量2 各拿各的，不再共用一个颜色。
  *
- * 默认第二个走自定义而不是「默认」预设 —— 两套预设的主色都是同一个蓝，
- * 两个度量会撞成一样的颜色
+ * 第一个取色相序里的头一张（金黄），第二个走自定义 ——
+ * 两套预设的主色如果撞在一起，两个度量会变成同一个颜色
  */
-const paletteIds = ref(['default', 'custom'])
+const paletteIds = ref([PRESET_PALETTES[0].id, 'custom'])
 const customColors = ref([DEFAULT_PRIMARY, DEFAULT_SECONDARY])
 
 // 配置区的色卡在改哪个度量。只有两个系列时才需要选
@@ -405,6 +462,18 @@ const sectorColors = ref({})
 
 // 扇形取色弹窗。null 表示没开；开了就记着改的是哪个扇区、浮在哪
 const sectorPopup = ref(null)
+
+/**
+ * 突出显示模式：柱子默认全灰，点中的才恢复彩色。
+ *
+ * 用途是把注意力压到少数几根柱子上 —— 默认全彩时每根都在喊，
+ * 想强调某几个反而没有着力点。
+ */
+const highlightMode = ref(false)
+
+// 被点亮的类别名。同样用名字而不是下标 —— 换维度后下标全变，名字还是那个名字。
+// 用数组而不是 Set：ref 包 Set 时增删不会触发更新，得整个换掉才行，反而更绕
+const highlighted = ref([])
 
 const loading = ref(false)
 const animating = ref(false)
@@ -422,16 +491,20 @@ let animationTimer = null
 let requestSeq = 0
 
 /**
- * 上一次渲染的结构指纹（图表类型 + 是否统一刻度）。
+ * 上一次渲染的结构指纹（图表类型 + 是否统一刻度 + 是否突出显示）。
  *
- * 这两个变化会让 option 的形状改变（双轴 ↔ 单轴、series 类型切换），
- * 必须用 notMerge 重建，否则旧的那根轴配置会残留下来
+ * 这三个变化会让 option 的形状改变（双轴 ↔ 单轴、series 类型切换、
+ * 柱子从「整条系列一个样式」变成「逐根判定样式」），
+ * 必须用 notMerge 重建，否则旧的残留配置会留下来。
+ *
+ * 逐根点亮的名单不在里面 —— 那个每次只改一根，走 merge 就行，
+ * 否则每点一下就整张图重播动画，很吵
  */
 let lastRenderKey = ''
 
 // 取某个度量的整套配色。自定义的现场派生，预设的直接取
 const paletteOf = (index) => {
-  const id = paletteIds.value[index] || 'default'
+  const id = paletteIds.value[index] || PRESET_PALETTES[0].id
   if (id === 'custom') {
     return derivePalette(customColors.value[index] || DEFAULT_PRIMARY)
   }
@@ -441,7 +514,7 @@ const paletteOf = (index) => {
 
 // 配置区正在编辑的那套。色卡的高亮与取色器的值都读它
 const activePaletteId = computed({
-  get: () => paletteIds.value[paletteTarget.value] || 'default',
+  get: () => paletteIds.value[paletteTarget.value] || PRESET_PALETTES[0].id,
   // 下拉框或取色器把它改成 'custom' 时，颜色本身由 activeCustomColor 落盘
   set: (id) => {
     paletteIds.value[paletteTarget.value] = id
@@ -519,6 +592,17 @@ const applyDefaults = () => {
   dimension.value = firstText || props.columns[0] || ''
   measure.value = numericColumns.value[0] || ''
   measure2.value = ''
+}
+
+// 点柱子：在突出显示模式下切换它的点亮状态
+const toggleHighlight = (name) => {
+  highlighted.value = highlighted.value.includes(name)
+    ? highlighted.value.filter((item) => item !== name)
+    : [...highlighted.value, name]
+}
+
+const clearHighlight = () => {
+  highlighted.value = []
 }
 
 // 以下各项的顺序不能调换。
@@ -619,7 +703,7 @@ watch(
   { immediate: true },
 )
 
-// 组装提示文案。数据说明几项互斥，饼图的改色提示可以并存
+// 组装提示文案。数据说明几项互斥，饼图改色与柱子点亮的提示可以并存
 const buildHint = (body) => {
   const parts = []
 
@@ -636,9 +720,11 @@ const buildHint = (body) => {
     parts.push(`共 ${body.categories.length} 个分组，柱子上不显示数值，鼠标悬停可查看`)
   }
 
-  // 点扇区改色是个藏起来的功能，不提示没人会去点
+  // 这两个都是藏起来的功能，不提示没人会去点
   if (chartType.value === 'pie') {
     parts.push('点击任意扇区可单独调整它的颜色')
+  } else if (chartType.value === 'bar' && highlightMode.value) {
+    parts.push('点击柱子可切换点亮，再点一次取消')
   }
 
   return parts.join('；')
@@ -656,6 +742,28 @@ const formatValue = (value) => {
     return value == null ? '' : String(value)
   }
   return keepFullPrecision.value ? String(num) : num.toFixed(DECIMAL_PLACES)
+}
+
+/**
+ * 组装柱状图的数据。
+ *
+ * 非突出模式直接返回数值数组 —— 整条系列一个样式，交给 series.itemStyle。
+ * 突出模式返回逐项带样式的对象数组：点亮的上该系列的主色，其余压成灰。
+ *
+ * 两个系列各有各的主色，所以点亮后两条系列的颜色仍然分得开
+ */
+const barData = (categories, values, seriesIndex) => {
+  if (!highlightMode.value) {
+    return values
+  }
+
+  const litColor = paletteOf(seriesIndex)[0]
+  return values.map((value, i) => ({
+    value,
+    itemStyle: highlighted.value.includes(categories[i])
+      ? barStyle(litColor)
+      : barStyle(MUTED_BAR_COLOR),
+  }))
 }
 
 /**
@@ -803,14 +911,26 @@ const renderChart = () => {
     chart.on('finished', () => {
       animating.value = false
     })
-    // 点扇区弹取色框。只注册一次 —— 图表实例复用，
-    // 重绘不需要重新挂，回调里读的都是当前值
+    /*
+     * 画布上的点击统一在这里分派。只注册一次 —— 图表实例复用，
+     * 重绘不需要重新挂，回调里读的都是当前值
+     */
     chart.on('click', (params) => {
-      if (chartType.value !== 'pie' || params.componentType !== 'series') {
+      if (params.componentType !== 'series') {
         closeSectorPopup()
         return
       }
-      openSectorPopup(params)
+      if (chartType.value === 'pie') {
+        openSectorPopup(params)
+        return
+      }
+      // 柱状图：只在突出显示模式下响应点击。
+      // params.name 是类别名，与 highlighted 里的键一致
+      if (chartType.value === 'bar' && highlightMode.value) {
+        toggleHighlight(params.name)
+        return
+      }
+      closeSectorPopup()
     })
     // 容器在 columns 非空时才渲染，组件挂载那会儿它还不存在，
     // 所以监听只能等首次真正绘制时再绑
@@ -824,7 +944,7 @@ const renderChart = () => {
   // 两个系列各占一根轴。统一刻度时共用一个，柱高才可直接比较
   const dualAxis = series.length === 2 && !unifyScale.value
 
-  const renderKey = `${chartType.value}|${unifyScale.value}`
+  const renderKey = `${chartType.value}|${unifyScale.value}|${highlightMode.value}`
   const structuralChanged = renderKey !== lastRenderKey
   const animation = buildAnimation(structuralChanged)
 
@@ -908,7 +1028,8 @@ const renderChart = () => {
       legend: { bottom: 0 },
       grid: { left: 20, right: 30, top: 48, bottom: 48, containLabel: true },
       // 一个度量一个色，同度量内所有柱子同色 ——
-      // 柱高已经编码了数值，颜色再编码一遍是冗余的
+      // 柱高已经编码了数值，颜色再编码一遍是冗余的。
+      // 这里保留平面色是给图例与 tooltip 圆点用的
       color: series.map((_, i) => paletteOf(i)[0]),
       xAxis: {
         type: 'category',
@@ -920,9 +1041,15 @@ const renderChart = () => {
       series: series.map((s, i) => ({
         name: s.name,
         type: 'bar',
-        data: nums[i],
-        barMaxWidth: 40,
+        // 突出模式下逐根柱子带自己的样式，其余情况就是一个数值数组
+        data: barData(categories, nums[i], i),
+        // 柱宽上限。40 太粗，28 之后柱子之间透气了，整排看着轻快不少
+        barMaxWidth: 28,
+        // 只有能点的时候才给手型，免得让人以为点了会有反应
+        cursor: highlightMode.value ? 'pointer' : 'default',
         yAxisIndex: dualAxis ? i : 0,
+        // 系列级的兜底样式。突出模式下每一项都自带 itemStyle，会盖过这里
+        itemStyle: barStyle(paletteOf(i)[0]),
         label: { ...dataLabel, position: 'top' },
       })),
     }
@@ -940,7 +1067,8 @@ const renderChart = () => {
 
   // notMerge 只在结构变化时用：
   // 换类型或切单双轴要清掉上一种形态的残留配置，只换数据时合并才能走形变过渡。
-  // 配色不在 renderKey 里 —— 换色不改变 option 形状，走 merge 还能让颜色渐变过去
+  // 配色与点亮名单不在 renderKey 里 —— 它们不改变 option 形状，
+  // 走 merge 还能让颜色渐变过去，点一根柱子也不会整张图重播动画
   chart.setOption(option, structuralChanged)
   lastRenderKey = renderKey
 
@@ -962,17 +1090,10 @@ const axisTooltipFormatter = (params) => {
 /**
  * 构造 Y 轴配置。
  *
- * 两个度量默认共用一个轴 —— 量纲不同时各自铺满画布会让柱高失去可比性
- * （点赞数可能画得比浏览量还高）。关掉「统一度量单位」才切成双轴
+ * 轴名用灰色小字标在轴顶端 —— 双轴时不知道哪根轴代表哪个度量，
+ * 图就没法读了。align 让文字贴着轴放，不至于飘到绘图区里
  */
 const buildYAxis = (series) => {
-  /**
-   * align 决定轴名以锚点为中心往哪边铺。
-   *
-   * 锚点在轴顶端，'left' 会让整串字向右越过轴线压进绘图区，
-   * 'right' 又整个退到轴外、离得远。取两者的中点 'center' ——
-   * 文字盒以轴顶为心左右各半，落在两版中间的位置
-   */
   const axis = (name, align) => ({
     type: 'value',
     // 轴名用灰色小字，与数据标签同一套配色
@@ -1009,8 +1130,15 @@ const exportPng = () => {
   document.body.removeChild(link)
 }
 
-// 导出按钮在父组件的卡片头里，通过 ref 调过来
-defineExpose({ exportPng })
+// 导出按钮在父组件，通过 ref 调过来
+// resize 供父组件在面板由隐藏转可见时调用 —— display:none 期间量不到宽高
+const resize = () => {
+  if (chart) {
+    chart.resize()
+  }
+}
+
+defineExpose({ exportPng, resize })
 
 // 从柱状图切到饼图时第二个度量不再渲染，但 ref 里还留着旧值，
 // 会让 loadChart 继续把它发出去。这里主动清掉。
@@ -1055,9 +1183,17 @@ watch(
   },
 )
 
+// 换配色或换数据后，点亮的柱子按新配色重绘 —— 点亮名单本身保留，
+// 同一批类别还在的话就该继续亮着
+watch([paletteIds, customColors], () => {
+  if (chartData.value && highlightMode.value) {
+    renderChart()
+  }
+})
+
 // 这几个开关只影响渲染，不影响数据，不必重新请求 ——
 // 直接重绘，避免白跑一趟后端
-watch([unifyScale, keepFullPrecision, colorKey], () => {
+watch([unifyScale, keepFullPrecision, colorKey, highlightMode, highlighted], () => {
   if (chartData.value) {
     renderChart()
   }

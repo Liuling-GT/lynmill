@@ -1,6 +1,7 @@
 <template>
   <el-form
     ref="formRef"
+    class="ds-form"
     :model="form"
     :rules="rules"
     label-width="150px"
@@ -310,6 +311,48 @@ const handleSubmit = async () => {
 }
 
 .help-icon:hover {
-  color: #409eff;
+  color: var(--accent);
+}
+
+/* ==================== 主题化：把 Element 的红绿收进紫色体系 ==================== */
+
+/*
+ * 必填星号 / 校验红框 / 错误文字 / 错误提示框，全都取自 Element 的「危险色」变量族。
+ *
+ * 这里覆盖变量而不是逐个写选择器，是因为选择器要跟 Element 内部规则比优先级，
+ * 而 :deep() 只是给目标加了个祖先属性选择器（优先级 +1），
+ * 往往正好跟 Element 打平 —— 打平就由加载顺序决定胜负，
+ * 而 element-plus 的样式在 main.js 里是后加载的，于是覆盖会静默失效。
+ * 变量不存在优先级之争：定义在这个元素上，整棵子树都跟着走。
+ */
+.ds-form {
+  --el-color-danger: var(--accent);
+  --el-color-danger-light-3: #a78bfa;
+  --el-color-danger-light-5: #c4b5fd;
+  --el-color-danger-light-7: #ddd6fe;
+  --el-color-danger-light-8: #ede9fe;
+  --el-color-danger-light-9: #f5f3ff;
+  --el-color-danger-dark-2: var(--accent-deep);
+}
+
+/*
+ * 测试通过提示：浅紫字、不填底色，与右侧面板融为一体。
+ *
+ * 这里的选择器比上面那组多带 .is-light 和 .el-alert，把权重顶到 (0,4,0)/(0,5,0)，
+ * 稳压 Element 的 (0,2,0)/(0,3,0)。用变量做不到 ——
+ * 变量只能整族换色，没法只改底色不改字色
+ */
+:deep(.el-alert.el-alert--success.is-light) {
+  background-color: var(--accent-soft);
+  border: 1px solid #ddd6fe;
+}
+
+:deep(.el-alert.el-alert--success.is-light .el-alert__title),
+:deep(.el-alert.el-alert--success.is-light .el-alert__description) {
+  color: var(--accent);
+}
+
+:deep(.el-alert.el-alert--success.is-light .el-alert__icon) {
+  color: #a78bfa;
 }
 </style>

@@ -2,9 +2,53 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
   margin: 0;
   font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
   'Microsoft YaHei', Arial, sans-serif;
-  background: #f5f7fa;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /*
+   * 第一层：页面底纹 —— 水晶的"光源"。
+   *
+   * 毛玻璃糊的就是这一层。底色若是纯色，backdrop-filter 看不出任何效果，
+   * 所以必须先有这层极淡的紫晕铺满全页。
+   * background-attachment: fixed 让光晕不随内容滚动，像固定在远处的光源
+   */
+  background:
+    radial-gradient(880px 620px at 10% -8%, rgba(139, 92, 246, 0.12), transparent 62%),
+    radial-gradient(720px 520px at 92% 4%, rgba(196, 181, 253, 0.15), transparent 58%),
+    radial-gradient(760px 680px at 46% 108%, rgba(124, 58, 237, 0.08), transparent 62%),
+    var(--page);
+  background-attachment: fixed;
+}
+
+/* 滚动条也收进同一套中性色，默认的灰色太扎眼 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d8d3e2;
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #c2bcd0;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
