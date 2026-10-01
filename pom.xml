@@ -20,6 +20,9 @@
     <properties>
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- 前端 dist 新鲜度检查的逃生口。默认 false = 检查生效；
+             确实要用旧 dist 时用 -Dskip.frontend.freshness=true 临时跳过 -->
+        <skip.frontend.freshness>false</skip.frontend.freshness>
     </properties>
 
     <!-- 阿里云镜像仓库（加速下载） -->
@@ -99,10 +102,126 @@
             <artifactId>sqlite-jdbc</artifactId>
             <version>3.45.1.0</version>
         </dependency>
+
+        <!-- JNA：用来调用操作系统原生的凭据管理接口（Windows CredWrite/CredRead/CredDelete，
+             macOS 钥匙串，Linux Secret Service）。选择它的理由：
+             ① 双许可 LGPL-2.1-or-later 或 Apache-2.0，**由使用方任选**，我们按 Apache-2.0 使用，
+                与 MySQL Connector/J 的 GPLv2+FOSS 例外、MariaDB 的 LGPL 是两回事；
+             ② 仍在维护（5.19.1 / 2026-06-12 发布），不是弃坑项目；
+             ③ jar 约 1.9MB，自身没有任何传递依赖 —— 对比 java-keyring 会拖进 25 个 jar（含 LGPL 的 dbus-java）；
+             ④ jar 内已含各平台原生库，用户不需要另装任何东西。
+             刻意**不引 jna-platform**（约 1.4MB）：那是 Win32 全套 API 的封装，我们只用 3 个函数，
+             自己声明接口即可，见 com.tinyquery.credential.WindowsCredentialStore。 -->
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.19.1</version>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+        <!--============================================================
+            构建产物防呆：前端 dist 必须存在、且不比前端源码旧。
+
+            为什么必须有这一步（都是一路踩过来的）：
+              ① dist 缺失时 copy-resources 会「静默跳过」，打出一个没有前端的 jar。
+                 启动后访问 / 是 404，看起来像后端坏了。
+              ② 比缺失更危险的是「过期」：9/28 构建的 dist 里不含任何 token 代码，
+                 若直接打包，jar 里的前端调 API 会全部 401 ——
+                 界面看起来是坏的，却没有任何地方解释为什么。
+                 缺失至少明显，过期是静默的。
+              ③ 本次重新打包时又踩了一次：mvn 因目录不对而失败，
+                 但脚本继续用旧 jar 做完了 jpackage，退出码 0、大小正常，
+                 只有比对哈希才发现前端是旧的。退出码 0 不代表内容是新的。
+
+            enforcer 插件只能查「文件存在」，查不了「新鲜度」，
+            所以用 antrun 跑一小段判断。放在 validate 阶段 ——
+            越早失败越好，不必等编译完才发现前端是旧的。
+
+            跳过方式（确实要用旧 dist 时）：mvn package -Dskip.frontend.freshness=true
+            ============================================================-->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>check-frontend-dist-freshness</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <!-- 逃生口：确实需要用旧 dist 时，加 -Dskip.frontend.freshness=true -->
+                            <skip>${skip.frontend.freshness}</skip>
+                            <!-- 注意：这里刻意不用 <script language="javascript">。
+                                 JDK 15 起移除了 Nashorn，Ant 的 JS 脚本引擎在 JDK 17 上
+                                 直接报 "Unable to create javax script engine for javascript"。
+                                 用 Ant 原生的 <uptodate> 做时间比较，不依赖任何脚本引擎。 -->
+                            <target>
+                                <!-- 前置 ①：dist 必须存在 -->
+                                <fail message="【构建防呆】前端未构建：tinyquery-frontend/dist/index.html 不存在。请先执行：cd tinyquery-frontend &amp;&amp; npm run build。若确实要用已有 dist，加 -Dskip.frontend.freshness=true">
+                                    <condition>
+                                        <not>
+                                            <available file="${project.basedir}/tinyquery-frontend/dist/index.html"/>
+                                        </not>
+                                    </condition>
+                                </fail>
+
+                                <!-- 前置 ②：dist 不能比 src 旧。
+                                     uptodate 的语义：targetfile 比所有 srcfiles 新时，
+                                     把 property 设为 true。
+                                     我们反过来用：若不成立（即 src 更新），就判定过期。 -->
+                                <uptodate property="frontend.dist.isFresh"
+                                          targetfile="${project.basedir}/tinyquery-frontend/dist/index.html">
+                                    <srcfiles dir="${project.basedir}/tinyquery-frontend/src"/>
+                                    <srcfiles dir="${project.basedir}/tinyquery-frontend"
+                                              includes="index.html,vite.config.js,package.json"/>
+                                </uptodate>
+
+                                <fail message="【构建防呆】前端 dist 已过期：tinyquery-frontend/src 下有文件比 dist/index.html 更新。请重新执行：cd tinyquery-frontend &amp;&amp; npm run build。若确实要用旧 dist，加 -Dskip.frontend.freshness=true">
+                                    <condition>
+                                        <not>
+                                            <isset property="frontend.dist.isFresh"/>
+                                        </not>
+                                    </condition>
+                                </fail>
+
+                                <echo message="【构建防呆】前端 dist 新鲜度检查通过"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+        <!--把前端构建产物复制进 jar 的 static/ 目录。
+            必须在 prepare-package 阶段、且在 spring-boot-maven-plugin 之前 ——
+            repackage 一旦执行，jar 结构就定了，之后再复制进去也没用。
+            Spring Boot 会自动把 classpath:/static/ 下的 index.html
+            作为欢迎页返回，所以访问 / 就能看到前端，不需要额外配置-->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-frontend-dist</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>tinyquery-frontend/dist</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Spring Boot 可执行 jar 打包插件。
                  它会产出 BOOT-INF 结构的 fat jar，并自动合并各依赖中的
                  AutoConfiguration.imports / spring.factories / META-INF/services。
