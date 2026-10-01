@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @Tag(name = "Data Source Management", description = "Register, list, and remove data sources")
 @RestController
@@ -26,9 +27,44 @@ public class DataSourceController {
     // 注册数据源
     @Operation(summary = "Register Data Source", description = "Pass in the data source config and load data into memory.")
     @PostMapping
-    public DataSourceResponse<String> register(@RequestBody DataSourceConfig config) {
-        manager.register(config);
-        return DataSourceResponse.success(config.name());
+    public DataSourceResponse<String> register(@RequestBody RegisterRequest request) {
+        // savePassword 缺省为 false：老前端（不带这个字段）的行为与从前完全一致，
+        // 不会因为升级后端就突然把用户的密码写进系统凭据
+        boolean savePassword = Boolean.TRUE.equals(request.savePassword());
+        manager.register(request.toConfig(), savePassword);
+        return DataSourceResponse.success(request.toConfig().name());
+    }
+
+    /**
+     * 注册请求体。
+     *
+     * <p>没有直接把 {@code savePassword} 塞进 DataSourceConfig：那个 record 是
+     * 「数据源本身的配置」，{@code savePassword} 是「本次操作的一个选项」，
+     * 两者生命周期不同 —— 前者要落盘，后者不落盘。混在一起会让
+     * {@code withoutSecrets} 那种「哪些字段该写进文件」的逻辑变得含糊。</p>
+     */
+    public record RegisterRequest(String name, String type,
+                                  Map<String, Object> properties,
+                                  Boolean savePassword) {
+
+        DataSourceConfig toConfig() {
+            return new DataSourceConfig(name, type,
+                    properties == null ? Map.of() : properties);
+        }
+    }
+
+    // 系统是否支持「保存密码」，以及不支持时的原因。前端据此决定勾选框是否可点
+    @Operation(summary = "Credential Storage Status",
+            description = "Whether the OS credential store is available for saving passwords")
+    @GetMapping("/credential-status")
+    public DataSourceResponse<CredentialStatus> credentialStatus() {
+        boolean available = manager.isCredentialStorageAvailable();
+        return DataSourceResponse.success(new CredentialStatus(
+                available,
+                available ? "" : manager.credentialStorageUnavailableReason()));
+    }
+
+    public record CredentialStatus(boolean available, String reason) {
     }
 
     // 测试数据源配置是否可用（不注册、不加载数据）
