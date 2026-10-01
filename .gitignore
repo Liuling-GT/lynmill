@@ -25,3 +25,7 @@ data/*.sqlite3
 # 前端依赖与产物
 tinyquery-frontend/node_modules/
 tinyquery-frontend/dist/
+
+# jpackage 打包产物：约 175 MB（其中 128 MB 是自带的 JRE），
+# 体积大且可随时用 jpackage 重新生成，不该进版本库
+jpackage-out/
