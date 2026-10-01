@@ -187,6 +187,7 @@ import DataSourcePanel from './components/DataSourcePanel.vue'
 import ChartPanel from './components/ChartPanel.vue'
 import { listDataSourceTypes } from './api/datasource'
 import { queryTable } from './api/query'
+import { tokenHeaders } from './api/token'
 
 // 左侧功能项。icon 是组件本身，模板里用 <component :is> 渲染
 const NAV_ITEMS = [
@@ -196,7 +197,10 @@ const NAV_ITEMS = [
   { key: 'chart', label: '图表', icon: TrendCharts },
 ]
 
-const activeNav = ref('query')
+// 默认停在「数据源」而不是「查询」：
+// 没有数据源时查询什么都查不了，直接甩一个 SQL 界面只会让人困惑「该填什么」。
+// 而且真实使用顺序本来就是先加数据源、再写 SQL，界面的初始位置应当与它一致
+const activeNav = ref('datasource')
 
 const sql = ref('select count(*) from huge.csv')
 
@@ -416,7 +420,9 @@ const exportQuery = async () => {
   try {
     const response = await fetch('/api/query/export', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // 导出走原生 fetch 而不是 axios，所以令牌得自己带上 ——
+      // 这是三处 API 调用里最容易漏掉的一处
+      headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
       body: JSON.stringify({ sql: targetSql }),
     })
 

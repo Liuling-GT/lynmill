@@ -9,8 +9,17 @@ import 'element-plus/dist/index.css'
 import './assets/tokens.css'
 import './assets/main.css'
 
-const app = createApp(App)
+import { loadToken } from './api/token'
 
-app.use(ElementPlus)
+// 先拿到访问令牌再挂载应用：令牌必须在任何 API 调用之前就位，
+// 否则首屏那几个请求会全部 401。
+// 打包运行时首页已经注入了令牌，这一步是空操作
+async function bootstrap() {
+  await loadToken()
 
-app.mount('#app')
+  const app = createApp(App)
+  app.use(ElementPlus)
+  app.mount('#app')
+}
+
+bootstrap()

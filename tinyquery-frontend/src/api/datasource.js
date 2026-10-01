@@ -1,9 +1,19 @@
 import axios from 'axios'
+import { TOKEN_HEADER, getToken } from './token'
 
 // 数据源接口封装。后端统一返回 { code, message, data }，code === 0 为成功
 const request = axios.create({
   baseURL: '/api',
   timeout: 60000, // 加载数据源可能较慢，给足超时
+})
+
+// 每个请求都带上访问令牌。没有它后端一律回 401
+request.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers[TOKEN_HEADER] = token
+  }
+  return config
 })
 
 request.interceptors.response.use(
@@ -45,3 +55,6 @@ export const refreshDataSource = (name) =>
 
 // 测试数据源配置是否可用（不注册、不加载数据）
 export const testDataSource = (config) => request.post('/datasource/test', config)
+
+// 系统凭据存储是否可用（决定「保存密码」勾选框能否点）
+export const getCredentialStatus = () => request.get('/datasource/credential-status')

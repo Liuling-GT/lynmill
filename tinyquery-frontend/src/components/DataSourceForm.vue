@@ -75,6 +75,28 @@
       />
     </el-form-item>
 
+    <!--
+      「保存密码」勾选框。
+      只在当前类型确实有敏感字段时才显示 —— CSV 之类没有密码的数据源显示它是噪声。
+      凭据存储不可用时置灰并说明原因：让用户知道「不是我不给你存，是这台机器不支持」，
+      而不是勾了没反应。
+    -->
+    <el-form-item v-if="hasSensitiveField" label="保存密码">
+      <div class="save-password">
+        <el-checkbox
+          v-model="form.savePassword"
+          :disabled="!credentialAvailable"
+          label="保存密码，下次启动自动连接"
+        />
+        <div v-if="!credentialAvailable" class="save-password-hint">
+          {{ credentialReason || '当前系统不支持保存密码' }}
+        </div>
+        <div v-else class="save-password-hint">
+          密码存入系统凭据管理器，不会写进配置文件
+        </div>
+      </div>
+    </el-form-item>
+
     <el-form-item>
       <el-button :loading="testing" @click="handleTest">连接测试</el-button>
       <el-button type="primary" :loading="submitting" @click="handleSubmit">注册</el-button>
@@ -94,10 +116,15 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
-import { listDataSources, registerDataSource, testDataSource } from '../api/datasource'
+import {
+  listDataSources,
+  registerDataSource,
+  testDataSource,
+  getCredentialStatus,
+} from '../api/datasource'
 
 const props = defineProps({
   // 后端下发的类型描述列表
@@ -110,11 +137,33 @@ const props = defineProps({
 const emit = defineEmits(['registered'])
 
 const formRef = ref(null)
-const form = ref({ name: '', type: '', properties: {} })
+const form = ref({ name: '', type: '', properties: {}, savePassword: false })
 const submitting = ref(false)
 const testing = ref(false)
 // 测试结果：null 表示尚未测试
 const testResult = ref(null)
+
+// 凭据存储可用性。默认不可用 —— 在拿到后端答复之前把勾选框置灰，
+// 比先让用户勾上、提交后才发现存不了要好
+const credentialAvailable = ref(false)
+const credentialReason = ref('')
+
+onMounted(async () => {
+  try {
+    const status = await getCredentialStatus()
+    credentialAvailable.value = status.available
+    credentialReason.value = status.reason || ''
+  } catch {
+    // 拿不到就按不可用处理。这只是个可选功能，不该打扰用户
+    credentialAvailable.value = false
+    credentialReason.value = '无法确认当前系统是否支持保存密码'
+  }
+})
+
+// 当前类型是否有敏感字段（如密码）。没有就不显示「保存密码」勾选框
+const hasSensitiveField = computed(() =>
+  currentFields.value.some((field) => field.sensitive),
+)
 
 // 外层字段的校验规则。
 // 名称不允许含 '.'：后端 resolveTableName 靠后缀区分表名与数据源，含 '.' 会产生歧义
@@ -196,6 +245,8 @@ const rulesFor = (field) => {
 // 否则必填字段会因为 undefined 被拦下，而报错信息用户看不懂
 const handleTypeChange = () => {
   form.value.properties = {}
+  // 换类型时重置勾选：上一个类型可能没有密码字段，把这个选择带过去没有意义
+  form.value.savePassword = false
 
   for (const field of currentFields.value) {
     if (field.valueType === 'ENUM' && field.options.length > 0) {
@@ -209,7 +260,7 @@ const handleTypeChange = () => {
 }
 
 const handleReset = () => {
-  form.value = { name: '', type: '', properties: {} }
+  form.value = { name: '', type: '', properties: {}, savePassword: false }
 
   // 重置后同样补上枚举默认值，保持与刚选中类型时一致的状态
   for (const field of currentFields.value) {
@@ -283,6 +334,8 @@ const handleSubmit = async () => {
       name: form.value.name,
       type: form.value.type,
       properties: form.value.properties,
+      // 存储不可用时一律按 false 提交，不把用户勾不上的选项送上去
+      savePassword: credentialAvailable.value && form.value.savePassword,
     })
     ElMessage.success(`数据源注册成功：${registered}`)
     handleReset()
@@ -312,6 +365,19 @@ const handleSubmit = async () => {
 
 .help-icon:hover {
   color: var(--accent);
+}
+
+/* 「保存密码」：勾选框 + 下面一行小字说明 */
+.save-password {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.save-password-hint {
+  font-size: 12px;
+  color: #909399;
 }
 
 /* ==================== 主题化：把 Element 的红绿收进紫色体系 ==================== */

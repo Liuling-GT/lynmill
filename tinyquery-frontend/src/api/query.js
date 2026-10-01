@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { TOKEN_HEADER, getToken } from './token'
 
 // 查询接口封装。后端统一返回 { code, message, ... }，code === 0 为成功。
 // 这里返回整个响应体而不是只返回 data —— 表格需要 columnTypes 与分页字段
@@ -6,6 +7,15 @@ const request = axios.create({
   baseURL: '/api',
   // 百万行聚合可能较慢，给足超时
   timeout: 120000,
+})
+
+// 每个请求都带上访问令牌。没有它后端一律回 401
+request.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers[TOKEN_HEADER] = token
+  }
+  return config
 })
 
 request.interceptors.response.use(
