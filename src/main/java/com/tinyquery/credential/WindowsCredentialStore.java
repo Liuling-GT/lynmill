@@ -2,8 +2,6 @@ package com.tinyquery.credential;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 import java.util.Locale;
 
@@ -19,10 +17,20 @@ import java.util.Locale;
  * 但如果名字判断通过、真正调用时仍然可能失败（系统策略禁用、服务未启动），
  * 因此 {@link #isAvailable()} 还会做一次真实的探测调用 —— 只有真能读写，
  * 才算可用。光看平台名字会让界面显示「可以保存密码」却在实际保存时报错。</p>
+ *
+ * <h2>为什么不再自带 @Component（2026-10-03 改）</h2>
+ *
+ * <p>本类的 Bean 现在统一由 {@link CredentialStoreConfig} 创建。
+ * 原来这里挂的是
+ * {@code @ConditionalOnProperty(…, havingValue = "windows", matchIfMissing = true)}，
+ * 而 {@code tinyquery.credential.store} 项目里从来没被设置过，全靠 matchIfMissing 生效。
+ * 给 macOS 实现也加同样的条件后，属性缺省时<b>两个 Bean 都会被创建</b>，
+ * 而 DataSourceManager 是按类型注入单个的 → 抛
+ * {@code NoUniqueBeanDefinitionException}，程序直接起不来。</p>
+ *
+ * <p><b>本类的逻辑一行都没有改动</b>，只是把「谁来决定用它」挪到了配置类里。
+ * Windows 上的运行行为与改动前完全一致。</p>
  */
-@Component
-@ConditionalOnProperty(name = "tinyquery.credential.store", havingValue = "windows",
-        matchIfMissing = true)
 public class WindowsCredentialStore implements CredentialStore {
 
     private static final Logger log = LoggerFactory.getLogger(WindowsCredentialStore.class);

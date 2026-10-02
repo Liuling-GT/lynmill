@@ -2,8 +2,6 @@ package com.tinyquery.credential;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 /**
  * 「不用系统凭据存储」时的兜底实现：什么都不存。
@@ -20,15 +18,17 @@ import org.springframework.stereotype.Component;
  * <p>在这里，「不支持」的表现是：{@link #isAvailable()} 返回 false，
  * 界面把「保存密码」勾选框置灰并说明原因，其余功能一切照常。</p>
  *
- * <p>两种情况下启用本实现：</p>
+ * <p>现在<b>所有</b>平台判断都收在 {@link CredentialStoreConfig} 里，
+ * 本类只在下面几种情况下被选中：</p>
  * <ul>
  *   <li>{@code tinyquery.credential.store=none}（显式关闭）；</li>
- *   <li>或 {@code tinyquery.credential.store=windows} 但
- *       {@link WindowsCredentialStore} 已因平台不匹配而退出。</li>
+ *   <li>平台既不是 Windows 也不是 macOS（例如 Linux）；</li>
+ *   <li>配置值无法识别，或凭据存储初始化时抛了异常（兜底）。</li>
  * </ul>
+ *
+ * <p>本类不再自带 {@code @Component}：原因见
+ * {@link WindowsCredentialStore} 类注释里「为什么不再自带 @Component」一节。</p>
  */
-@Component
-@ConditionalOnProperty(name = "tinyquery.credential.store", havingValue = "none")
 public class NoOpCredentialStore implements CredentialStore {
 
     private static final Logger log = LoggerFactory.getLogger(NoOpCredentialStore.class);
