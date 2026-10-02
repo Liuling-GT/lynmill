@@ -21,7 +21,7 @@
         </button>
       </nav>
 
-      <div class="sidebar-foot">本地查询引擎 · V1.0</div>
+      <div class="sidebar-foot">本地查询引擎 · V1.0.0</div>
     </aside>
 
     <!-- ==================== 右侧内容区 ==================== -->
