@@ -176,11 +176,29 @@
         />
       </section>
     </main>
+
+    <!-- ==================== 已退出遮罩 ==================== -->
+    <!--
+      后台进程结束后盖住整个界面：这时页面上任何按钮都点不动了，
+      继续显示原界面只会让人以为是程序坏了。
+      正常情况下上面已经调用 window.close() 把标签页关掉了，用户看不到这一层；
+      浏览器拒绝关闭时（例如页面是从别处点进来的），这一层就是兜底
+    -->
+    <div v-if="appExited" class="exited-mask">
+      <div class="exited-card">
+        <div class="exited-title">TinyQuery 已退出</div>
+        <p class="exited-text">
+          后台程序已经关闭，这个页面不会再响应任何操作。<br />
+          现在可以关闭这个标签页了。
+        </p>
+        <el-button type="primary" @click="tryCloseTab">关闭本页</el-button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Coin, EditPen, Grid, TrendCharts } from '@element-plus/icons-vue'
 import DataSourceForm from './components/DataSourceForm.vue'
 import DataSourcePanel from './components/DataSourcePanel.vue'
@@ -188,6 +206,7 @@ import ChartPanel from './components/ChartPanel.vue'
 import { listDataSourceTypes } from './api/datasource'
 import { queryTable } from './api/query'
 import { tokenHeaders } from './api/token'
+import { tryCloseTab, watchForShutdown } from './api/lifecycle'
 
 // 左侧功能项。icon 是组件本身，模板里用 <component :is> 渲染
 const NAV_ITEMS = [
@@ -299,11 +318,35 @@ const rawJson = computed(() => {
   )
 })
 
+// 后台程序是否已经退出。为 true 时盖一层遮罩，见模板末尾
+const appExited = ref(false)
+
+// 停止存活监视的函数，组件卸载时调用，避免定时器泄漏
+let stopWatchingShutdown = null
+
+// 确认后台已退出：先试着直接关掉标签页，关不掉就靠遮罩兜底。
+// 浏览器只允许脚本关闭「没有被导航过」的标签页 —— 我们是用系统命令
+// 直接打开地址的，正常情况下满足；用户若是从别的页面点进来的就会被拒绝，
+// 而且拒绝时不会有任何提示，所以必须有遮罩
+const handleAppExited = () => {
+  appExited.value = true
+  tryCloseTab()
+}
+
 onMounted(async () => {
+  // 存活监视要尽早开始，且不能被下面那个请求的成败影响
+  stopWatchingShutdown = watchForShutdown(handleAppExited)
+
   try {
     types.value = await listDataSourceTypes()
   } catch (error) {
     errorMessage.value = error.message
+  }
+})
+
+onUnmounted(() => {
+  if (stopWatchingShutdown) {
+    stopWatchingShutdown()
   }
 })
 
@@ -793,5 +836,46 @@ const resolveFileName = (disposition) => {
   .main {
     padding: var(--sp-4);
   }
+}
+
+/* ==================== 已退出遮罩 ==================== */
+/*
+  后台进程结束后盖住整个界面。用 fixed 而不是跟着 .shell 走 ——
+  页面可能已经滚动了，遮罩必须始终铺满视口。
+  z-index 高于 Element Plus 的弹层（默认 2000），否则对话框会浮在遮罩上面
+*/
+.exited-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(36, 26, 51, 0.45);
+  backdrop-filter: var(--glass-filter-light);
+}
+
+.exited-card {
+  max-width: 380px;
+  padding: var(--sp-6);
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-crystal);
+}
+
+.exited-title {
+  margin-bottom: var(--sp-3);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.exited-text {
+  margin: 0 0 var(--sp-5);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
 }
 </style>

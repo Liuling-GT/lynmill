@@ -10,6 +10,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Frame;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.Point;
@@ -40,7 +41,13 @@ public class ControlWindow extends JFrame {
     // 窗口与屏幕边缘（含任务栏区）保持的间距
     private static final int SCREEN_MARGIN = 24;
 
-    private static final Color RUNNING_COLOR = new Color(0x1E7B34);
+    /**
+     * 「● 运行中」的颜色，用应用主色紫（与图标、网页主题一致）。
+     *
+     * <p>原来是绿色 {@code #1E7B34} —— 那是当年占位图标用的颜色，
+     * 换成紫色标志后两边就对不上了。</p>
+     */
+    private static final Color RUNNING_COLOR = new Color(0x6D4AFF);
 
     /**
      * 把窗口摆到屏幕右下角。
@@ -85,6 +92,30 @@ public class ControlWindow extends JFrame {
         // 那会把标题栏推到屏幕外，用户既看不到也拖不回来。
         // 宁可贴边（且允许窗口超出右/下边界）也不要让左上角跑到可见区之外
         return new Point(Math.max(usable.x, x), Math.max(usable.y, y));
+    }
+
+    /**
+     * 把窗口最小化到任务栏。
+     *
+     * <p>这是启动后窗口的默认形态：屏幕上不占地方，但任务栏里留着一个按钮，
+     * 用户随时点一下就能调出来。</p>
+     *
+     * <p><b>顺序不能反</b>：必须 {@code setState(ICONIFIED)} 在前、
+     * {@code setVisible(true)} 在后。反过来（先显示再最小化）实测是个<b>竞态</b> ——
+     * 最小化请求发出时窗口可能还没被窗口管理器映射出来，请求就丢了，
+     * 结果窗口要么留在屏幕上、要么干脆不出现。实测数据（三个全新 JVM，各跑 5 轮）：
+     * 本顺序 15/15 成功；反过来 14/15，失败那次窗口就明晃晃留在屏幕上。
+     * 先置状态再显示则不存在这个窗口期：窗口一出生就是最小化的。</p>
+     *
+     * <p>顺带的好处：正因为一出生就是最小化，窗口不会先在屏幕上闪一下。</p>
+     *
+     * <p><b>不要</b>改成「先挪到屏幕外再显示」那种写法：窗口的还原位置取的就是
+     * 最小化之前的位置，挪到 (-32000,-32000) 之后用户从任务栏把它调出来，
+     * 它会出现在屏幕外面，等于又找不着了。</p>
+     */
+    public void minimizeToTaskbar() {
+        setState(Frame.ICONIFIED);
+        setVisible(true);
     }
 
     /**

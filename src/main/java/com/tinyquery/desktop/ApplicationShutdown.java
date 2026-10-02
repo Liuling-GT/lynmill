@@ -46,6 +46,12 @@ public class ApplicationShutdown {
         }
 
         log.info("正在退出 TinyQuery…");
+
+        // 先收起可能还弹着的托盘菜单。下面走完 Spring 关闭就 System.exit 了，
+        // 菜单若还留在屏幕上，用户看到的就是「程序都退了，菜单还浮在那儿」。
+        // 放在最前面，是因为 Spring 关闭要花一点时间，那段时间里菜单一直是可见的
+        TrayIconInstaller.dismissMenu();
+
         int code = SpringApplication.exit(context, () -> 0);
         System.exit(code);
     }

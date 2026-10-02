@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import javax.swing.JComponent;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
+import javax.swing.JWindow;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.border.LineBorder;
@@ -15,7 +16,10 @@ import java.awt.AWTException;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Frame;
 import java.awt.Graphics;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
 import java.awt.MouseInfo;
 import java.awt.Point;
 import java.awt.PointerInfo;
@@ -26,6 +30,9 @@ import java.awt.TrayIcon;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 安装系统托盘图标。
@@ -53,6 +60,17 @@ import java.awt.event.MouseEvent;
  *   <li><b>底色字色</b> —— 黑底白字，写成普通 {@link Color} 避免被外观覆盖</li>
  *   <li><b>分隔线</b> —— 换成 {@link #menuSeparator()}，原因见该方法注释</li>
  * </ol>
+ *
+ * <h2>收起菜单：为什么不能只靠 AWT 全局监听</h2>
+ *
+ * <p>菜单弹出来之后，点<b>别的地方</b>就该收起它。直觉做法是挂一个
+ * {@code Toolkit.addAWTEventListener}，但实测<b>不管用</b>：这个监听器只能收到
+ * <b>本程序自己窗口</b>的鼠标事件。用户点桌面或任务栏时，事件根本不在本进程里，
+ * 监听器一次都不会被触发 —— 菜单就一直留在屏幕上，只能点菜单项或点本程序窗口才消失。</p>
+ *
+ * <p>所以改为在菜单四周铺 4 块近乎全透明的窗口（{@link #surroundingStrips}），
+ * 由它们去接住菜单外面的点击。这些窗口<b>不与菜单重叠</b>，所以不存在
+ * 「谁盖住谁」的层级问题 —— 这是刻意选的方案，比赌两个置顶窗口的先后顺序可靠。</p>
  */
 public final class TrayIconInstaller {
 
@@ -80,6 +98,13 @@ public final class TrayIconInstaller {
 
     /** 菜单里出现的全部文字，供测试校验字体覆盖 */
     static final String MENU_TEXT_SAMPLE = MENU_LABEL_OPEN + MENU_LABEL_SHOW + MENU_LABEL_EXIT;
+
+    /**
+     * 当前弹出的菜单，供 {@link #dismissMenu()} 在退出时收起它。
+     *
+     * <p>用 volatile：写发生在 EDT 或 AWT 线程上，读可能发生在退出线程上。</p>
+     */
+    private static volatile MenuPopup activeMenu;
 
     private TrayIconInstaller() {
         // 工具类，不实例化
@@ -130,7 +155,9 @@ public final class TrayIconInstaller {
             SystemTray tray = SystemTray.getSystemTray();
 
             JPopupMenu menu = buildMenu(url, () -> showWindow(window), onExit);
-            installDismissGuard(menu);
+            MenuPopup popup = new MenuPopup(menu);
+            installDismissGuard(menu, popup);
+            activeMenu = popup;
 
             TrayIcon icon = new TrayIcon(AppIcons.create(TRAY_ICON_SIZE), "TinyQuery");
             // 让操作系统按托盘实际尺寸缩放，避免高 DPI 下图标糊掉
@@ -138,12 +165,12 @@ public final class TrayIconInstaller {
             icon.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mousePressed(MouseEvent event) {
-                    maybeShowMenu(event, menu);
+                    maybeShowMenu(event, popup);
                 }
 
                 @Override
                 public void mouseReleased(MouseEvent event) {
-                    maybeShowMenu(event, menu);
+                    maybeShowMenu(event, popup);
                 }
             });
             // 双击（部分平台是单击）托盘图标即显示控制窗口
@@ -156,6 +183,32 @@ public final class TrayIconInstaller {
             // 托盘装不上不影响任何核心功能，降级为「只有控制窗口」
             log.warn("添加托盘图标失败，仅使用控制窗口", e);
             return false;
+        }
+    }
+
+    /**
+     * 收起当前弹出的托盘菜单。
+     *
+     * <p>退出流程会调用：{@link ApplicationShutdown#shutdown()} 走完 Spring 关闭后直接
+     * {@code System.exit}，菜单若还留在屏幕上，会一直挂到进程真正结束，
+     * 用户看到的就是「程序都退了，菜单还浮在那里」。</p>
+     */
+    public static void dismissMenu() {
+        MenuPopup current = activeMenu;
+        if (current == null) {
+            return;
+        }
+        if (SwingUtilities.isEventDispatchThread()) {
+            current.dismiss();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(current::dismiss);
+        } catch (InterruptedException e) {
+            // 退出流程里被打断不奇怪，恢复中断标记即可
+            Thread.currentThread().interrupt();
+        } catch (InvocationTargetException e) {
+            log.debug("收起托盘菜单时出错", e);
         }
     }
 
@@ -247,33 +300,172 @@ public final class TrayIconInstaller {
         return separator;
     }
 
-    // 右键的判定时机各平台不同，pressed 与 released 都要检查 isPopupTrigger()
-    private static void maybeShowMenu(MouseEvent event, JPopupMenu menu) {
-        if (event.isPopupTrigger()) {
-            showMenu(menu);
-        }
-    }
+    // ==================== 弹出与收起 ====================
 
-    private static void showMenu(JPopupMenu menu) {
-        // 托盘鼠标事件的坐标是相对任务栏的，不能用；必须取鼠标的屏幕绝对坐标
-        Point location = pointerLocation();
-        if (location == null) {
-            return;
+    // 右键的判定时机各平台不同，pressed 与 released 都要检查 isPopupTrigger()
+    private static void maybeShowMenu(MouseEvent event, MenuPopup popup) {
+        if (event.isPopupTrigger()) {
+            popup.show();
         }
-        menu.setLocation(location.x, location.y);
-        // JPopupMenu 没有 invoker 时不会被当成「桌面弹出菜单」（JDK-6192557），
-        // 点击别处不会自动关闭；把 invoker 指向自己是最常用的绕法
-        menu.setInvoker(menu);
-        menu.setVisible(true);
     }
 
     /**
-     * 兜底：确保弹出菜单在点击别处时关闭。
+     * 弹出菜单 + 接住菜单外面点击的那层透明窗口。
      *
-     * <p>上面那个 {@code setInvoker(menu)} 在部分 JDK 与平台上仍不足以让菜单自动关闭，
-     * 因此这里再挂一个全局鼠标监听：菜单可见时，只要在菜单范围之外按下鼠标就关掉它。</p>
+     * <p>菜单本身仍是 {@link JPopupMenu}（理由见类注释），外面的点击由
+     * {@link #surroundingStrips} 铺出来的 4 条透明窗口接住。</p>
      */
-    private static void installDismissGuard(JPopupMenu menu) {
+    private static final class MenuPopup {
+
+        private final JPopupMenu menu;
+        private final List<JWindow> strips = new ArrayList<>();
+
+        MenuPopup(JPopupMenu menu) {
+            this.menu = menu;
+        }
+
+        void show() {
+            // 托盘鼠标事件的坐标是相对任务栏的，不能用；必须取鼠标的屏幕绝对坐标
+            Point location = pointerLocation();
+            if (location == null) {
+                return;
+            }
+            // 先收掉上一次的，避免连点右键留下两套接住层
+            hideStrips();
+
+            menu.setLocation(location.x, location.y);
+            // JPopupMenu 没有 invoker 时不会被当成「桌面弹出菜单」（JDK-6192557），
+            // 把 invoker 指向自己是最常用的绕法
+            menu.setInvoker(menu);
+            menu.setVisible(true);
+
+            // 菜单尺寸要等它显示出来才准，弹出前是 0
+            showStrips(new Rectangle(menu.getLocationOnScreen(), menu.getSize()));
+        }
+
+        void dismiss() {
+            hideStrips();
+            menu.setVisible(false);
+        }
+
+        // ---------- 接住层 ----------
+
+        private void showStrips(Rectangle menuBounds) {
+            // 菜单尺寸拿不到时<b>绝不能</b>铺接住层：那时算出来的 4 条会把整个屏幕
+            // 都盖上，包括菜单自己所在的位置 —— 菜单就点不动了，
+            // 比「点别处不消失」严重得多。宁可退回原来的行为
+            if (menuBounds.width <= 0 || menuBounds.height <= 0) {
+                log.debug("菜单尺寸尚未确定（{}），本次不铺接住层", menuBounds);
+                return;
+            }
+            Rectangle screen = screenBoundsContaining(menuBounds);
+            if (screen == null) {
+                return;
+            }
+            for (Rectangle bounds : surroundingStrips(menuBounds, screen)) {
+                JWindow strip = createStrip(bounds);
+                if (strip != null) {
+                    strips.add(strip);
+                }
+            }
+        }
+
+        private void hideStrips() {
+            for (JWindow strip : strips) {
+                strip.setVisible(false);
+                strip.dispose();
+            }
+            strips.clear();
+        }
+
+        private JWindow createStrip(Rectangle bounds) {
+            if (bounds.width <= 0 || bounds.height <= 0) {
+                // 菜单贴着屏幕边时这一条宽度或高度为 0，没有存在的必要
+                return null;
+            }
+            JWindow strip = new JWindow();
+            // 不抢焦点：抢了会把用户正在用的窗口切走，而它只是个透明的接住层
+            strip.setFocusableWindowState(false);
+            strip.setAlwaysOnTop(true);
+            strip.setBounds(bounds);
+            // 近乎全透明。alpha 必须 > 0 —— 完全透明（alpha=0）的窗口在 Windows 上
+            // 会被当成「点击穿透」，鼠标事件根本落不到它身上，就接不住点击了
+            strip.setBackground(new Color(0, 0, 0, 1));
+            strip.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent event) {
+                    dismiss();
+                }
+
+                @Override
+                public void mouseReleased(MouseEvent event) {
+                    dismiss();
+                }
+            });
+            strip.setVisible(true);
+            return strip;
+        }
+    }
+
+    /**
+     * 菜单四周那 4 块「接住点击」的区域（不含菜单自身）。
+     *
+     * <p>拆成上下左右 4 条、而不是一整块盖住全屏，是为了<b>绝不与菜单重叠</b>：
+     * 一整块全屏窗口和菜单都是置顶窗口，谁压在谁上面取决于层级细节，
+     * 赌错就变成「菜单点不动」这种严重问题。4 条围着放，这个风险根本不存在。</p>
+     *
+     * <p>纯函数，可直接测。</p>
+     *
+     * @param menu   菜单在屏幕上的矩形
+     * @param screen 菜单所在的那块屏幕
+     * @return 4 个矩形；菜单贴边时可能含宽或高为 0 的项，调用方需自行跳过
+     */
+    static List<Rectangle> surroundingStrips(Rectangle menu, Rectangle screen) {
+        int menuLeft = menu.x;
+        int menuTop = menu.y;
+        int menuRight = menu.x + menu.width;
+        int menuBottom = menu.y + menu.height;
+        int screenRight = screen.x + screen.width;
+        int screenBottom = screen.y + screen.height;
+
+        List<Rectangle> strips = new ArrayList<>(4);
+        // 上：整屏宽，屏幕顶 → 菜单顶
+        strips.add(new Rectangle(screen.x, screen.y, screen.width, menuTop - screen.y));
+        // 下：整屏宽，菜单底 → 屏幕底
+        strips.add(new Rectangle(screen.x, menuBottom, screen.width, screenBottom - menuBottom));
+        // 左：只取菜单高度那一段，避免与上下两条重叠
+        strips.add(new Rectangle(screen.x, menuTop, menuLeft - screen.x, menu.height));
+        // 右
+        strips.add(new Rectangle(menuRight, menuTop, screenRight - menuRight, menu.height));
+        return strips;
+    }
+
+    /**
+     * 找出包含目标矩形的那块屏幕。
+     *
+     * <p>多显示器时不能简单用主屏 —— 托盘图标在副屏上时，接住层会铺到主屏去，
+     * 副屏上的点击就接不住。</p>
+     */
+    static Rectangle screenBoundsContaining(Rectangle target) {
+        GraphicsEnvironment env = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        for (GraphicsDevice device : env.getScreenDevices()) {
+            Rectangle bounds = device.getDefaultConfiguration().getBounds();
+            if (bounds.contains(target.x, target.y)) {
+                return bounds;
+            }
+        }
+        // 找不到就退回主屏，至少还盖得住菜单所在的位置
+        return env.getDefaultScreenDevice().getDefaultConfiguration().getBounds();
+    }
+
+    /**
+     * 兜底：本程序自己窗口范围内的点击也要能收起菜单。
+     *
+     * <p>接住层只铺在菜单外面，但用户点的可能是<b>本程序自己的窗口</b>
+     * （比如控制窗口）。那种点击是能收到 AWT 事件的，直接收掉即可，
+     * 不必依赖接住层。</p>
+     */
+    private static void installDismissGuard(JPopupMenu menu, MenuPopup popup) {
         Toolkit.getDefaultToolkit().addAWTEventListener(event -> {
             if (!(event instanceof MouseEvent mouse) || mouse.getID() != MouseEvent.MOUSE_PRESSED) {
                 return;
@@ -289,7 +481,7 @@ public final class TrayIconInstaller {
                 // 点在菜单自己身上时不动它 —— 那一击是给菜单项处理的
                 Rectangle bounds = new Rectangle(menu.getLocationOnScreen(), menu.getSize());
                 if (!bounds.contains(pointer)) {
-                    menu.setVisible(false);
+                    popup.dismiss();
                 }
             } catch (RuntimeException e) {
                 // 菜单正在关闭时可能取不到屏幕坐标，这种时候交给 Swing 自己收尾
@@ -307,6 +499,12 @@ public final class TrayIconInstaller {
     private static void showWindow(Window window) {
         SwingUtilities.invokeLater(() -> {
             window.setVisible(true);
+            // 窗口平时是「最小化到任务栏」的形态，光 setVisible(true) 是调不出来的 ——
+            // 它本来就是「可见」的，只是被最小化了。必须显式恢复成 NORMAL，
+            // 否则用户点「显示窗口」会觉得点了没反应
+            if (window instanceof Frame frame && frame.getState() == Frame.ICONIFIED) {
+                frame.setState(Frame.NORMAL);
+            }
             window.toFront();
         });
     }

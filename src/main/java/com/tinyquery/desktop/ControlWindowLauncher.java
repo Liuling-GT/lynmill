@@ -52,9 +52,27 @@ public class ControlWindowLauncher implements ApplicationListener<ApplicationRea
                     url,
                     () -> BrowserOpener.open(url),
                     shutdown::shutdown);
-            window.setVisible(true);
 
-            TrayIconInstaller.install(window, url, shutdown::shutdown);
+            // 先把窗口建出来，再决定它以什么形态出现。
+            //
+            // 顺序不能反 —— 必须先尝试装托盘，因为托盘装不上时，
+            // 这个窗口是用户唯一能点到「退出」的地方（见下）。
+            boolean trayReady = TrayIconInstaller.install(window, url, shutdown::shutdown);
+
+            if (trayReady) {
+                // 托盘可用：窗口最小化到任务栏。
+                //
+                // 刻意不是 setVisible(false) —— 那样窗口在任务栏里也不留痕迹，
+                // 用户想找它的时候会以为程序根本没起来（这是实测踩过的坑）。
+                // 最小化则两头兼顾：屏幕上不占地方，任务栏里点一下就能调出来。
+                window.minimizeToTaskbar();
+            } else {
+                // 托盘不可用（Linux 的 GNOME 3 默认移除了托盘区，需要额外装扩展）时，
+                // 窗口必须完整显示出来，否则用户没有任何退出入口，
+                // 只能去任务管理器杀进程 —— 那正是这个窗口当初存在要解决的问题
+                log.info("托盘不可用，改为显示控制窗口作为退出入口");
+                window.setVisible(true);
+            }
         } catch (Throwable t) {
             // 这里刻意捕获 Throwable 而不是 Exception：
             // 没有图形界面（如无 DISPLAY 的 Linux）时，AWT 抛的是 AWTError，

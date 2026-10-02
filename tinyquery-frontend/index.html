@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
+    <!-- 末尾的 ?v= 是缓存版本号：浏览器对 favicon 的缓存极其顽固，
+         换图标后不加这个参数，标签页会一直显示旧图标（普通刷新都刷不掉）。
+         以后每次换图标，把这个数字 +1 即可 -->
+    <link rel="icon" href="/favicon.ico?v=2">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TinyQuery · 本地查询引擎</title>
 </head>
