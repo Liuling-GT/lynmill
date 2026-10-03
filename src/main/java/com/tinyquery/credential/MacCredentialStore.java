@@ -34,7 +34,7 @@ import java.util.Locale;
  * <p>这不会让功能中断：读不到密码时本实现返回「没有密码」/失败，
  * {@code DataSourceManager} 会照既有的 {@code NEEDS_PASSWORD} 路径让用户手输 ——
  * 也就是说「钥匙串读不到」复用了一条已经存在的分支，<b>不会变成新的一类故障</b>。
- * 正式解决要等阶段 5 的代码签名与公证。</p>
+ * 正式解决要靠代码签名与公证，而本项目当前没有做（见 README 的「首次打开提示」）。</p>
  */
 public class MacCredentialStore implements CredentialStore {
 

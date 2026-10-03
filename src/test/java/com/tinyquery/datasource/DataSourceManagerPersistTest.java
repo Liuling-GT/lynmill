@@ -22,8 +22,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 第 10 步的落盘行为。重点在「密码绝不写进文件」——
- * 那是这一步里唯一会真正造成损害的地方。
+ * 配置落盘行为。重点在「密码绝不写进文件」——
+ * 那是这里唯一会真正造成损害的地方。
  */
 @DisplayName("DataSourceManager 配置落盘")
 class DataSourceManagerPersistTest {

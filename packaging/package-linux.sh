@@ -20,7 +20,7 @@
 #   TinyQuery-1.0.0-1.x86_64.deb               仅在传了 --deb 时
 #   TinyQuery-1.0.0-1.x86_64.rpm               仅在传了 --rpm 时
 #
-# ---------- 为什么默认只出 tar.gz，不出 deb/rpm（桌面化清单第 32 步）----------
+# ---------- 为什么默认只出 tar.gz，不出 deb/rpm ----------
 # Linux 桌面环境碎片化严重：.deb 只能在 Debian/Ubuntu 系装，.rpm 只能在
 # RedHat 系装，而 tar.gz 解压就能跑、覆盖所有发行版。所以先出 tar.gz ——
 # 覆盖面最大、成本最低、不依赖任何打包工具链。deb/rpm 按需再加。

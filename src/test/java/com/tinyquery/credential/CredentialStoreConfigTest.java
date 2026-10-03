@@ -8,7 +8,7 @@ import java.util.Locale;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 平台选择逻辑的测试（对应交接文档 5.3 的坑 ②）。
+ * 平台选择逻辑的测试。
  *
  * <p>这里验的核心不是「选得对不对」，而是<b>「任何情况下都恰好只有一个
  * CredentialStore Bean」</b>。原来的写法是每个实现各挂一个

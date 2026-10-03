@@ -31,16 +31,16 @@ public final class PathResolver {
     // 覆盖用户数据目录的环境变量
     private static final String HOME_ENV = "TINYQUERY_HOME";
 
-    // 锁文件名。第 4 步（单实例）使用
+    // 锁文件名。单实例保护（SingleInstanceGuard）使用
     private static final String LOCK_FILE_NAME = "tinyquery.lock";
 
-    // 日志子目录名。第 7 步（启动失败反馈）使用
+    // 日志子目录名。启动失败的反馈与事后排查都靠它
     private static final String LOG_DIR_NAME = "logs";
 
-    // 日志文件名。第 7 步（启动失败反馈）使用
+    // 日志文件名。启动失败的反馈与事后排查都靠它
     private static final String LOG_FILE_NAME = "tinyquery.log";
 
-    // 数据源配置文件名。第 10 步（数据源持久化）使用
+    // 数据源配置文件名。数据源持久化（DataSourceStore）使用
     private static final String DATA_FILE_NAME = "datasources.json";
 
     private PathResolver() {
@@ -65,7 +65,7 @@ public final class PathResolver {
     }
 
     /**
-     * 单实例锁文件路径。仅给出路径，不创建文件 —— 加锁由第 4 步负责。
+     * 单实例锁文件路径。仅给出路径，不创建文件 —— 加锁由 SingleInstanceGuard 负责。
      */
     public static Path getLockFile() {
         return getDataDir().resolve(LOCK_FILE_NAME);
@@ -92,7 +92,7 @@ public final class PathResolver {
     }
 
     /**
-     * 数据源配置文件路径。仅给出路径，不创建文件 —— 创建由第 10 步负责。
+     * 数据源配置文件路径。仅给出路径，不创建文件 —— 创建由 DataSourceStore 负责。
      *
      * <p>文件不存在是<b>完全正常</b>的状态（首次启动、用户从未注册过数据源），
      * 调用方必须把它当作「没有已保存的数据源」而不是错误。</p>

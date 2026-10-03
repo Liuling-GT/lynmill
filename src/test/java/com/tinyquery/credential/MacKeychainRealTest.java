@@ -215,8 +215,8 @@ class MacKeychainRealTest {
         String k = key();
         try {
             // Windows 的实测上限是 1280 个字符（UTF-16LE 2560 字节）。
-            // macOS 钥匙串理论上没有这么严的限制，这里探一下到底行不行 ——
-            // 结论会写进完成报告，不是断言「一定行」
+            // macOS 钥匙串理论上没这么严，这里探一下到底行不行 ——
+            // 所以下面不是断言「一定行」，而是「能存就必须能原样读回」
             String longPwd = "密".repeat(2000);
             CredentialResult w = store.write(k, "u", longPwd);
             if (w.success()) {

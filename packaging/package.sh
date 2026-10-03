@@ -101,11 +101,11 @@ jpackage \
 #      整个 TinyQuery.app 从磁盘上消失，jpackage-out 里只剩 .dmg
 # 加上 --force --deep --sign -（ad-hoc，不需要开发者证书）之后就正常了。
 #
-# ⚠️ 这【不是】阶段 5 的正式签名：ad-hoc 没有开发者身份、不能公证，
+# ⚠️ 这【不是】正式签名：ad-hoc 没有开发者身份、不能公证，
 #    用户拿到 dmg 仍然会被 Gatekeeper 拦（右键 → 打开 可绕过）。
-#    它只是让应用在本机跑得起来，从而让第 30 步的验证做得成。
-#    另外 ad-hoc 签名每次重建都会变（CDHash 不同），这正是清单 R46
-#    「重新打包后钥匙串可能重新弹窗」的根源 —— 见完成报告里的 A8。
+#    它只是让应用在本机跑得起来，从而让「双击验证」做得成。
+#    另外 ad-hoc 签名每次重建都会变（CDHash 不同），这正是
+#    「重新打包后钥匙串可能重新弹窗」的根源 —— 见 MacCredentialStore 的类注释。
 echo '正在做 ad-hoc 签名 ...'
 codesign --force --deep --sign - "$app"
 codesign --verify --verbose=2 "$app" 2>&1 | sed 's/^/  /' || true

@@ -36,10 +36,10 @@ public class TinyQueryApplication {
     // 这在本项目里是实打实的安全洞，而不是「多开了一个口」：
     // 首页 / 必须不带令牌可访问（浏览器得先拿到它才有得用），
     // 而首页 HTML 里就写着 window.__TINYQUERY_TOKEN__ ——
-    // 于是「能打开首页」就等于「拿到了令牌」，第 8 步的令牌校验形同虚设。
+    // 于是「能打开首页」就等于「拿到了令牌」，令牌校验形同虚设。
     //
     // 将来若要支持局域网访问，不能只改这一行：必须同时把「谁可以拿令牌」
-    // 从「能打开首页的人」换成真正的登录体系。详见桌面化清单第 12 步。
+    // 从「能打开首页的人」换成真正的登录体系。
     private static final String LOOPBACK_ADDRESS = "127.0.0.1";
 
     // 单个日志文件的上限，以及保留的历史文件个数。
@@ -61,7 +61,7 @@ public class TinyQueryApplication {
             // 捕获 Throwable 而不是 Exception：NoClassDefFoundError、
             // ExceptionInInitializerError 这类属于 Error，同样会让程序起不来，
             // 只 catch Exception 会把它们漏过去 —— 那正是一种「双击了没反应」。
-            // （第 6 步的 TrayIconInstaller 踩过同一个坑：AWTError 是 Error 不是 Exception）
+            // （TrayIconInstaller 踩过同一个坑：AWTError 是 Error 不是 Exception）
             StartupFailureDialog.report(failure);
             System.exit(1);
         }

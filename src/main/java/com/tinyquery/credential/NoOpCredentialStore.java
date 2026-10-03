@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
  * <p>如果不可用时干脆不注册 Bean，那么注入 {@code CredentialStore} 的
  * {@code DataSourceManager} 会因为找不到依赖而<b>启动失败</b> ——
  * 于是「Linux 上没装 keyring」这种完全正常的情况会让整个程序起不来。
- * 这与第 11 步的教训是同一条：<b>可选能力的缺失不能拖垮主流程。</b></p>
+ * 这与启动恢复时踩过的是同一条：<b>可选能力的缺失不能拖垮主流程。</b></p>
  *
  * <p>在这里，「不支持」的表现是：{@link #isAvailable()} 返回 false，
  * 界面把「保存密码」勾选框置灰并说明原因，其余功能一切照常。</p>
