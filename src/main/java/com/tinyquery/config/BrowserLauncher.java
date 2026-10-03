@@ -49,7 +49,11 @@ public class BrowserLauncher implements ApplicationListener<ApplicationReadyEven
         if (BrowserOpener.open(url)) {
             log.info("已打开浏览器：{}", url);
         } else {
-            log.warn("未能自动打开浏览器，请手动访问：{}", url);
+            // 带上可执行的补救指引。只说「请手动访问」用户不知道该怎么修 ——
+            // Linux 上默认浏览器没配好时，xdg-open 与 Desktop 两条路会一起失败
+            String hint = BrowserOpener.manualHint();
+            log.warn("未能自动打开浏览器，请手动访问：{}{}", url,
+                    hint.isEmpty() ? "" : "。" + hint);
         }
     }
 }

@@ -96,21 +96,49 @@ export function watchForShutdown(onShutdown, options = {}) {
   }
 }
 
+/*
+  关闭标签页的快捷键文案。
+
+  只在「网页关不掉自己」时才用得上，所以文案必须让用户能照着按。
+  macOS 的关闭快捷键是 ⌘W，其它平台是 Ctrl+W。
+*/
+export function closeShortcutHint() {
+  const platform = navigator.platform || navigator.userAgent || ''
+  return /mac/i.test(platform) ? '⌘W' : 'Ctrl+W'
+}
+
 /**
- * 尝试关掉当前标签页。
+ * 尝试关掉当前标签页；关不掉时回调一次，供调用方给出手动关闭的指引。
  *
- * 浏览器只允许脚本关闭「没有被导航过」的标签页（history.length 为 1）。
- * 我们是用系统命令直接打开地址的，正常情况下满足条件；
- * 但如果用户是从别的页面点进来的，浏览器会拒绝且不报错 ——
- * 所以调用方必须准备一个兜底界面，不能假设一定关得掉。
+ * <p>按 MDN 对 Window.close() 的规则：窗口是网页自己创建的、或者**没有被导航过**
+ * （history 长度仍为 1）时，浏览器才允许脚本关闭它。本页是应用用系统命令从外部
+ * 打开的标签页，属于后者 —— 从自动打开进来的全新标签页关得掉；
+ * 用户手动在浏览器里输地址进来、或标签页里本来就有别的页面时会被拒。</p>
  *
- * @returns {boolean} 是否成功发起关闭（不代表真的关掉了）
+ * <p>{@code window.close()} 被拒时**不会有任何提示**，所以这里不靠它的返回值判断，
+ * 而是延迟一点回头查 {@code window.closed} —— 那才是唯一可信的结果。
+ * 延迟是给浏览器留出真正执行关闭的时间。</p>
+ *
+ * @param {Function} [onStillOpen] 标签页仍然开着时调用（说明需要用户手动关）
+ * @returns {boolean} 是否成功发起了关闭动作（不代表真的关掉了）
  */
-export function tryCloseTab() {
+export function tryCloseTab(onStillOpen) {
+  let threw = false
   try {
     window.close()
-    return true
   } catch {
-    return false
+    // 个别浏览器会在这里抛异常，但更常见的是「什么都不做、也不报错」，
+    // 所以下面统一用 window.closed 判断结果，不依赖这里的分支
+    threw = true
   }
+
+  if (typeof onStillOpen === 'function') {
+    setTimeout(() => {
+      if (!window.closed) {
+        onStillOpen()
+      }
+    }, 400)
+  }
+
+  return !threw
 }

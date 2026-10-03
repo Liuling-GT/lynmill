@@ -181,8 +181,16 @@
     <!--
       后台进程结束后盖住整个界面：这时页面上任何按钮都点不动了，
       继续显示原界面只会让人以为是程序坏了。
+
       正常情况下上面已经调用 window.close() 把标签页关掉了，用户看不到这一层；
-      浏览器拒绝关闭时（例如页面是从别处点进来的），这一层就是兜底
+      这一层只在「关不掉」时出现。
+
+      按 MDN 对 Window.close() 的规则，窗口是网页自己创建的、或者**没有被导航过**
+      （history 长度仍为 1）时，浏览器才允许脚本关闭它。本页是应用用系统命令
+      从外部打开的标签页，属于后者：
+        · 自动打开 → 全新标签页，history 长度为 1 → 关得掉，看不到这一层
+        · 用户手动在浏览器里输过地址、或这个标签页里本来就有别的页面
+          → history 长度大于 1 → 被拒，而且**拒绝时不报错**
     -->
     <div v-if="appExited" class="exited-mask">
       <div class="exited-card">
@@ -191,7 +199,14 @@
           后台程序已经关闭，这个页面不会再响应任何操作。<br />
           现在可以关闭这个标签页了。
         </p>
-        <el-button type="primary" @click="tryCloseTab">关闭本页</el-button>
+        <el-button type="primary" @click="handleCloseTab">关闭本页</el-button>
+        <!--
+          按钮点了没反应时把快捷键写出来。直接用 @click="tryCloseTab" 是不行的：
+          那样点击事件对象会被当作回调参数传进去
+        -->
+        <p v-if="closeHintVisible" class="exited-hint">
+          浏览器不允许网页自己关闭标签页，请按 <kbd>{{ closeShortcut }}</kbd> 关闭
+        </p>
       </div>
     </div>
   </div>
@@ -206,7 +221,7 @@ import ChartPanel from './components/ChartPanel.vue'
 import { listDataSourceTypes } from './api/datasource'
 import { queryTable } from './api/query'
 import { tokenHeaders } from './api/token'
-import { tryCloseTab, watchForShutdown } from './api/lifecycle'
+import { closeShortcutHint, tryCloseTab, watchForShutdown } from './api/lifecycle'
 
 // 左侧功能项。icon 是组件本身，模板里用 <component :is> 渲染
 const NAV_ITEMS = [
@@ -321,16 +336,39 @@ const rawJson = computed(() => {
 // 后台程序是否已经退出。为 true 时盖一层遮罩，见模板末尾
 const appExited = ref(false)
 
+// window.close() 被浏览器拒绝时置为 true，用来显示「请按 Ctrl+W」的提示。
+// 什么时候会被拒：标签页**被导航过**（history 长度大于 1）时。
+// 从自动打开进来的全新标签页 history 长度为 1，不会被拒 —— 所以这个提示平时看不到，
+// 它是给「用户自己在浏览器里输地址进来」这种兜底场景准备的
+const closeHintVisible = ref(false)
+
+// 关闭快捷键的文案随平台变化（macOS 是 ⌘W）。进页面时算一次即可
+const closeShortcut = closeShortcutHint()
+
 // 停止存活监视的函数，组件卸载时调用，避免定时器泄漏
 let stopWatchingShutdown = null
 
-// 确认后台已退出：先试着直接关掉标签页，关不掉就靠遮罩兜底。
-// 浏览器只允许脚本关闭「没有被导航过」的标签页 —— 我们是用系统命令
-// 直接打开地址的，正常情况下满足；用户若是从别的页面点进来的就会被拒绝，
-// 而且拒绝时不会有任何提示，所以必须有遮罩
+// 统一的「关标签页」入口：关不掉就把快捷键提示显出来。
+// 不把提示写死在模板里，是因为正常情况（自动打开的全新标签页）窗口真的会关掉，
+// 用户根本看不到这一层
+const requestCloseTab = () => {
+  tryCloseTab(() => {
+    closeHintVisible.value = true
+  })
+}
+
+// 按钮的点击处理。不能直接写 @click="tryCloseTab" ——
+// 那样点击事件对象会被当成「关不掉时的回调」参数传进去
+const handleCloseTab = () => {
+  requestCloseTab()
+}
+
+// 确认后台已退出：先试着直接关掉标签页，关不掉才靠遮罩兜底 + 给快捷键指引。
+// 正常路径下 window.close() 会成功，用户看不到遮罩；
+// 只有被导航过的标签页会被拒，那时才需要这一层
 const handleAppExited = () => {
   appExited.value = true
-  tryCloseTab()
+  requestCloseTab()
 }
 
 onMounted(async () => {
@@ -877,5 +915,28 @@ const resolveFileName = (disposition) => {
   font-size: 13px;
   line-height: 1.7;
   color: var(--ink-2);
+}
+
+/*
+  浏览器拒绝关闭标签页时出现的提示。刻意放在按钮下方 ——
+  用户是先点按钮、发现没反应，才会低头看这行字
+*/
+.exited-hint {
+  margin: var(--sp-4) 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.exited-hint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
 }
 </style>

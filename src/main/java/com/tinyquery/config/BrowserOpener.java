@@ -4,9 +4,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.awt.Desktop;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 用系统默认浏览器打开一个 URL。
@@ -27,10 +31,36 @@ import java.util.Locale;
  *
  * <p>两级都失败返回 false，不抛异常 —— 打不开浏览器不是致命错误，
  * 服务本身是可用的，调用方提示用户手动访问即可。</p>
+ *
+ * <h2>为什么一级必须检验退出码（Linux 上踩过的坑）</h2>
+ * <p>早先的实现只判断「命令进程有没有启动起来」，起来就算成功。这在 Linux 上是错的：
+ * {@code xdg-open} 在<b>系统没有设置默认浏览器</b>时照常能启动，只是立刻以非 0
+ * 退出码失败、什么也不打开。于是得到一个<b>静默的假成功</b> —— 浏览器没打开，
+ * 应用却认为打开了，而 {@code Desktop} 那条退路永远轮不到。</p>
+ *
+ * <p>更麻烦的是 Linux 上这两条路<b>共用同一个前提</b>：{@code Desktop.browse()}
+ * 在 OpenJDK 里（{@code XDesktopPeer}）底层同样是去调 {@code xdg-open}。
+ * 所以默认浏览器没配好时，两条路会一起失败。这种情况下唯一有用的事
+ * 就是<b>把原因和怎么修说清楚</b>，见 {@link #manualHint(String)}。</p>
  */
 public final class BrowserOpener {
 
     private static final Logger log = LoggerFactory.getLogger(BrowserOpener.class);
+
+    /**
+     * 等待打开命令结束的宽限时间，单位秒。
+     *
+     * <p>为什么必须等：见类注释里「假成功」那一段。不等就判断成功，
+     * 会在 Linux 上产生「日志说打开了、实际没打开」的假象。</p>
+     *
+     * <p>为什么只等 2 秒：成功的 {@code rundll32} / {@code open} / {@code xdg-open}
+     * 都很快返回 —— 它们只负责把请求交给浏览器，不等浏览器退出。
+     * 失败同样是立刻返回。2 秒足够覆盖慢一些的机器。</p>
+     */
+    static final int COMMAND_GRACE_SECONDS = 2;
+
+    /** 捕获命令输出时最多保留多少字符。只为诊断，不必完整 */
+    private static final int MAX_CAPTURED_OUTPUT = 2000;
 
     private BrowserOpener() {
         // 工具类，不实例化
@@ -65,14 +95,81 @@ public final class BrowserOpener {
         if (command == null) {
             return false;
         }
+        return runAndCheck(command);
+    }
+
+    /**
+     * 执行打开命令，并判断它<b>是否真的成功</b>。
+     *
+     * <p>包可见，便于测试直接喂一个必定失败的命令（例如 {@code /bin/false}）
+     * 来验证「失败必须返回 false」，不必在测试里伪造操作系统。</p>
+     *
+     * @param command 命令数组，第一段是命令名
+     * @return true 表示命令成功退出、或仍在运行（说明请求已交给长期存活的进程）
+     */
+    static boolean runAndCheck(String[] command) {
+        return runAndCheck(command, COMMAND_GRACE_SECONDS);
+    }
+
+    /**
+     * 同上，但宽限时间可注入 —— 让「命令仍在运行」这条分支可被测到
+     * （传 0 秒时，任何还没退出的命令都会走那条分支）。
+     */
+    static boolean runAndCheck(String[] command, int graceSeconds) {
+        Process process;
         try {
-            // 只关心命令有没有成功启动，不等它退出 ——
-            // 浏览器进程可能长期存活，waitFor 会把启动流程挂住
-            new ProcessBuilder(command).start();
-            return true;
+            ProcessBuilder builder = new ProcessBuilder(command);
+            // 合并 stderr：失败原因（例如 xdg-open 的 "no method available for opening"）在那里
+            builder.redirectErrorStream(true);
+            process = builder.start();
         } catch (IOException e) {
             log.debug("系统命令 {} 执行失败", command[0], e);
             return false;
+        }
+
+        StringBuilder captured = new StringBuilder();
+        // 输出必须被读走，且在**独立线程**里读：
+        //   ① 管道缓冲区写满时子进程会阻塞在写上面，主线程就永远等不到它结束；
+        //   ② 但也不能在主线程同步读到 EOF —— 有些实现会把 stdout 交给浏览器，
+        //      那样读到最后也等不到 EOF，反而把启动流程挂住。
+        // 用守护线程：最坏情况它一直等到 JVM 退出，不影响主流程。
+        Thread pump = new Thread(() -> drainInto(process, captured), "tinyquery-browser-opener-output");
+        pump.setDaemon(true);
+        pump.start();
+
+        try {
+            if (!process.waitFor(graceSeconds, TimeUnit.SECONDS)) {
+                // 还在跑：请求已经交给某个长期存活的进程（浏览器本身），算成功。
+                // 不能 destroy —— 那可能正是用户的浏览器。
+                return true;
+            }
+            int code = process.exitValue();
+            if (code == 0) {
+                return true;
+            }
+            log.warn("打开浏览器的命令 {} 以退出码 {} 失败：{}",
+                    command[0], code, captured.isEmpty() ? "(无输出)" : captured.toString().trim());
+            return false;
+        } catch (InterruptedException e) {
+            // 被打断不等于命令失败。此时再去试 Desktop 反而可能打开两个窗口
+            Thread.currentThread().interrupt();
+            return true;
+        }
+    }
+
+    /** 把子进程输出读进 builder。读到 EOF 或出错为止；由调用方保证在守护线程里跑 */
+    private static void drainInto(Process process, StringBuilder sink) {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (sink.length() < MAX_CAPTURED_OUTPUT) {
+                    sink.append(line).append('\n');
+                }
+            }
+        } catch (IOException e) {
+            // 读不到输出不影响主流程，只是少一点诊断信息
+            log.debug("读取打开命令的输出失败", e);
         }
     }
 
@@ -129,5 +226,29 @@ public final class BrowserOpener {
             return new String[]{"xdg-open", url};
         }
         return null;
+    }
+
+    /**
+     * 两级都失败时，给用户一句<b>可执行</b>的补救指引；没有针对性建议时返回空串。
+     *
+     * <p>Linux 是唯一需要这句提示的平台：Windows 的 {@code rundll32} 与 macOS 的
+     * {@code open} 都直接依赖系统里写好的 URL 关联，几乎不会「两条路一起失败」；
+     * 而 Linux 上如果从没设置过默认浏览器，{@code xdg-open} 和 {@code Desktop.browse}
+     * 会一起失败，光说「请手动访问」用户并不知道该怎么修。</p>
+     *
+     * <p><b>纯函数</b>，包可见，仅用于测试与调用方拼装日志。</p>
+     */
+    static String manualHint(String osName) {
+        String os = osName == null ? "" : osName.toLowerCase(Locale.ROOT);
+        if (os.contains("linux") || os.contains("nix") || os.contains("nux")) {
+            return "Linux 上若从未设置默认浏览器，执行 xdg-settings set default-web-browser <浏览器>.desktop "
+                    + "（例如 firefox.desktop）即可修复";
+        }
+        return "";
+    }
+
+    /** 便捷重载：按当前系统给出提示 */
+    static String manualHint() {
+        return manualHint(System.getProperty("os.name", ""));
     }
 }
