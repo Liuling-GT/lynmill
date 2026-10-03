@@ -296,14 +296,16 @@ mvn test
 | **不支持的语法报"数据源不存在"** | 排查困难 | 见[上方说明](#-报错信息可能误导) |
 | **Linux 无法保存密码** | 每次要手输 | 尚未实现 Linux 的 Secret Service（D-Bus）凭据存储；界面里"保存密码"会置灰，功能不受影响 |
 | **Linux 缺中文字体时菜单显示方块** | 观感 | 装 `fonts-noto-cjk` 即可 |
-| **`.deb` 在极简系统上可能卸不掉** | 卸载 | 若系统没有 `/usr/share/desktop-directories`，`prerm` 会失败导致卸载中止。变通：`sudo dpkg --purge --force-all tinyquery`。详见下方 |
+| **`.deb` 在极简系统上卸不掉** | 卸载 | 仅影响最小化安装 / WSL / 纯服务器。带桌面的常规发行版**不受影响**（已实测确认）。变通：`sudo dpkg --purge --force-all tinyquery`。详见下方 |
 | **日志文件未强制 UTF-8** | 别的编辑器打开可能乱码 | 按系统默认编码写 |
 | **打包体积偏大** | 约 180 MB | jpackage 默认带完整 JDK；后续可用 jlink 裁剪到 60~80 MB |
 | **Intel Mac 暂无安装包** | 需自行构建 | 可用 jar 方式运行 |
 
 ### 关于 `.deb` 卸载失败（Linux）
 
-现象：`sudo dpkg -r tinyquery` 报
+> **先给结论：带桌面的常规发行版不会遇到这个问题。** 已在真实的 Ubuntu 虚拟机上实测：`sudo dpkg -r tinyquery` 正常完成，程序文件与菜单项都清除干净。下面说的是**最小化安装**（服务器、WSL、容器镜像）才会碰到的情况。
+
+现象：在极简系统上执行 `sudo dpkg -r tinyquery` 会报
 
 ```
 xdg-desktop-menu: No writable system menu directory found.
@@ -311,9 +313,9 @@ dpkg: error processing package tinyquery (--remove):
  installed tinyquery package pre-removal script subprocess returned error exit status 3
 ```
 
-原因：jpackage 生成的 `prerm` 脚本带 `set -e`，其中调用了 `xdg-desktop-menu uninstall`。该命令会**顺带处理 `*.directory` 文件**，而那条路径要求系统的 `/usr/share/desktop-directories` 存在且可写 —— 最小化安装、WSL、纯服务器上通常没有这个目录，于是命令以 3 退出，`set -e` 中止整个卸载，`/opt/tinyquery` 原封不动留着。
+原因：jpackage 生成的 `prerm` 脚本带 `set -e`，其中调用了 `xdg-desktop-menu uninstall`。该命令会**顺带处理 `*.directory` 文件**，而那条路径要求系统的 `/usr/share/desktop-directories` 存在且可写 —— 最小化安装上没有这个目录，于是命令以 3 退出，`set -e` 中止整个卸载，`/opt/tinyquery` 原封不动留着。
 
-**带桌面环境的常规发行版一般不受影响**（该目录由桌面组件提供）。
+（这个目录由桌面组件提供，所以装了桌面环境的发行版都有。）
 
 变通办法（任选）：
 
@@ -324,6 +326,12 @@ sudo dpkg --purge --force-all tinyquery
 # 2) 或先补上缺失的目录再正常卸载
 sudo mkdir -p /usr/share/desktop-directories
 sudo dpkg -r tinyquery
+```
+
+**另外**：`dpkg -r` 之后 `dpkg -l tinyquery` 会显示状态 `rc`，这是**正常的**，意思是「已卸载，但 dpkg 还保留着包的记录」（因为包里带了 `/opt` 这个目录条目）。程序确实已经删掉了。想连记录一起清掉：
+
+```bash
+sudo dpkg --purge tinyquery
 ```
 
 ---
