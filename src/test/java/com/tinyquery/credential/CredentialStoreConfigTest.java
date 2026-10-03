@@ -36,6 +36,7 @@ class CredentialStoreConfigTest {
                 "none 应当显式关掉保存密码");
         assertInstanceOf(WindowsCredentialStore.class, config.credentialStore("windows"));
         assertInstanceOf(MacCredentialStore.class, config.credentialStore("mac"));
+        assertInstanceOf(LinuxCredentialStore.class, config.credentialStore("linux"));
     }
 
     @Test
@@ -59,7 +60,14 @@ class CredentialStoreConfigTest {
         } else if (os().contains("windows")) {
             assertInstanceOf(WindowsCredentialStore.class, chosen,
                     "Windows 上的行为必须与改动前完全一致");
+        } else if (os().contains("linux")) {
+            assertInstanceOf(LinuxCredentialStore.class, chosen,
+                    "Linux 上应当选 Secret Service 实现（libsecret）");
         } else {
+            // 三个受支持平台之外的系统（*BSD 之类）。
+            // 这里刻意让判据只认 "linux"、不放宽成 contains("nix")：
+            // 那些系统上没有 libsecret，选成「能存密码」只会让用户看到
+            // 一个可点却永远存不上的勾选框 —— 判否反而更诚实
             assertInstanceOf(NoOpCredentialStore.class, chosen,
                     "其它平台应当优雅退化");
         }
@@ -100,8 +108,15 @@ class CredentialStoreConfigTest {
         CredentialStore chosen = config.credentialStore("linuх");
 
         assertNotNull(chosen);
+        // 笔误必须退回平台判断，而不是关掉功能。三个平台各自断言一次
         if (os().contains("mac") || os().contains("darwin")) {
             assertInstanceOf(MacCredentialStore.class, chosen,
+                    "笔误不该把功能关掉，应当退回平台判断");
+        } else if (os().contains("windows")) {
+            assertInstanceOf(WindowsCredentialStore.class, chosen,
+                    "笔误不该把功能关掉，应当退回平台判断");
+        } else if (os().contains("linux")) {
+            assertInstanceOf(LinuxCredentialStore.class, chosen,
                     "笔误不该把功能关掉，应当退回平台判断");
         }
     }

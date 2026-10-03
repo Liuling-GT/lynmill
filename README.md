@@ -42,7 +42,7 @@
 - **图表**：查询结果可以直接画成折线/柱状/饼图，聚合在服务端算
 - **导出 CSV**：带 UTF-8 BOM，Excel 打开中文列名不乱码
 - **数据源持久化**：注册过的数据源写在 `datasources.json` 里，重开程序自动恢复
-- **密码可选保存**：勾选后存进**系统凭据管理器**（Windows 凭据管理器 / macOS 钥匙串），不写进配置文件
+- **密码可选保存**：勾选后存进**系统凭据管理器**（Windows 凭据管理器 / macOS 钥匙串 / Linux Secret Service），不写进配置文件
 - **中文友好**：CSV 自动探测编码（UTF-8 / GBK）、剥离 BOM、支持中文路径与中文文件名
 - **只监听本机**：绑定 `127.0.0.1`，并带一次性访问令牌，局域网内其它机器访问不到
 
@@ -237,7 +237,8 @@ logs/tinyquery.log   运行日志 —— 出问题先看这里
 > ⚠️ **卸载程序不会清除已保存的密码。** 需要自己删：
 > - Windows：控制面板 → 凭据管理器 → Windows 凭据 → 找 `TinyQuery/...`
 > - macOS：钥匙串访问 → 搜 `TinyQuery`
-> - Linux：当前版本尚未支持保存密码（见[已知问题](#已知问题)）
+> - Linux：用「密码和密钥」（seahorse）之类的钥匙串管理工具搜 `TinyQuery`，或执行
+>   `secret-tool clear key 'TinyQuery/<数据源名>'`
 
 ---
 
@@ -294,7 +295,7 @@ mvn test
 | 问题 | 影响 | 说明 |
 |---|---|---|
 | **不支持的语法报"数据源不存在"** | 排查困难 | 见[上方说明](#-报错信息可能误导) |
-| **Linux 无法保存密码** | 每次要手输 | 尚未实现 Linux 的 Secret Service（D-Bus）凭据存储；界面里"保存密码"会置灰，功能不受影响 |
+| **Linux 需要 keyring 才能真正保存密码** | 存不上 | 已实现 Secret Service（libsecret）支持，但**系统里得有可用的 keyring**（GNOME Keyring / KWallet）。服务器版、精简发行版、纯窗口管理器环境往往没装或没启动，此时"保存密码"会报错、每次仍需手输。装法：`sudo apt install gnome-keyring libsecret-1-0` |
 | **Linux 缺中文字体时菜单显示方块** | 观感 | 装 `fonts-noto-cjk` 即可 |
 | **`.deb` 在极简系统上卸不掉** | 卸载 | 仅影响最小化安装 / WSL / 纯服务器。带桌面的常规发行版**不受影响**（已实测确认）。变通：`sudo dpkg --purge --force-all tinyquery`。详见下方 |
 | **日志文件未强制 UTF-8** | 别的编辑器打开可能乱码 | 按系统默认编码写 |

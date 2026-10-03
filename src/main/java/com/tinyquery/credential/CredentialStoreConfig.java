@@ -81,6 +81,8 @@ public class CredentialStoreConfig {
                 return new WindowsCredentialStore();
             case "mac":
                 return new MacCredentialStore();
+            case "linux":
+                return new LinuxCredentialStore();
             case "none":
                 return new NoOpCredentialStore(
                         "已通过配置禁用保存密码（" + STORE_PROPERTY + "=none）");
@@ -102,6 +104,13 @@ public class CredentialStoreConfig {
         }
         if (lower.contains("mac") || lower.contains("darwin")) {
             return new MacCredentialStore();
+        }
+        // Linux 单独判，判据只用 "linux"。
+        // 刻意不写成 contains("nix") 之类的宽判据 —— 那会把别的 Unix
+        // 也当成「能存密码」，而那里根本没有 libsecret。
+        // 判错的代价是用户看到「保存密码」可勾却永远存不上，比判否更糟
+        if (lower.contains("linux")) {
+            return new LinuxCredentialStore();
         }
         return new NoOpCredentialStore("当前系统（" + os + "）暂不支持保存密码");
     }
