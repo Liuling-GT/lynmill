@@ -3,6 +3,8 @@ package com.tinyquery.config;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -106,31 +108,84 @@ class BrowserOpenerTest {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows");
     }
 
+    /**
+     * 一个 POSIX shell 的路径。
+     *
+     * <p><b>为什么不用 {@code /bin/true} 与 {@code /bin/false}：</b>
+     * macOS 上这两个文件<b>不在 {@code /bin} 里，而在 {@code /usr/bin}</b>。
+     * 用错路径的后果不只是「测试变红」，更麻烦的是它会制造<b>假绿</b> ——
+     * 命令在 {@code ProcessBuilder.start()} 就抛 {@code IOException}，
+     * 被 {@code runAndCheck} 的 catch 分支兜成 false，于是
+     * {@code assertFalse(...)} 照样通过，但它<b>根本没验到「退出码非 0 必须判失败」</b>。
+     * 也就是说：在 macOS 上，这条规则一度是<b>没人看着的</b>。</p>
+     *
+     * <p>{@code sh} 是 POSIX 规定必须存在的；把退出码写成 {@code exit N}
+     * 还能让「这个夹具想验什么」一眼可见，不再依赖任何系统工具的摆放位置。</p>
+     */
+    private static String shell() {
+        return Files.isExecutable(Path.of("/bin/sh")) ? "/bin/sh" : "sh";
+    }
+
     /** 一个能启动、但立刻以非 0 退出码失败的命令 */
     private static String[] failingCommand() {
         return isWindows()
                 ? new String[]{"cmd", "/c", "exit", "1"}
-                : new String[]{"/bin/false"};
+                : new String[]{shell(), "-c", "exit 1"};
     }
 
     /** 一个正常退出（退出码 0）的命令 */
     private static String[] succeedingCommand() {
         return isWindows()
                 ? new String[]{"cmd", "/c", "exit", "0"}
-                : new String[]{"/bin/true"};
+                : new String[]{shell(), "-c", "exit 0"};
     }
 
     /** 一个必然还会继续存活一段时间的命令，用来走「仍在运行」那条分支 */
     private static String[] stillRunningCommand() {
         return isWindows()
                 ? new String[]{"cmd", "/c", "ping", "-n", "5", "127.0.0.1"}
-                : new String[]{"sleep", "5"};
+                : new String[]{shell(), "-c", "sleep 5"};
+    }
+
+    /**
+     * 夹具自检：先确认这个命令真的按预期退出，再去验产品行为。
+     *
+     * <p><b>这是本次修复的关键，比换路径更重要。</b>光把 {@code /bin/true}
+     * 换成能用的命令，只能让测试在当下变绿；加上这道自检，才能保证
+     * <b>「夹具本身没坏」</b>—— 万一哪天夹具又变成启动不了，这里会先失败，
+     * 而不是让 {@code assertFalse} 悄悄通过、把「没测到」伪装成「测过了」。</p>
+     *
+     * <p>这类「断言因为错误的原因而通过」的缺陷，比一个普通的红灯危险得多：
+     * 红灯至少会被看见。</p>
+     *
+     * @param expectedExit 期望的退出码
+     */
+    private static void assertFixtureExits(String[] command, int expectedExit) {
+        int actual;
+        try {
+            Process p = new ProcessBuilder(command).start();
+            p.getInputStream().close();
+            p.getErrorStream().close();
+            actual = p.waitFor();
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "测试夹具命令无法启动：" + String.join(" ", command)
+                            + " —— 它会让本测试「假绿」，必须先修夹具本身", e);
+        }
+        assertEquals(expectedExit, actual,
+                "测试夹具 " + String.join(" ", command) + " 的退出码不符预期，"
+                        + "下面的断言将验不到它声称要验的东西");
     }
 
     @Test
     @DisplayName("命令以非 0 退出码失败时必须返回 false —— 这是 Linux「假成功」的修复点")
     void nonZeroExitIsFailure() {
-        // 修复前的实现只看「进程有没有启动起来」，于是 /bin/false 这种
+        // 先确认夹具真的能启动、并以非 0 退出。
+        // 少了这一步，「命令根本启动不了」也会让下面的 assertFalse 通过 ——
+        // macOS 上真实发生过（/bin/false 不存在），那个绿是假的
+        assertFixtureExits(failingCommand(), 1);
+
+        // 修复前的实现只看「进程有没有启动起来」，于是这种
         // 「启动成功但立刻失败」的命令会被判成成功：
         // 浏览器没打开、日志却说打开了，Desktop 那条退路永远轮不到。
         // Linux 上没有设置默认浏览器时，xdg-open 正是这个行为。
@@ -140,6 +195,9 @@ class BrowserOpenerTest {
     @Test
     @DisplayName("命令以 0 退出算成功")
     void zeroExitIsSuccess() {
+        // 同上：夹具自己先得是「退出码 0」，否则这个测试同样会假绿
+        assertFixtureExits(succeedingCommand(), 0);
+
         assertTrue(BrowserOpener.runAndCheck(succeedingCommand()));
     }
 
