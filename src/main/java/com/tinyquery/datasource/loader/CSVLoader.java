@@ -3,6 +3,7 @@ package com.tinyquery.datasource.loader;
 import com.tinyquery.datasource.*;
 import com.tinyquery.datasource.spec.*;
 import com.tinyquery.executor.ColumnStore;
+import com.tinyquery.i18n.Messages;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +43,9 @@ public class CSVLoader implements DataLoader {
 
     // 编码配置的可选值。GBK 覆盖 Excel 中文版另存的 CSV，
     // 这类文件在按 UTF-8 读取时会整片乱码
+    //
+    // ENCODING_AUTO 是「存进配置文件的值」，不是文案 —— 它会被写进 DataSourceStore
+    // 并跨重启读回，翻译它会让老配置读不出来。界面上显示的名字走 field.encodingAuto
     private static final String ENCODING_AUTO = "自动";
     private static final String ENCODING_UTF8 = "UTF-8";
     private static final String ENCODING_GBK = "GBK";
@@ -57,31 +61,31 @@ public class CSVLoader implements DataLoader {
 
     @Override
     public String label() {
-        return "CSV 文件";
+        return Messages.get("type.csv");
     }
 
     @Override
     public List<FieldSpec> fields() {
         return List.of(
                 // 文件路径
-                FieldSpec.text("path", "文件路径", true,
-                        "CSV 文件的绝对路径或相对运行目录的路径",
+                FieldSpec.text("path", Messages.get("field.filePath"), true,
+                        Messages.get("field.filePathDesc"),
                         "data/sample.csv"),
-                // 文件编码：默认自动探测，探测不准时可手动指定
-                FieldSpec.select("encoding", "文件编码", false,
-                        "默认自动探测。若查询结果出现乱码（如「寮犱笁」这类无意义字符），"
-                                + "可尝试改为 GBK。这是 CSV 文件自身的编码，与数据库无关",
-                        List.of(ENCODING_AUTO, ENCODING_UTF8, ENCODING_GBK)),
+                // 文件编码：默认自动探测，探测不准时可手动指定。
+                // 选项值必须是配置里存的原值，「自动」的显示名单独翻译
+                FieldSpec.select("encoding", Messages.get("field.encoding"), false,
+                        Messages.get("field.encodingDesc"),
+                        List.of(Messages.get("field.encodingAuto"), ENCODING_UTF8, ENCODING_GBK)),
                 // 注释前缀：默认关闭，避免误伤以 # 开头的数据行
-                FieldSpec.text("commentPrefixes", "注释前缀", false,
-                        "多个前缀用英文逗号分隔，留空则不识别注释",
+                FieldSpec.text("commentPrefixes", Messages.get("field.commentPrefixes"), false,
+                        Messages.get("field.commentPrefixesDesc"),
                         "#,//,--"),
                 // 引号感知：默认关闭。描述只讲行为与例子，不展开转义规则
-                FieldSpec.bool("quoteAware", "引号感知", false,
-                        "引号内的分隔符不切分，例如 a,\"b,c\",d 解析为 3 列。文件中引号不成对时请关闭"),
+                FieldSpec.bool("quoteAware", Messages.get("field.quoteAware"), false,
+                        Messages.get("field.quoteAwareDesc")),
                 // 分隔符：默认英文逗号，把"反斜杠加字母 t"写清楚，避免用户去按 Tab 键
-                FieldSpec.text("delimiter", "分隔符", false,
-                        "默认英文逗号；填 \\t（反斜杠加字母 t 两个字符）表示制表符",
+                FieldSpec.text("delimiter", Messages.get("field.delimiter"), false,
+                        Messages.get("field.delimiterDesc"),
                         ",")
         );
     }
@@ -91,21 +95,21 @@ public class CSVLoader implements DataLoader {
         // 路径读不到就直接给出原因，不抛异常
         String path = config.getString("path");
         if (path == null) {
-            return ConnectionTestResult.fail("未填写文件路径");
+            return ConnectionTestResult.fail(Messages.get("error.pathRequired"));
         }
 
         File file = new File(path);
         if (!file.exists()) {
-            return ConnectionTestResult.fail("文件不存在：" + file.getAbsolutePath());
+            return ConnectionTestResult.fail(Messages.get("error.fileNotFound", file.getAbsolutePath()));
         }
         if (!file.isFile()) {
-            return ConnectionTestResult.fail("该路径不是文件：" + file.getAbsolutePath());
+            return ConnectionTestResult.fail(Messages.get("error.notAFile", file.getAbsolutePath()));
         }
         if (!file.canRead()) {
-            return ConnectionTestResult.fail("文件不可读（请检查权限）：" + file.getAbsolutePath());
+            return ConnectionTestResult.fail(Messages.get("error.fileNotReadable", file.getAbsolutePath()));
         }
         if (file.length() == 0) {
-            return ConnectionTestResult.fail("文件为空：" + file.getAbsolutePath());
+            return ConnectionTestResult.fail(Messages.get("error.fileEmpty", file.getAbsolutePath()));
         }
 
         // 与 load() 使用完全相同的切分与注释规则，保证「测得出」就等于「读得到」
@@ -134,15 +138,15 @@ public class CSVLoader implements DataLoader {
 
                 List<String> headers = splitLine(line, delimiter, quoteAware).fields();
                 if (headers.isEmpty()) {
-                    return ConnectionTestResult.fail("未能解析出表头");
+                    return ConnectionTestResult.fail(Messages.get("error.headerUnparsable"));
                 }
-                return ConnectionTestResult.ok("文件可读，共 " + headers.size() + " 列");
+                return ConnectionTestResult.ok(Messages.get("test.fileReadable", headers.size()));
             }
         } catch (IOException e) {
-            return ConnectionTestResult.fail("文件读取失败：" + e.getMessage());
+            return ConnectionTestResult.fail(Messages.get("error.fileReadFailed", e.getMessage()));
         }
 
-        return ConnectionTestResult.fail("未找到表头（文件只有空行或注释行）");
+        return ConnectionTestResult.fail(Messages.get("error.headerNotFound"));
     }
 
     @Override
@@ -151,6 +155,10 @@ public class CSVLoader implements DataLoader {
         char delimiter = resolveDelimiter(config);
         List<String> commentPrefixes = resolveCommentPrefixes(config);
         boolean quoteAware = config.getBoolean("quoteAware", false);
+
+        // 分配之前先估一估：整表会一直留在堆里，装不下就该在这里拒绝，
+        // 而不是读到一半 OutOfMemoryError 把程序打崩（见 MemoryGuard 的说明）
+        MemoryGuard.checkFile(new File(filePath).toPath());
 
         ColumnStore store = new ColumnStore();
 // 显式指定编码，不依赖平台默认编码。
@@ -214,7 +222,8 @@ public class CSVLoader implements DataLoader {
             }
         } catch (IOException e) {
             // 不再吞异常返回空 store，交由 GlobalExceptionHandler 统一转换
-            throw new DataSourceException("CSV 文件读取失败：" + filePath + "（" + e.getMessage() + "）", e);
+            throw new DataSourceException("error.csvReadFailed", new Object[]{filePath, e.getMessage()},
+                    Messages.get("error.csvReadFailed", filePath, e.getMessage()), e);
         }
         return store;
     }
@@ -294,8 +303,8 @@ public class CSVLoader implements DataLoader {
 
         String value = TAB_LITERAL.equals(raw) ? "\t" : raw;
         if (value.length() != 1) {
-            throw new DataSourceException(
-                    "数据源 [" + config.name() + "] 的分隔符必须是单个字符：" + raw);
+            throw new DataSourceException("error.delimiterTooLong", new Object[]{config.name(), raw},
+                    Messages.get("error.delimiterTooLong", config.name(), raw));
         }
         return value.charAt(0);
     }
@@ -323,7 +332,7 @@ public class CSVLoader implements DataLoader {
     // 读取配置里的编码名。缺失或为「自动」时返回自动标记
     private String resolveEncodingName(DataSourceConfig config) {
         String raw = config == null ? null : config.getString("encoding");
-        if (raw == null || ENCODING_AUTO.equals(raw)) {
+        if (raw == null || isAutoEncoding(raw)) {
             return ENCODING_AUTO;
         }
         if (ENCODING_GBK.equalsIgnoreCase(raw)) {
@@ -332,8 +341,20 @@ public class CSVLoader implements DataLoader {
         if (ENCODING_UTF8.equalsIgnoreCase(raw)) {
             return ENCODING_UTF8;
         }
-        throw new DataSourceException("不支持的文件编码：" + raw + "，可选 " + ENCODING_AUTO + " / "
-                + ENCODING_UTF8 + " / " + ENCODING_GBK);
+        throw new DataSourceException("error.encodingUnsupported", new Object[]{raw},
+                Messages.get("error.encodingUnsupported", raw));
+    }
+
+    /**
+     * 这个值是不是「自动」。
+     *
+     * <p>除了历史值 {@code "自动"}，还要认英文界面存下来的 {@code "Auto"} ——
+     * 下拉选项的显示名是翻译过的，用户选中的是「Auto」这个字符串本身，
+     * 它会原样存进配置文件。只认中文会让英文用户选的「自动」在下次启动时
+     * 变成「不支持的编码」。<b>两个值都要认，且都是合法输入。</b></p>
+     */
+    private boolean isAutoEncoding(String raw) {
+        return ENCODING_AUTO.equals(raw) || "Auto".equalsIgnoreCase(raw);
     }
 
     /**

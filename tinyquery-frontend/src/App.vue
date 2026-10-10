@@ -1,78 +1,101 @@
 <template>
-  <div class="shell">
-    <!-- ==================== 左侧功能栏 ==================== -->
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-dot" />
-        <span class="brand-name">TinyQuery</span>
-      </div>
+  <!-- ConfigProvider 驱动 Element Plus 自带文案的语言。
+       必须走这个组件才能响应式切换 —— app.use(ElementPlus, { locale })
+       是静态注入，切语言时不会跟着变 -->
+  <el-config-provider :locale="elementLocale">
+    <div class="shell">
+      <!-- ==================== 左侧功能栏 ==================== -->
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-dot" />
+          <span class="brand-name">TinyQuery</span>
+        </div>
 
-      <nav class="nav">
-        <button
-          v-for="item in NAV_ITEMS"
-          :key="item.key"
-          type="button"
-          class="nav-item"
-          :class="{ 'is-active': activeNav === item.key }"
-          @click="activeNav = item.key"
-        >
-          <el-icon class="nav-icon"><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
-        </button>
-      </nav>
+        <nav class="nav">
+          <button
+            v-for="item in navItems"
+            :key="item.key"
+            type="button"
+            class="nav-item"
+            :class="{ 'is-active': activeNav === item.key }"
+            @click="activeNav = item.key"
+          >
+            <el-icon class="nav-icon"><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </button>
+        </nav>
 
-      <div class="sidebar-foot">本地查询引擎 · V1.0.0</div>
-    </aside>
+        <div class="sidebar-foot">{{ t('app.subtitle') }}</div>
+      </aside>
 
-    <!-- ==================== 右侧内容区 ==================== -->
-    <main class="main">
-      <!-- ---------- 数据源 ---------- -->
-      <section v-show="activeNav === 'datasource'" class="panel">
-        <header class="panel-head">
-          <div>
-            <h2 class="panel-title">数据源</h2>
-            <p class="panel-sub">注册 CSV 文件或数据库连接，注册后可在 SQL 的 FROM 中按名称引用</p>
-          </div>
-        </header>
+      <!-- ==================== 右侧内容区 ==================== -->
+      <main class="main">
+        <!-- ---------- 设置 ---------- -->
+        <SettingsPanel v-show="activeNav === 'settings'" />
 
-        <DataSourceForm :types="types" @registered="handleRegistered" />
-        <DataSourcePanel ref="panelRef" />
-      </section>
+        <!-- ---------- 数据源 ---------- -->
+        <section v-show="activeNav === 'datasource'" class="panel">
+          <header class="panel-head">
+            <div>
+              <h2 class="panel-title">{{ t('datasource.title') }}</h2>
+              <p class="panel-sub">{{ t('datasource.subtitle') }}</p>
+            </div>
+          </header>
 
-      <!-- ---------- 查询 ---------- -->
-      <section v-show="activeNav === 'query'" class="panel">
-        <header class="panel-head">
-          <div>
-            <h2 class="panel-title">查询</h2>
-            <p class="panel-sub">支持 SELECT 投影、WHERE 条件、ORDER BY 单列排序与 LIMIT</p>
-          </div>
-        </header>
+          <DataSourceForm :types="types" @registered="handleRegistered" />
+          <DataSourcePanel ref="panelRef" :types="types" />
+        </section>
 
-        <textarea
-          v-model="sql"
-          class="sql-input"
-          spellcheck="false"
-          placeholder="输入 SQL，例如 select * from sample.csv"
-          @keydown.ctrl.enter="executeQuery(true)"
-          @keydown.meta.enter="executeQuery(true)"
-        />
+        <!-- ---------- 查询 ---------- -->
+        <section v-show="activeNav === 'query'" class="panel">
+          <header class="panel-head">
+            <div>
+              <h2 class="panel-title">{{ t('query.title') }}</h2>
+              <p class="panel-sub">{{ t('query.subtitle') }}</p>
+            </div>
+          </header>
+
+          <textarea
+            v-model="sql"
+            class="sql-input"
+            spellcheck="false"
+            :placeholder="t('query.placeholder')"
+            @input="editedSql = true"
+            @keydown.ctrl.enter="executeQuery(true)"
+            @keydown.meta.enter="executeQuery(true)"
+          />
 
         <!-- 导出按钮不在这里 —— 它导出的是结果，放在「结果」页更顺 -->
         <div class="action-row">
           <el-button type="primary" :loading="querying" @click="executeQuery(true)">
-            执行
+            {{ t('query.run') }}
           </el-button>
-          <span class="action-hint">Ctrl + Enter 执行</span>
+          <span class="action-hint">{{ t('query.shortcut') }}</span>
         </div>
 
         <!-- 执行失败发生在本页，提示留在这里 -->
         <el-alert
-          v-if="errorMessage"
+          v-if="queryError"
           type="error"
           show-icon
           :closable="false"
           class="panel-alert"
-          :title="errorMessage"
+          :title="queryError"
+        />
+
+        <!--
+          补充提示：与报错一上一下并列，报错在上。
+          典型场景是列名/数据源名只差大小写 —— 报错说「找不到」，
+          这行紫字告诉用户「你可能想写 Salary」。借 success 配色，
+          颜色在 tokens.css 的 .hint-alert 里统一给
+        -->
+        <el-alert
+          v-if="errorHint"
+          type="success"
+          show-icon
+          :closable="false"
+          class="panel-alert hint-alert"
+          :title="errorHint"
         />
       </section>
 
@@ -80,7 +103,7 @@
       <section v-show="activeNav === 'result'" class="panel">
         <header class="panel-head">
           <div>
-            <h2 class="panel-title">结果</h2>
+            <h2 class="panel-title">{{ t('result.title') }}</h2>
             <p class="panel-sub">{{ resultSummary }}</p>
           </div>
 
@@ -95,20 +118,20 @@
             :loading="exporting"
             @click="exportQuery"
           >
-            {{ exporting ? '导出中…' : '导出 CSV' }}
+            {{ exporting ? t('result.exporting') : t('result.export') }}
           </el-button>
         </header>
 
         <el-empty
           v-if="!hasResult"
-          description="还没有查询结果，先在「查询」里执行一条 SQL"
+          :description="t('result.noResult')"
           :image-size="90"
         />
 
         <el-tabs v-else v-model="activeTab">
           <el-tab-pane name="table">
             <template #label>
-              <span>表格（{{ returnedRows }} 行）</span>
+              <span>{{ t('result.tabTableWithRows', { count: returnedRows }) }}</span>
             </template>
 
             <!-- 表格按索引取值（c0 / c1 ...）而非按列名，避免列名重名或含特殊字符时取值失败 -->
@@ -118,7 +141,7 @@
               stripe
               size="small"
               max-height="520"
-              empty-text="无数据"
+              :empty-text="t('common.empty')"
             >
               <el-table-column
                 v-for="(name, i) in displayColumns"
@@ -146,7 +169,7 @@
 
           <el-tab-pane name="json">
             <template #label>
-              <span>原始 JSON</span>
+              <span>{{ t('result.tabJson') }}</span>
             </template>
             <pre class="raw-json">{{ rawJson }}</pre>
           </el-tab-pane>
@@ -157,13 +180,13 @@
       <section v-show="activeNav === 'chart'" class="panel">
         <header class="panel-head">
           <div>
-            <h2 class="panel-title">图表</h2>
-            <p class="panel-sub">按维度聚合，基于全量数据，不受表格分页影响</p>
+            <h2 class="panel-title">{{ t('chart.title') }}</h2>
+            <p class="panel-sub">{{ t('chart.subtitle') }}</p>
           </div>
 
           <!-- 能否导出由 ChartPanel 算好后传上来 —— 动画途中会截到半张图 -->
           <el-button size="small" :disabled="!chartCanExport" @click="handleExportChart">
-            导出 PNG
+            {{ t('chart.exportPng') }}
           </el-button>
         </header>
 
@@ -194,57 +217,93 @@
     -->
     <div v-if="appExited" class="exited-mask">
       <div class="exited-card">
-        <div class="exited-title">TinyQuery 已退出</div>
+        <div class="exited-title">{{ t('app.exited.title') }}</div>
         <p class="exited-text">
-          后台程序已经关闭，这个页面不会再响应任何操作。<br />
-          现在可以关闭这个标签页了。
+          {{ t('app.exited.text') }}<br />
+          {{ t('app.exited.text2') }}
         </p>
-        <el-button type="primary" @click="handleCloseTab">关闭本页</el-button>
+        <el-button type="primary" @click="handleCloseTab">{{ t('app.exited.close') }}</el-button>
         <!--
           按钮点了没反应时把快捷键写出来。直接用 @click="tryCloseTab" 是不行的：
           那样点击事件对象会被当作回调参数传进去
         -->
         <p v-if="closeHintVisible" class="exited-hint">
-          浏览器不允许网页自己关闭标签页，请按 <kbd>{{ closeShortcut }}</kbd> 关闭
+          {{ t('app.exited.shortcutHint', { key: closeShortcut }) }}
         </p>
       </div>
     </div>
-  </div>
+    </div>
+  </el-config-provider>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Coin, EditPen, Grid, TrendCharts } from '@element-plus/icons-vue'
+import { Coin, EditPen, Grid, Setting, TrendCharts } from '@element-plus/icons-vue'
+// 导出失败的提示走气泡：它是一次性动作的结果，不该常驻，
+// 更不该把已经查出来的结果表格顶掉
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+import elZhCn from 'element-plus/es/locale/lang/zh-cn'
+import elEnUs from 'element-plus/es/locale/lang/en'
 import DataSourceForm from './components/DataSourceForm.vue'
 import DataSourcePanel from './components/DataSourcePanel.vue'
 import ChartPanel from './components/ChartPanel.vue'
-import { listDataSourceTypes } from './api/datasource'
-import { queryTable } from './api/query'
-import { tokenHeaders } from './api/token'
+import SettingsPanel from './components/SettingsPanel.vue'
+import { listDataSourceTypes, listDataSources } from './api/datasource'
+import { queryTable, stripErrorPrefix } from './api/query'
+import { requestHeaders } from './api/token'
 import { closeShortcutHint, tryCloseTab, watchForShutdown } from './api/lifecycle'
 
-// 左侧功能项。icon 是组件本身，模板里用 <component :is> 渲染
-const NAV_ITEMS = [
-  { key: 'datasource', label: '数据源', icon: Coin },
-  { key: 'query', label: '查询', icon: EditPen },
-  { key: 'result', label: '结果', icon: Grid },
-  { key: 'chart', label: '图表', icon: TrendCharts },
-]
+const { t, locale } = useI18n()
+
+// Element Plus 自带文案的语言包。跟着 i18n 的 locale 走，
+// 否则会出现「按钮是中文、分页是英文」的半截状态
+const elementLocale = computed(() => (locale.value === 'en' ? elEnUs : elZhCn))
+
+// 左侧功能项。icon 是组件本身，模板里用 <component :is> 渲染。
+// label 存的是词条键而不是文案 —— 切换语言时要跟着变
+const navItems = computed(() => [
+  { key: 'datasource', labelKey: 'app.nav.datasource', icon: Coin },
+  { key: 'query', labelKey: 'app.nav.query', icon: EditPen },
+  { key: 'result', labelKey: 'app.nav.result', icon: Grid },
+  { key: 'chart', labelKey: 'app.nav.chart', icon: TrendCharts },
+  // 设置放最底部：低频入口，不打断「数据源 → 查询 → 结果 → 图表」的主流程
+  { key: 'settings', labelKey: 'app.nav.settings', icon: Setting },
+])
 
 // 默认停在「数据源」而不是「查询」：
 // 没有数据源时查询什么都查不了，直接甩一个 SQL 界面只会让人困惑「该填什么」。
 // 而且真实使用顺序本来就是先加数据源、再写 SQL，界面的初始位置应当与它一致
 const activeNav = ref('datasource')
 
-const sql = ref('select count(*) from huge.csv')
+// 初始留空，等 onMounted 拉到数据源后填成「最新那个数据源」的全表查询。
+// 一个数据源都没有时保持为空 —— 那时写什么都查不了，空白反而更诚实
+const sql = ref('')
+
+// 用户是否动过输入框。动过之后就不再自动改写默认 SQL
+const editedSql = ref(false)
 
 // 结果状态
 const columns = ref([])
 const columnTypes = ref([])
 const data = ref([])
 const totalRows = ref(0)
+// 后端返回的 hasMore。这里只做「存下来 + 在 JSON 标签页里原样透出」，
+// 不驱动任何按钮逻辑 —— 翻页靠 totalRows 与 pageSize 算，翻过头也只是拿到空数组。
+// 不是漏接了逻辑，见 QueryResponse.java 里 hasMore / elapsed 那段的说明
 const hasMore = ref(false)
-const errorMessage = ref('')
+
+/*
+ * 查询侧的错误。只有它参与 hasResult 判定 —— 查询失败时确实没有数据可展示。
+ *
+ * 导出错误不写这里：导出失败时数据好端端在，把它写进来会让 hasResult
+ * 变成 false，整张表连同数据一起消失，用户会以为查询结果丢了。
+ * 见下方的 exportError
+ */
+const queryError = ref('')
+
+// 报错下方的紫色补充提示，如「您可能想要访问 "Salary"」。没有时为 ''
+const errorHint = ref('')
 const activeTab = ref('table')
 
 // 上次执行成功的 SQL。图表用它聚合，导出也用它 ——
@@ -259,7 +318,13 @@ const pageSize = ref(50)
 const querying = ref(false)
 const exporting = ref(false)
 
-// 后端下发的数据源类型描述，驱动配置表单动态渲染
+// 后端下发的数据源类型描述，驱动配置表单动态渲染。
+//
+// 【里面的文案是会变的】类型名、字段名、字段说明都由后端按请求头
+// X-TinyQuery-Locale 下发，所以切换语言后必须重新取一次 —— 否则界面外壳
+// 变成英文了，这四处却还停在上一份（见下方的 watch）。
+// 曾经就是这样：切到英文再切回中文，配置项名字、问号提示、类型下拉、
+// 已注册数据源的类型名会一直显示英文。
 const types = ref([])
 const panelRef = ref(null)
 
@@ -272,9 +337,10 @@ const chartCanExport = ref(false)
 // 本次实际返回的行数
 const returnedRows = computed(() => data.value.length)
 
-// 是否有可展示的结果
+// 是否有可展示的结果。只看查询侧的错误 ——
+// 导出失败不该让已经查出来的数据消失
 const hasResult = computed(
-  () => errorMessage.value === '' && (columns.value.length > 0 || data.value.length > 0),
+  () => queryError.value === '' && (columns.value.length > 0 || data.value.length > 0),
 )
 
 // 表头：后端未返回列名时按列数生成占位表头，保证表格仍可读
@@ -283,20 +349,25 @@ const displayColumns = computed(() => {
     return columns.value
   }
   const width = data.value.length > 0 ? data.value[0].length : 0
-  return Array.from({ length: width }, (_, i) => `第 ${i + 1} 列`)
+  return Array.from({ length: width }, (_, i) =>
+    t('result.placeholderColumn', { n: i + 1 }))
 })
 
 // 结果页的副标题：有结果时当分页说明用，没有时给一句引导
 const resultSummary = computed(() => {
   if (!hasResult.value) {
-    return '执行查询后，明细数据会显示在这里'
+    return t('result.emptyHint')
   }
   if (totalRows.value <= pageSize.value) {
-    return `共 ${totalRows.value} 行`
+    return t('result.rows', { count: totalRows.value })
   }
   const from = (currentPage.value - 1) * pageSize.value + 1
   const to = Math.min(currentPage.value * pageSize.value, totalRows.value)
-  return `共 ${totalRows.value} 行，当前显示第 ${from}-${to} 行`
+  return t('result.summary', {
+    total: totalRows.value,
+    from,
+    to,
+  })
 })
 
 // 把后端的「数组的行」转成 el-table 需要的「对象的行」。
@@ -371,6 +442,52 @@ const handleAppExited = () => {
   requestCloseTab()
 }
 
+/*
+ * 默认 SQL 跟随最新注册的数据源。
+ *
+ * 早先是个写死的 'select count(*) from huge.csv' —— 那名字只在本机凑巧存在，
+ * 换个环境就是一句必然报错的 SQL，用户第一眼看到的就是红字。
+ * 现在由已注册的数据源生成 select * from <名字>，开箱即可执行。
+ *
+ * 「最新」按 registeredAt 判定，不靠数组顺序：后端返回的列表是按
+ * 「类型 + 名称」排过序的，顺序里读不出谁先谁后。老数据源没有这个字段时为 0，
+ * 自然排在最后 —— 此时退回列表末尾那个，与旧行为一致。
+ *
+ * 只在用户还没动过输入框时替换：用户敲了一半的语句不能被覆盖掉
+ */
+const applyDefaultSql = (items) => {
+  if (editedSql.value || !Array.isArray(items) || items.length === 0) {
+    return
+  }
+
+  // 兼容后端将来直接下发字符串数组的形态
+  const names = items
+    .map((item) => (typeof item === 'string' ? { name: item, registeredAt: 0 } : item))
+    .filter((item) => item && typeof item.name === 'string' && item.name !== '')
+
+  if (names.length === 0) {
+    return
+  }
+
+  let latest = names[0]
+  for (const item of names) {
+    if ((item.registeredAt || 0) > (latest.registeredAt || 0)) {
+      latest = item
+    }
+  }
+
+  sql.value = `select * from ${latest.name}`
+}
+
+const refreshDataSources = async () => {
+  try {
+    const list = await listDataSources()
+    applyDefaultSql(list)
+  } catch {
+    // 取不到就保持原样（此时输入框为空），不打扰用户
+  }
+}
+
 onMounted(async () => {
   // 存活监视要尽早开始，且不能被下面那个请求的成败影响
   stopWatchingShutdown = watchForShutdown(handleAppExited)
@@ -378,8 +495,11 @@ onMounted(async () => {
   try {
     types.value = await listDataSourceTypes()
   } catch (error) {
-    errorMessage.value = error.message
+    queryError.value = 'Error: ' + error.message
   }
+
+  // 与 types 分开 try：上面失败不该连累默认 SQL
+  await refreshDataSources()
 })
 
 onUnmounted(() => {
@@ -388,24 +508,67 @@ onUnmounted(() => {
   }
 })
 
-// 注册成功后刷新数据源列表
+/*
+ * 语言一变就重新取一次类型元数据。
+ *
+ * types 里的文案（类型名、字段名、字段说明）是后端按语言下发的，
+ * 不是前端词条 —— 所以切语言时它不会自己变，必须重取。
+ *
+ * 不重取的后果实测过：从中文切到英文再切回中文，界面上「数据源类型」
+ * 下拉、配置项名字、名字右边的问号提示、以及已注册数据源分组标题
+ * 会一直停留在英文 —— 因为那四处都读同一份 types。
+ *
+ * 放在 watch 里而不是切语言的按钮里：语言可能从多处改变
+ * （设置面板、启动时的 reconcileLocale 与服务端对齐），
+ * 挂在 locale 上才能全都覆盖到。
+ *
+ * 失败不打扰用户：保留原有 types，界面顶多是语言没跟上，
+ * 不影响已经注册的数据源与查询
+ */
+watch(locale, async () => {
+  try {
+    types.value = await listDataSourceTypes()
+  } catch {
+    // 保留旧值
+  }
+})
+
+// 注册成功后刷新数据源列表，并让默认 SQL 跟上新注册的那个
 const handleRegistered = () => {
   if (panelRef.value) {
     panelRef.value.load()
   }
+  refreshDataSources()
 }
 
-// 切页：重新向后端请求。resetToFirstPage 为 true 时（点执行）先回到第 1 页
-const executeQuery = async (resetToFirstPage = false) => {
+/*
+ * 执行查询。
+ *
+ * @param sqlOverride       显式指定要执行的 SQL。翻页时传 executedSql，
+ *                          保证翻的是当前结果集；不传则取输入框内容（点「执行」）
+ * @param resetToFirstPage  是否先回到第 1 页。点「执行」和切换每页条数时为 true
+ *
+ * 两种调用方式不能合并成一个布尔参数：翻页要「用旧 SQL + 保持页码」，
+ * 点执行要「用新 SQL + 回到第 1 页」，是两组独立的意图
+ */
+const executeQuery = async (sqlOverrideOrReset = false) => {
+  let requestSql
+  let resetToFirstPage
+
+  if (typeof sqlOverrideOrReset === 'string') {
+    requestSql = sqlOverrideOrReset
+    resetToFirstPage = false
+  } else {
+    requestSql = sql.value
+    resetToFirstPage = sqlOverrideOrReset === true
+  }
+
   if (resetToFirstPage) {
     currentPage.value = 1
   }
-  errorMessage.value = ''
+  queryError.value = ''
+  errorHint.value = ''
   querying.value = true
-
-  // 记下这次请求的 SQL，成功后才写进 executedSql ——
-  // 失败时保留上一次成功的值，图表不会突然变成空
-  const requestSql = sql.value
 
   try {
     const body = await queryTable({
@@ -431,23 +594,58 @@ const executeQuery = async (resetToFirstPage = false) => {
     activeNav.value = 'result'
   } catch (error) {
     resetResult()
-    errorMessage.value = 'Error: ' + error.message
+    // 后端可能带 "error:" 前缀（SQLParser 那组）也可能不带（数据源那组），
+    // api 层已把前缀剥掉，这里统一补上 "Error: "，界面风格才一致
+    queryError.value = 'Error: ' + error.message
+    errorHint.value = error.hint || ''
   } finally {
     querying.value = false
   }
 }
 
-// 切页
-const handlePageChange = (page) => {
+/*
+ * 切页。
+ *
+ * 必须用 executedSql（上次执行成功的那条），不能用输入框里的实时内容。
+ * 否则「执行了 A、把输入框改成 B、点下一页」会让表格切到 B 的数据，
+ * 而图表和导出还在用 A —— 同一屏上三份数据对不上。
+ *
+ * 输入框改了但没执行时，先问一句再决定，不静默用哪一个
+ */
+const handlePageChange = async (page) => {
+  if (sql.value !== executedSql.value) {
+    try {
+      await ElMessageBox.confirm(
+        t('query.changedText'),
+        t('query.changedTitle'),
+        {
+          type: 'warning',
+          confirmButtonText: t('query.runNew'),
+          cancelButtonText: t('query.keepOld'),
+        },
+      )
+    } catch {
+      // 选「沿用上次结果」：在当前这条 executedSql 的结果集里翻页
+      currentPage.value = page
+      executeQuery(executedSql.value)
+      return
+    }
+    // 选「执行新 SQL」：回到第一页重新查
+    executeQuery(true)
+    return
+  }
+
   currentPage.value = page
-  executeQuery()
+  executeQuery(executedSql.value)
 }
 
-// 改每页条数：回到第一页重新请求
+// 改每页条数：回到第一页重新请求。
+// 与翻页同理，改的是分页参数、不是 SQL —— 必须沿用 executedSql，
+// 否则输入框里改了没执行的内容会把结果集换掉
 const handleSizeChange = (size) => {
   pageSize.value = size
   currentPage.value = 1
-  executeQuery()
+  executeQuery(executedSql.value)
 }
 
 // 清空上一批结果，避免失败时旧数据残留造成误读
@@ -496,14 +694,16 @@ const exportQuery = async () => {
   }
 
   exporting.value = true
-  errorMessage.value = ''
+  // 导出错误一律走右上角气泡，不写进 queryError ——
+  // 写进去会让 hasResult 变 false，整张表连同已查出的数据一起消失
+  errorHint.value = ''
 
   try {
     const response = await fetch('/api/query/export', {
       method: 'POST',
       // 导出走原生 fetch 而不是 axios，所以令牌得自己带上 ——
       // 这是三处 API 调用里最容易漏掉的一处
-      headers: { 'Content-Type': 'application/json', ...tokenHeaders() },
+      headers: requestHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ sql: targetSql }),
     })
 
@@ -511,15 +711,16 @@ const exportQuery = async () => {
     // JSON 错误体分支（后端失败时回的也是 200）。不拦的话会被下面的
     // blob() 当成数据，下载成一个内容是错误页的 .csv
     if (!response.ok) {
-      errorMessage.value = `导出失败：服务端返回 ${response.status}`
+      ElMessage.error(t('result.exportHttpError', { status: response.status }))
       return
     }
 
-    // 后端在解析或过滤阶段失败时，会用 JSON 错误体回包而不是 CSV
+    // 后端在解析或过滤阶段失败时，会用 JSON 错误体回包而不是 CSV。
+    // 导出走原生 fetch，不经过 api 层的拦截器，所以前缀得在这里自己剥
     const contentType = response.headers.get('Content-Type') || ''
     if (contentType.includes('application/json')) {
       const body = await response.json()
-      errorMessage.value = body.message || '导出失败'
+      ElMessage.error('Error: ' + stripErrorPrefix(body.message || t('result.exportFailed')))
       return
     }
 
@@ -536,7 +737,7 @@ const exportQuery = async () => {
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
   } catch (error) {
-    errorMessage.value = '导出失败：' + error.message
+    ElMessage.error('Error: ' + stripErrorPrefix(error.message))
   } finally {
     exporting.value = false
   }
@@ -610,7 +811,7 @@ const resolveFileName = (disposition) => {
   width: 13px;
   height: 13px;
   border-radius: 4px;
-  background: linear-gradient(140deg, #c4b5fd, var(--accent) 55%, var(--accent-deep));
+  background: linear-gradient(140deg, var(--accent-bright), var(--accent) 55%, var(--accent-deep));
   box-shadow:
     0 2px 8px var(--accent-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
@@ -657,16 +858,16 @@ const resolveFileName = (disposition) => {
 
 /* 悬停提亮、选中压深 —— 两档方向相反，切换时不会分不清是哪一种状态 */
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--surface-raised);
   color: var(--ink);
 }
 
 /* 选中态：深紫药丸。全站最大的一块重色，落点明确 */
 .nav-item.is-active {
   background: var(--plum);
-  color: #fff;
+  color: var(--pure-white);
   box-shadow:
-    0 6px 18px rgba(36, 26, 51, 0.2),
+    var(--shadow-plum),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
@@ -889,7 +1090,7 @@ const resolveFileName = (disposition) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(36, 26, 51, 0.45);
+  background: var(--scrim);
   backdrop-filter: var(--glass-filter-light);
 }
 

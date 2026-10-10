@@ -3,6 +3,7 @@ package com.tinyquery.datasource.loader;
 import com.tinyquery.datasource.spec.DataSourceConfig;
 import com.tinyquery.datasource.spec.DataSourceException;
 import com.tinyquery.datasource.spec.FieldSpec;
+import com.tinyquery.i18n.Messages;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -68,28 +69,27 @@ public class MySQLLoader extends JdbcLoader {
     public List<FieldSpec> fields() {
         return List.of(
                 // 驱动：决定 JDBC URL 前缀。默认 MySQL，不影响既有数据源
-                FieldSpec.select("driver", "驱动", false,
-                        "要连接的数据库类型。两者协议兼容、默认端口相同，"
-                                + "但认证方式与连接参数略有差异，请按实际数据库选择",
+                FieldSpec.select("driver", Messages.get("field.driver"), false,
+                        Messages.get("field.driverDesc"),
                         List.of(DRIVER_MYSQL, DRIVER_MARIADB)),
-                FieldSpec.text("host", "主机地址", true,
-                        "数据库服务器地址，不含协议前缀与端口",
+                FieldSpec.text("host", Messages.get("field.host"), true,
+                        Messages.get("field.hostDesc"),
                         "localhost"),
-                FieldSpec.number("port", "端口", false,
-                        "留空则使用默认端口 3306",
+                FieldSpec.number("port", Messages.get("field.port"), false,
+                        Messages.get("field.portDesc", defaultPort()),
                         "3306"),
-                FieldSpec.text("database", "数据库名", true,
-                        "目标库名，只允许字母、数字和下划线",
+                FieldSpec.text("database", Messages.get("field.database"), true,
+                        Messages.get("field.databaseDesc"),
                         "tinyquery"),
-                FieldSpec.text("table", "表名", true,
-                        "加载时执行 SELECT * 全表读取，大表请留意内存占用",
+                FieldSpec.text("table", Messages.get("field.table"), true,
+                        Messages.get("field.tableDesc"),
                         "users"),
-                FieldSpec.text("username", "用户名", true,
-                        "登录账号",
+                FieldSpec.text("username", Messages.get("field.username"), true,
+                        Messages.get("field.usernameDesc"),
                         "root"),
                 // 敏感字段：前端掩码显示，服务端响应中脱敏
-                FieldSpec.secret("password", "密码", true,
-                        "不会出现在数据源列表的返回结果中",
+                FieldSpec.secret("password", Messages.get("field.password"), true,
+                        Messages.get("field.passwordDesc"),
                         "")
         );
     }
@@ -98,13 +98,13 @@ public class MySQLLoader extends JdbcLoader {
     protected String resolveUrl(DataSourceConfig config) {
         String host = config.requireString("host");
         if (!host.matches(HOST_PATTERN)) {
-            throw new DataSourceException(
-                    "数据源 [" + config.name() + "] 的主机地址不合法：" + host);
+            throw new DataSourceException("error.hostInvalid", new Object[]{config.name(), host},
+                    Messages.get("error.hostInvalid", config.name(), host));
         }
 
         int port = config.getInt("port", defaultPort());
         String database = config.requireString("database");
-        requireIdentifier(database, "数据库名");
+        requireIdentifier(database, Messages.get("field.database"));
 
         if (DRIVER_MARIADB.equals(resolveDriver(config))) {
             return "jdbc:mariadb://" + host + ":" + port + "/" + database + MARIADB_PARAMS;
@@ -128,8 +128,9 @@ public class MySQLLoader extends JdbcLoader {
         if (DRIVER_MARIADB.equalsIgnoreCase(raw)) {
             return DRIVER_MARIADB;
         }
-        throw new DataSourceException(
-                "数据源 [" + config.name() + "] 不支持的驱动：" + raw
-                        + "，可选 " + DRIVER_MYSQL + " / " + DRIVER_MARIADB);
+        throw new DataSourceException("error.driverUnsupported",
+                new Object[]{config.name(), raw},
+                Messages.get("error.driverUnsupported", config.name(), raw)
+                        + Messages.get("error.driverOptions", DRIVER_MYSQL, DRIVER_MARIADB));
     }
 }

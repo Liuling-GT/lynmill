@@ -36,6 +36,27 @@
   /* 深紫近黑：侧栏选中态、重色块。压得住，不抢图表 */
   --plum: #241a33;
 
+  /* 纯白。用在"必须绝对干净"的地方：
+        · 压在深紫底上的文字（侧栏选中项）
+        · 图表浮层、画布遮罩的底 —— 半透明会让下面的折线透上来，读不清
+     单独开一个令牌而不是到处写 #fff，是为了让"哪些地方刻意用纯白"
+     可以一次搜出来 —— 主题若改成暗色，这些点全都要重新审 */
+  --pure-white: #ffffff;
+  /* 纯白上压一层深紫的遮罩（画布加载态）。用 --plum 的 RGB 分量写死，
+     因为 rgba() 不接受 var() 作为分量 */
+  --scrim: rgba(36, 26, 51, 0.45);
+  /* 侧栏选中项压在 --plum 上的投影 */
+  --shadow-plum: 0 6px 18px rgba(36, 26, 51, 0.2);
+  /* 导航项悬停：在白与灰紫之间的提亮层 */
+  --surface-raised: rgba(255, 255, 255, 0.85);
+  /* 品牌渐变最亮的一档（logo 方块） */
+  --accent-bright: #c4b5fd;
+
+  /* 滚动条。比 --line 深一档才在浅底上看得见；
+     悬停再深一档，给出可拖拽的反馈 */
+  --scrollbar-thumb: #d8d3e2;
+  --scrollbar-thumb-hover: #c2bcd0;
+
   /* ==================== 3. 玻璃层 ==================== */
   /*
    * 毛玻璃参数。saturate 不是"保持原样"而是"主动加浓" ——
@@ -76,6 +97,12 @@
     inset 0 1px 0 var(--glass-edge),
     0 1px 2px rgba(36, 26, 51, 0.03),
     0 10px 28px rgba(36, 26, 51, 0.05);
+
+  /* 纯黑投影，不带紫调。用在"贴着某个色块"的小元素上：
+     色块本身的颜色不确定（色板任一格），带紫调的影子会在暖色格上显得脏。
+     另：--shadow-ring 是内阴影勾边，浅色格子压在白卡片上容易糊，靠它划出边界 */
+  --shadow-float: 0 2px 12px rgba(0, 0, 0, 0.12);
+  --shadow-ring: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 
   /* ==================== 4. 尺度 ==================== */
   --r-sm: 6px;
@@ -124,6 +151,25 @@
   --el-fill-color-dark: #ece9f2;
   --el-fill-color-darker: #e4e0ec;
 
+  /*
+   * 语义色别名：给「组件里要引用 EP 的颜色」用。
+   *
+   * 为什么不直接写 EP 的字面值（#409eff / #606266 / #dcdfe6）：
+   * 那些是 EP 的**默认蓝灰**，本文件已经把 --el-color-primary 换成了遐蝶紫。
+   * 组件里再抄一份默认值，选中态就会是蓝的、文字会是 EP 的灰 ——
+   * 换主题时这些点不会跟着变。实测确实这样：图表配色面板的选中圈曾是 #409eff，
+   * 一片紫里孤零零一个蓝框。
+   *
+   * 现在组件引用这一层，值仍然指向 EP 变量本身，
+   * 所以 EP 改主题、或本文件改覆盖值，两边一起动。
+   */
+  --ui-text: var(--el-text-color-regular);
+  --ui-text-secondary: var(--el-text-color-secondary);
+  --ui-border: var(--el-border-color);
+  --ui-selected: var(--el-color-primary);
+  --ui-warning: var(--el-color-warning);
+  --ui-surface: var(--el-bg-color);
+
   /* 表格与弹层保持不透明白底 —— 密集小字压在毛玻璃上会很难读 */
   --el-bg-color: var(--surface);
   --el-bg-color-page: var(--page);
@@ -134,4 +180,29 @@
 
   --el-box-shadow-light: 0 2px 10px rgba(36, 26, 51, 0.06);
   --el-box-shadow: 0 6px 22px rgba(36, 26, 51, 0.09);
+}
+
+/*
+ * 紫色提示条：与「连接测试通过」同色（浅紫底 + 紫字 + 淡紫图标）。
+ *
+ * 用于报错下方的补充提示，例如列名只差大小写时那句「您可能想要访问 "Salary"」。
+ * 写在全局而不是某个组件的 scoped 里，是因为 App.vue（查询报错）与
+ * DataSourceForm.vue（连接测试）都要用，两处各写一遍迟早会改歪一处。
+ *
+ * 这里用 .el-alert 复合选择器把权重顶到 (0,2,0)/(0,3,0)，
+ * 稳压 Element 自己的单类规则 —— 用变量做不到，变量只能整族换色，
+ * 没法只改底色不改字色
+ */
+.el-alert.hint-alert.is-light {
+  background-color: var(--accent-soft);
+  border: 1px solid #ddd6fe;
+}
+
+.el-alert.hint-alert.is-light .el-alert__title,
+.el-alert.hint-alert.is-light .el-alert__description {
+  color: var(--accent);
+}
+
+.el-alert.hint-alert.is-light .el-alert__icon {
+  color: #a78bfa;
 }

@@ -4,18 +4,18 @@
     class="ds-form"
     :model="form"
     :rules="rules"
-    label-width="150px"
+    :label-width="labelWidth"
     @submit.prevent
   >
     <!-- 数据源类型：选项由后端 /datasource/types 下发 -->
-    <el-form-item label="数据源类型" prop="type">
-      <el-select v-model="form.type" placeholder="请选择" @change="handleTypeChange">
+    <el-form-item :label="t('form.typeLabel')" prop="type">
+      <el-select v-model="form.type" :placeholder="t('form.selectPlaceholder')" @change="handleTypeChange">
         <el-option v-for="item in types" :key="item.type" :label="item.label" :value="item.type" />
       </el-select>
     </el-form-item>
 
-    <el-form-item label="数据源名称" prop="name">
-      <el-input v-model="form.name" placeholder="供 SQL 中 FROM 引用，如 users" />
+    <el-form-item :label="t('form.nameLabel')" prop="name">
+      <el-input v-model="form.name" :placeholder="t('form.namePlaceholder')" />
     </el-form-item>
 
     <!--
@@ -50,7 +50,7 @@
       <el-select
         v-if="field.valueType === 'ENUM'"
         v-model="form.properties[field.name]"
-        :placeholder="field.placeholder || '请选择'"
+        :placeholder="field.placeholder || t('form.selectPlaceholder')"
       >
         <el-option v-for="opt in field.options" :key="opt" :label="opt" :value="opt" />
       </el-select>
@@ -81,35 +81,37 @@
       凭据存储不可用时置灰并说明原因：让用户知道「不是我不给你存，是这台机器不支持」，
       而不是勾了没反应。
     -->
-    <el-form-item v-if="hasSensitiveField" label="保存密码">
+    <el-form-item v-if="hasSensitiveField" :label="t('form.savePassword')">
       <div class="save-password">
         <el-checkbox
           v-model="form.savePassword"
           :disabled="!credentialAvailable"
-          label="保存密码，下次启动自动连接"
+          :label="t('form.savePasswordHint')"
         />
         <div v-if="!credentialAvailable" class="save-password-hint">
-          {{ credentialReason || '当前系统不支持保存密码' }}
+          {{ credentialReason || t('form.error.savePasswordUnsupported') }}
         </div>
         <div v-else class="save-password-hint">
-          密码存入系统凭据管理器，不会写进配置文件
+          {{ t('form.savePasswordNote') }}
         </div>
       </div>
     </el-form-item>
 
     <el-form-item>
-      <el-button :loading="testing" @click="handleTest">连接测试</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">注册</el-button>
-      <el-button @click="handleReset">重置</el-button>
+      <el-button :loading="testing" @click="handleTest">{{ t('form.testConnection') }}</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">{{ t('form.register') }}</el-button>
+      <el-button @click="handleReset">{{ t('form.reset') }}</el-button>
     </el-form-item>
 
-    <!-- 测试结果常驻显示：改参数时用户需要对照着看错误原文，toast 一闪就没了 -->
+    <!-- 测试结果常驻显示：改参数时用户需要对照着看错误原文，toast 一闪就没了。
+         hint-alert 提供紫色配色，与查询页的补充提示同款 -->
     <el-alert
       v-if="testResult"
       :type="testResult.success ? 'success' : 'error'"
       show-icon
       :closable="false"
-      :title="testResult.success ? '测试通过' : '测试未通过'"
+      :class="testResult.success ? 'hint-alert' : ''"
+      :title="testResult.success ? t('form.testPassed') : t('form.testFailed')"
       :description="testResult.message"
     />
   </el-form>
@@ -118,6 +120,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import {
   listDataSources,
@@ -125,6 +128,8 @@ import {
   testDataSource,
   getCredentialStatus,
 } from '../api/datasource'
+
+const { t, locale } = useI18n()
 
 const props = defineProps({
   // 后端下发的类型描述列表
@@ -156,7 +161,7 @@ onMounted(async () => {
   } catch {
     // 拿不到就按不可用处理。这只是个可选功能，不该打扰用户
     credentialAvailable.value = false
-    credentialReason.value = '无法确认当前系统是否支持保存密码'
+    credentialReason.value = t('form.error.savePasswordUnknown')
   }
 })
 
@@ -168,16 +173,16 @@ const hasSensitiveField = computed(() =>
 // 外层字段的校验规则。
 // 名称不允许含 '.'：后端 resolveTableName 靠后缀区分表名与数据源，含 '.' 会产生歧义
 const rules = {
-  type: [{ required: true, message: '请选择数据源类型', trigger: 'change' }],
+  type: [{ required: true, message: t('form.error.typeRequired'), trigger: 'change' }],
   name: [
-    { required: true, message: '请填写数据源名称', trigger: 'blur' },
+    { required: true, message: t('form.error.nameRequired'), trigger: 'blur' },
     {
       validator: (rule, value, callback) => {
         if (!value || !value.includes('.')) {
           callback()
           return
         }
-        callback(new Error('名称不能包含英文句点'))
+        callback(new Error(t('form.error.nameNoDot')))
       },
       trigger: 'blur',
     },
@@ -188,12 +193,15 @@ const rules = {
           .then((list) => {
             const exists = list.some((item) => item.name === value)
             if (exists) {
-              callback(new Error('该名称已被占用'))
+              callback(new Error(t('form.error.nameTaken')))
             } else {
               callback()
             }
           })
-          .catch(() => callback())
+          // 查重请求失败时不能放行：callback() 不带参数等于「校验通过」，
+          // 用户会提交一个重名数据源，再撞在后端的唯一约束上拿到更晦涩的错。
+          // 这里如实报「校验未完成」，让用户重试
+          .catch(() => callback(new Error(t('form.error.checkIncomplete'))))
       },
       trigger: 'blur',
     },
@@ -206,6 +214,56 @@ const currentFields = computed(() => {
   return matched ? matched.fields : []
 })
 
+/**
+ * label 列宽：按当前语言下最长的 label 实测算出来，而不是写死。
+ *
+ * <p>原本是固定的 150px，那是按中文量的 —— 中文最长「数据库文件路径」7 个字，
+ * 150px 很宽松。切到英文后最长的是 SQLite 的「Database File Path」18 个字符，
+ * 连同后面的问号图标一起把 150px 撑爆，label 换行、控件错位。</p>
+ *
+ * <p>不改成「写死一个够英文的宽度」是因为那样中文下会空出一大截。
+ * 这里按实际文本量，两种语言各自拿到合适的宽度，以后加语言也不用再调。</p>
+ *
+ * <p>量的是渲染后的真实像素宽：挂一个离屏元素，套用与 label 相同的字体，
+ * 逐个 measureText 取最大值。canvas 比 offsetWidth 可靠 ——
+ * 后者要求元素已插入文档并完成布局，在 computed 里拿不到。</p>
+ */
+const labelWidth = computed(() => {
+  // 依赖 locale，切语言时自动重算
+  void locale.value
+
+  // 表单固有 label（类型 / 名称 / 保存密码）也要一起量，它们不在 currentFields 里
+  const texts = [
+    t('form.typeLabel'),
+    t('form.nameLabel'),
+    t('form.savePassword'),
+    ...currentFields.value.map((f) => f.label),
+  ].filter(Boolean)
+
+  if (texts.length === 0) {
+    return '150px'
+  }
+
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    // 拿不到 2d 上下文时退回固定宽度：宁可稍有偏差，也不要整个表单渲染不出来
+    return '150px'
+  }
+  // 与 .field-label 的实际字体保持一致，否则量出来的值没有意义
+  const styles = getComputedStyle(document.body)
+  ctx.font = `${styles.fontSize} ${styles.fontFamily}`
+
+  let maxText = 0
+  for (const s of texts) {
+    maxText = Math.max(maxText, ctx.measureText(s).width)
+  }
+
+  // 加上：问号图标 14px + 与文字间距 4px + 与控件之间的留白 24px + 安全余量 8px
+  const ICON_AND_GAP = 14 + 4 + 24 + 8
+  return `${Math.ceil(maxText) + ICON_AND_GAP}px`
+})
+
 // 按字段元数据推导校验规则，不识别任何具体数据源。
 // 后端仍会做同样的校验，这里只是为了减少一次无效往返
 const rulesFor = (field) => {
@@ -214,7 +272,7 @@ const rulesFor = (field) => {
   if (field.required) {
     rules.push({
       required: true,
-      message: `请填写${field.label}`,
+      message: t('form.error.fieldRequired', { field: field.label }),
       trigger: field.valueType === 'NUMBER' ? 'change' : 'blur',
     })
   }
@@ -230,7 +288,7 @@ const rulesFor = (field) => {
         if (Number.isFinite(Number(value))) {
           callback()
         } else {
-          callback(new Error('请输入数字'))
+          callback(new Error(t('form.error.numberRequired')))
         }
       },
       trigger: 'change',
@@ -294,7 +352,7 @@ const validateProperties = async () => {
 
 const handleTest = async () => {
   if (!form.value.type) {
-    ElMessage.warning('请先选择数据源类型')
+    ElMessage.warning(t('form.error.typeRequired'))
     return
   }
   if (!(await validateProperties())) {
@@ -337,7 +395,7 @@ const handleSubmit = async () => {
       // 存储不可用时一律按 false 提交，不把用户勾不上的选项送上去
       savePassword: credentialAvailable.value && form.value.savePassword,
     })
-    ElMessage.success(`数据源注册成功：${registered}`)
+    ElMessage.success(t('form.registered', { name: registered }))
     handleReset()
     emit('registered')
   } catch (error) {
@@ -358,7 +416,7 @@ const handleSubmit = async () => {
 }
 
 .help-icon {
-  color: #909399;
+  color: var(--ui-text-secondary);
   font-size: 14px;
   cursor: help;
 }
@@ -377,7 +435,7 @@ const handleSubmit = async () => {
 
 .save-password-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--ui-text-secondary);
 }
 
 /* ==================== 主题化：把 Element 的红绿收进紫色体系 ==================== */
@@ -402,23 +460,11 @@ const handleSubmit = async () => {
 }
 
 /*
- * 测试通过提示：浅紫字、不填底色，与右侧面板融为一体。
- *
- * 这里的选择器比上面那组多带 .is-light 和 .el-alert，把权重顶到 (0,4,0)/(0,5,0)，
- * 稳压 Element 的 (0,2,0)/(0,3,0)。用变量做不到 ——
- * 变量只能整族换色，没法只改底色不改字色
+ * 测试通过提示的配色已上移到 tokens.css 的 .hint-alert，
+ * 与查询页的补充提示共用一套 —— 两处各写一遍迟早改歪一处。
+ * 这里只补 Element 变量的整族覆盖（表单内的 danger 也要是紫的）
  */
-:deep(.el-alert.el-alert--success.is-light) {
-  background-color: var(--accent-soft);
-  border: 1px solid #ddd6fe;
-}
-
-:deep(.el-alert.el-alert--success.is-light .el-alert__title),
-:deep(.el-alert.el-alert--success.is-light .el-alert__description) {
+:deep(.el-form-item__error) {
   color: var(--accent);
-}
-
-:deep(.el-alert.el-alert--success.is-light .el-alert__icon) {
-  color: #a78bfa;
 }
 </style>

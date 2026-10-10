@@ -1,8 +1,9 @@
 {
-  "compilerOptions": {
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
+  // 本文件只为编辑器服务（VSCode 靠它做文件联想与排除），不参与构建。
+  //
+  // 原来这里有一条 "@/*" -> "./src/*" 的路径别名，但 vite.config.js 里
+  // 从来没有对应的 resolve.alias，全项目也没有一处用 @/ 导入 ——
+  // 是个会误导人的空头支票（编辑器认，构建不认），已删除。
+  "compilerOptions": {},
   "exclude": ["node_modules", "dist"]
 }

@@ -12,7 +12,8 @@ import java.util.List;
  * @param columnTypes 与 columns 一一对应的值类型：number / string / empty。
  *                    供前端选择图表轴，避免靠字符串试解析去猜
  * @param rows        结果表格，每行的元素顺序与 columns 一一对应
- * @param totalRows   过滤后命中的总行数（分页或截断前）
+ * @param totalRows   结果集的总行数 —— 过滤命中、跳过 OFFSET、套用 LIMIT 之后的行数。
+ *                    分页只影响本次返回哪一段，不影响它；前端靠它算总页数
  * @param hasMore     是否还有下一页数据。等价于「本次没有取完」
  */
 public record QueryResult(List<String> columns, List<String> columnTypes,

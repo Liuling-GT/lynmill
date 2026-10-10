@@ -41,6 +41,13 @@ public class ServerPortHolder implements ApplicationListener<WebServerInitialize
         // 显式打印完整访问地址：端口可能因回退而非 8080，
         // 只打端口号的话用户仍不知道该怎么拼 URL
         log.info("TinyQuery 已就绪，访问地址：http://{}:{}", HOST, actualPort);
+
+        // 顺带打一行构建标识。「我看到的到底是哪一版」是排查问题时问得最多的一句，
+        // 日志里能直接看到就不用再去翻 jar 的时间（那个也不准，见 BuildInfo 的说明）
+        String build = BuildInfo.display();
+        if (!build.isEmpty()) {
+            log.info("构建版本：{}", build);
+        }
     }
 
     /**

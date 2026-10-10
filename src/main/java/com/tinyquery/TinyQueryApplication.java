@@ -1,5 +1,9 @@
 package com.tinyquery;
 
+import com.tinyquery.i18n.Messages;
+
+import com.tinyquery.i18n.DesktopLocale;
+
 import com.tinyquery.config.BrowserOpener;
 import com.tinyquery.config.PathResolver;
 import com.tinyquery.config.ServerPortHolder;
@@ -47,12 +51,32 @@ public class TinyQueryApplication {
     private static final String LOG_MAX_FILE_SIZE = "5MB";
     private static final String LOG_MAX_HISTORY = "3";
 
+    // 日志文件编码。
+    //
+    // 不设的话，Logback 的 FileAppender 用**平台默认编码** ——
+    // 中文 Windows 上是 GBK。程序里写了中文日志（如「凭据存储不可用」），
+    // 于是别人用 VS Code（默认按 UTF-8 打开）看到的就是乱码。
+    //
+    // 实测确认过这个差异：带 -Dfile.encoding=UTF-8 启动时日志是 UTF-8，
+    // 不带参数启动（也就是用户从 exe 双击的真实情形）日志是 GBK。
+    // 所以这里显式定死 UTF-8，不受平台与启动参数影响。
+    //
+    // 注意：改成 UTF-8 后，**旧版本写下的历史日志仍是 GBK**。
+    // 同一个目录里可能两种编码共存，那是升级的正常现象，不影响新日志的读取
+    private static final String LOG_CHARSET = "UTF-8";
+
     public static void main(String[] args) {
         // 桌面外壳（控制窗口 + 托盘）需要 AWT，而 Spring Boot 默认把
         // java.awt.headless 设为 true，那样 Swing 窗口根本建不出来。
         // 必须在这里设置：SpringApplication 只在属性「尚未设置」时才填默认值，
         // 启动之前设好它就会沿用我们的值
         System.setProperty("java.awt.headless", "false");
+
+        // 桌面端语言必须在**任何可能弹窗的代码之前**定下来：
+        // 连下面的 configureFileLogging() 都可能失败（数据目录建不出来），
+        // 那是启动失败对话框最常出现的场景之一，那时语言得已经确定好了。
+        // 本方法内部吞掉所有异常，读不到就用中文，绝不会成为启动失败的原因
+        DesktopLocale.apply();
 
         try {
             configureFileLogging();
@@ -86,6 +110,8 @@ public class TinyQueryApplication {
         System.setProperty("logging.file.name", PathResolver.getLogFile().toString());
         System.setProperty("logging.logback.rollingpolicy.max-file-size", LOG_MAX_FILE_SIZE);
         System.setProperty("logging.logback.rollingpolicy.max-history", LOG_MAX_HISTORY);
+        // 见 LOG_CHARSET 的说明：不设就跟着平台走，中文 Windows 上会写成 GBK
+        System.setProperty("logging.charset.file", LOG_CHARSET);
     }
 
     /**
@@ -136,11 +162,9 @@ public class TinyQueryApplication {
             // 打包后没有控制台，这种情况以前只写一行日志，用户看到的仍然是「双击没反应」——
             // 与启动失败是同一种观感，所以走同一套提示机制，只是标题说明真实情况
             StartupFailureDialog.report(
-                    "TinyQuery 已在运行",
-                    "TinyQuery 已经有一个实例在运行，但没能取得它的访问地址。",
-                    new IllegalStateException(
-                            "第二个实例没能从运行地址文件中读到有效地址；"
-                                    + "请手动打开正在运行的 TinyQuery 窗口，或先退出它再重试"));
+                    Messages.get("desktop.duplicate.title"),
+                    Messages.get("desktop.duplicate.body"),
+                    new IllegalStateException(Messages.get("desktop.duplicate.advice")));
             return;
         }
         if (BrowserOpener.open(url)) {

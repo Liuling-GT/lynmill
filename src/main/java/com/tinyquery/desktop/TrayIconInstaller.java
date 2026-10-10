@@ -1,5 +1,8 @@
 package com.tinyquery.desktop;
 
+import com.tinyquery.i18n.DesktopLocale;
+import com.tinyquery.i18n.Messages;
+
 import com.tinyquery.config.BrowserOpener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,14 +93,33 @@ public final class TrayIconInstaller {
 
     private static final Color SEPARATOR_COLOR = new Color(0x555555);
 
-    // 菜单文字定义成常量，测试才能校验「字体覆盖了菜单里真实出现的每一个字」，
-    // 而不是校验一个和实际菜单无关的字符串
-    static final String MENU_LABEL_OPEN = "打开界面";
-    static final String MENU_LABEL_SHOW = "显示窗口";
-    static final String MENU_LABEL_EXIT = "退出";
+    // 菜单文字走词表，语言由 Messages.desktopLocale() 在启动时定下。
+    //
+    // 原来是 static final 常量，改成方法是被迫的：常量在**类加载时**求值，
+    // 而语言要到启动流程里才确定（读环境变量或 locale.txt），
+    // 常量会永远停在默认值上。同理，这里的取值不能提到构造器或静态块里。
+    static String menuLabelOpen() {
+        return Messages.get("desktop.tray.open");
+    }
 
-    /** 菜单里出现的全部文字，供测试校验字体覆盖 */
-    static final String MENU_TEXT_SAMPLE = MENU_LABEL_OPEN + MENU_LABEL_SHOW + MENU_LABEL_EXIT;
+    static String menuLabelShow() {
+        return Messages.get("desktop.tray.show");
+    }
+
+    static String menuLabelExit() {
+        return Messages.get("desktop.tray.exit");
+    }
+
+    /**
+     * 菜单里出现的全部文字，供测试校验字体覆盖。
+     *
+     * <p>拿的是当前语言下的实际文字 —— 中文两个字、英文两个词，
+     * 字体覆盖要求也不同（英文只要拉丁字形，中文要 CJK 字形），
+     * 用一份写死的样本文本会漏掉另一种语言。</p>
+     */
+    static String menuTextSample() {
+        return menuLabelOpen() + menuLabelShow() + menuLabelExit();
+    }
 
     /**
      * 当前弹出的菜单，供 {@link #dismissMenu()} 在退出时收起它。
@@ -129,7 +151,7 @@ public final class TrayIconInstaller {
     }
 
     private static boolean canDisplayAll(Font font) {
-        for (char c : MENU_TEXT_SAMPLE.toCharArray()) {
+        for (char c : menuTextSample().toCharArray()) {
             if (!font.canDisplay(c)) {
                 return false;
             }
@@ -154,9 +176,7 @@ public final class TrayIconInstaller {
         try {
             SystemTray tray = SystemTray.getSystemTray();
 
-            JPopupMenu menu = buildMenu(url, () -> showWindow(window), onExit);
-            MenuPopup popup = new MenuPopup(menu);
-            installDismissGuard(menu, popup);
+            MenuPopup popup = new MenuPopup(url, () -> showWindow(window), onExit);
             activeMenu = popup;
 
             TrayIcon icon = new TrayIcon(AppIcons.create(TRAY_ICON_SIZE), "TinyQuery");
@@ -231,10 +251,10 @@ public final class TrayIconInstaller {
         menu.setForeground(CenteredMenuItemUI.FOREGROUND);
         menu.setBorder(new LineBorder(MENU_BORDER));
 
-        menu.add(menuItem(MENU_LABEL_OPEN, font, () -> BrowserOpener.open(url)));
-        menu.add(menuItem(MENU_LABEL_SHOW, font, onShowWindow));
+        menu.add(menuItem(menuLabelOpen(), font, () -> BrowserOpener.open(url)));
+        menu.add(menuItem(menuLabelShow(), font, onShowWindow));
         menu.add(menuSeparator());
-        menu.add(menuItem(MENU_LABEL_EXIT, font, onExit));
+        menu.add(menuItem(menuLabelExit(), font, onExit));
         return menu;
     }
 
@@ -305,6 +325,10 @@ public final class TrayIconInstaller {
     // 右键的判定时机各平台不同，pressed 与 released 都要检查 isPopupTrigger()
     private static void maybeShowMenu(MouseEvent event, MenuPopup popup) {
         if (event.isPopupTrigger()) {
+            // 语言可能在网页上被改过（设置页会同步到服务端）。菜单项文字是构建时定死的，
+            // 所以每次弹出前对一下版本号，变过就重建 —— 这样用户切完语言
+            // 下次右键就能看到新语言，不必重启程序
+            popup.refreshIfLocaleChanged();
             popup.show();
         }
     }
@@ -317,11 +341,67 @@ public final class TrayIconInstaller {
      */
     private static final class MenuPopup {
 
-        private final JPopupMenu menu;
+        /**
+         * 菜单的构建参数。菜单项文字依赖当前语言，而语言可以在运行期被切换
+         * （网页上改了设置会同步过来），所以这些参数要留着，以便按需重建菜单。
+         */
+        private final String url;
+        private final Runnable onShowWindow;
+        private final Runnable onExit;
+
+        /**
+         * 当前菜单，以及它构建时所用的语言版本号。
+         *
+         * <p>不每次右键都重建：菜单里有自定义 UI、字体探测这类一次性开销，
+         * 每次重建会让右键变慢。只在语言真的变过之后才重建 ——
+         * 靠 {@link DesktopLocale#version()} 比对。</p>
+         */
+        private JPopupMenu menu;
+        private long builtAtVersion;
         private final List<JWindow> strips = new ArrayList<>();
 
-        MenuPopup(JPopupMenu menu) {
-            this.menu = menu;
+        MenuPopup(String url, Runnable onShowWindow, Runnable onExit) {
+            this.url = url;
+            this.onShowWindow = onShowWindow;
+            this.onExit = onExit;
+            buildAndWire();
+        }
+
+        /**
+         * 构建菜单并挂上「点菜单外面就收起」的守卫。
+         *
+         * <p>守卫必须跟着菜单实例走 —— {@code installDismissGuard} 把监听器挂在
+         * 具体的 {@link JPopupMenu} 上，重建后不重新挂就等于失去了这个行为。
+         * 所以构建与挂载放在一起，避免将来有人在重建时漏掉一步。</p>
+         */
+        private void buildAndWire() {
+            this.menu = buildMenu(url, onShowWindow, onExit);
+            this.builtAtVersion = DesktopLocale.version();
+            installDismissGuard(menu, this);
+        }
+
+        /**
+         * 语言变过就重建菜单，让菜单项显示新语言。
+         *
+         * <p>必须在<b>弹出之前</b>、且在事件分发线程上调用 ——
+         * 重建会替换掉 {@link #menu} 这个被多处引用的对象。</p>
+         */
+        void refreshIfLocaleChanged() {
+            long current = DesktopLocale.version();
+            if (current == builtAtVersion) {
+                return;
+            }
+
+            // 先把旧的收起来：它可能正显示着，直接换掉会留下一个孤儿窗口
+            dismiss();
+
+            long previous = builtAtVersion;
+            buildAndWire();
+            log.debug("界面语言已变更（版本 {} → {}），托盘菜单已重建", previous, current);
+        }
+
+        JPopupMenu menu() {
+            return menu;
         }
 
         void show() {

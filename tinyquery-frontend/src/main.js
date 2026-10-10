@@ -10,15 +10,30 @@ import './assets/tokens.css'
 import './assets/main.css'
 
 import { loadToken } from './api/token'
+import { i18n, syncHtmlLang, reconcileLocale } from './locales'
 
-// 先拿到访问令牌再挂载应用：令牌必须在任何 API 调用之前就位，
-// 否则首屏那几个请求会全部 401。
-// 打包运行时首页已经注入了令牌，这一步是空操作
+/*
+ * Element Plus 自带文案（分页的「条/页」、确认框按钮、取色器的「确定/清空」）
+ * 由 App.vue 里的 <el-config-provider> 驱动 —— locale 必须走那个组件才能响应式切换。
+ * app.use(ElementPlus, { locale }) 是静态注入，切换语言时不会跟着变。
+ */
 async function bootstrap() {
   await loadToken()
 
+  // 对齐网页与服务端两份语言设置。
+  // 放在挂载之前：避免先按旧语言渲染一帧、再闪一下变成新语言。
+  // 失败不阻断 —— 内部已 catch，最坏情况就是保持本地判断
+  await reconcileLocale()
+
   const app = createApp(App)
+  app.use(i18n)
   app.use(ElementPlus)
+
+  // 同步初始语言到 <html lang>。
+  // 用 syncHtmlLang 而不是 setLocale —— 后者会写 localStorage，
+  // 会把 reconcileLocale 刚确定的「本地有没有选择」这个状态覆盖掉
+  syncHtmlLang()
+
   app.mount('#app')
 }
 

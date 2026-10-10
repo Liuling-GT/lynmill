@@ -38,14 +38,14 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d8d3e2;
+  background: var(--scrollbar-thumb);
   border: 3px solid transparent;
   border-radius: 6px;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #c2bcd0;
+  background: var(--scrollbar-thumb-hover);
   background-clip: content-box;
 }
 

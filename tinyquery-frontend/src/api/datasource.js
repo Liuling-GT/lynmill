@@ -1,5 +1,6 @@
 import axios from 'axios'
-import { TOKEN_HEADER, getToken } from './token'
+import { i18n } from '../locales'
+import { requestHeaders } from './token'
 
 // 数据源接口封装。后端统一返回 { code, message, data }，code === 0 为成功
 const request = axios.create({
@@ -7,12 +8,10 @@ const request = axios.create({
   timeout: 60000, // 加载数据源可能较慢，给足超时
 })
 
-// 每个请求都带上访问令牌。没有它后端一律回 401
+// 每个请求都带上访问令牌与当前语言。
+// 没有令牌后端一律回 401；语言决定后端错误消息用哪种语言
 request.interceptors.request.use((config) => {
-  const token = getToken()
-  if (token) {
-    config.headers[TOKEN_HEADER] = token
-  }
+  Object.assign(config.headers, requestHeaders())
   return config
 })
 
@@ -24,14 +23,14 @@ request.interceptors.response.use(
       if (body.code === 0) {
         return body.data
       }
-      return Promise.reject(new Error(body.message || '操作失败'))
+      return Promise.reject(new Error(body.message || i18n.global.t('api.operationFailed')))
     }
     return response.data
   },
   (error) => {
     const body = error.response && error.response.data
     const message =
-      (body && body.message) || error.message || '网络请求失败'
+      (body && body.message) || error.message || i18n.global.t('api.networkFailed')
     return Promise.reject(new Error(message))
   },
 )
@@ -58,3 +57,11 @@ export const testDataSource = (config) => request.post('/datasource/test', confi
 
 // 系统凭据存储是否可用（决定「保存密码」勾选框能否点）
 export const getCredentialStatus = () => request.get('/datasource/credential-status')
+
+/*
+ * 构建标识（版本 / git 短哈希 / 构建时间），显示在设置页底部。
+ *
+ * 用途是回答「我看到的到底是哪一版」—— 改了源码但加载到旧前端时，
+ * 界面上原本没有任何线索可查。取不到的字段是空串，展示时省略。
+ */
+export const getBuildInfo = () => request.get('/version')

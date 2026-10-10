@@ -1,6 +1,9 @@
 package com.tinyquery.desktop;
 
 import org.junit.jupiter.api.DisplayName;
+import com.tinyquery.i18n.Messages;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -14,6 +17,76 @@ import static org.junit.jupiter.api.Assertions.*;
 class StartupFailureDialogTest {
 
     private static final String HEADLINE = "TinyQuery 启动失败，无法继续运行。";
+
+    /**
+     * 下面几条测试断言的是中文措辞（「原因：」「根本原因：」）。
+     * 而文案现在走词表，取值依赖 {@code Messages.desktopLocale} ——
+     * 那是个全局状态，别的用例可能把它改成英文。
+     * 这里显式钉住中文，测完还原，避免用例之间互相影响。
+     */
+    private String savedLocale;
+
+    @BeforeEach
+    void pinChinese() {
+        savedLocale = Messages.desktopLocale();
+        Messages.setDesktopLocale(Messages.ZH);
+    }
+
+    @AfterEach
+    void restoreLocale() {
+        Messages.setDesktopLocale(savedLocale);
+    }
+
+    // ==================== 英文模式（桌面端 i18n）====================
+
+    @Test
+    @DisplayName("英文模式下整段正文没有中文 —— 走的是真实入口，不是只查词表")
+    void messageIsFullyEnglishInEnglishMode() {
+        Messages.setDesktopLocale(Messages.EN);
+
+        // 刻意用 buildMessage 而不是 Messages.get：
+        // 这样如果有人在方法体里硬编码了中文，测试会失败。
+        // 只断言词表值的话，硬编码与缓存都会溜过去。
+        //
+        // 用带 cause 的异常，让「根本原因」那一段也走进来 ——
+        // 否则只覆盖到「原因」一行
+        String message = StartupFailureDialog.buildMessage(
+                Messages.get("desktop.failure.headline"),
+                new IllegalStateException("boom", new IOException("root boom")),
+                null);
+
+        assertFalse(message.matches("(?s).*[\\u4e00-\\u9fff].*"),
+                "英文模式下启动失败对话框仍含中文：\n" + message);
+        assertTrue(message.contains("Reason:"), message);
+        assertTrue(message.contains("Root cause:"), message);
+    }
+
+    @Test
+    @DisplayName("英文模式下「没有错误信息」的兜底文案也是英文")
+    void describeNullIsEnglishInEnglishMode() {
+        Messages.setDesktopLocale(Messages.EN);
+
+        // failure 为 null 时走 describe() 里的兜底分支，
+        // 它不在 buildMessage 的可见字面量里，容易漏
+        String text = StartupFailureDialog.describe(null);
+        assertFalse(text.matches(".*[\\u4e00-\\u9fff].*"), "仍是中文：" + text);
+    }
+
+    @Test
+    @DisplayName("异常本身的中文消息不被翻译 —— 那是技术细节，不是界面文案")
+    void exceptionMessageIsNotTranslated() {
+        Messages.setDesktopLocale(Messages.EN);
+
+        // 这是本功能的一条边界：界面文案翻译，但**异常自带的 message 不翻**。
+        // 翻了会让用户拿到的报错与日志里那条对不上，反而更难排查
+        String message = StartupFailureDialog.buildMessage(
+                Messages.get("desktop.failure.headline"),
+                new IOException("磁盘已满"),
+                null);
+
+        assertTrue(message.contains("磁盘已满"),
+                "异常自身的 message 应当原样保留，不该被翻译：\n" + message);
+    }
 
     // ==================== 文案 ====================
 

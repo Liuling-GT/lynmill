@@ -1,5 +1,8 @@
 package com.tinyquery.desktop;
 
+import com.tinyquery.i18n.DesktopLocale;
+import com.tinyquery.i18n.Messages;
+
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JFrame;
@@ -48,6 +51,15 @@ public class ControlWindow extends JFrame {
      * 换成紫色标志后两边就对不上了。</p>
      */
     private static final Color RUNNING_COLOR = new Color(0x6D4AFF);
+
+    // 界面控件留引用，语言切换后要重新 setText（见 refreshTexts）
+    private final JLabel statusLabel = new JLabel();
+    private final JTextField addressField = new JTextField();
+    private final JButton openButton = new JButton();
+    private final JButton exitButton = new JButton();
+
+    /** 当前界面文字对应的语言版本号，用来判断要不要刷新 */
+    private long appliedVersion = DesktopLocale.version();
 
     /**
      * 把窗口摆到屏幕右下角。
@@ -119,6 +131,37 @@ public class ControlWindow extends JFrame {
     }
 
     /**
+     * 语言切换后刷新界面上的文字。
+     *
+     * <p>Swing 控件在 {@code setText} 之后不会自己察觉语言变了 ——
+     * 语言表里改的是「下次取值时用什么」，而已经设进控件的文字是那一刻定死的。
+     * 所以必须显式重设一遍。</p>
+     *
+     * <p>由 {@code LocaleSyncService} 在语言变更后调（经
+     * {@link javax.swing.SwingUtilities#invokeLater} 切到事件分发线程）。</p>
+     */
+    void refreshTexts() {
+        statusLabel.setText(runningText());
+        addressField.setToolTipText(addressTipText());
+        openButton.setText(openButtonText());
+        exitButton.setText(exitButtonText());
+        repaint();
+    }
+
+    /**
+     * 语言版本号。与托盘菜单用的是同一套机制：
+     * 只在版本变过时才刷新，避免无谓的 {@code setText} 与重绘。
+     */
+    void refreshTextsIfLocaleChanged() {
+        long current = DesktopLocale.version();
+        if (current == appliedVersion) {
+            return;
+        }
+        appliedVersion = current;
+        refreshTexts();
+    }
+
+    /**
      * @param url            本实例的实际访问地址
      * @param onOpenBrowser  点「打开界面」时执行
      * @param onExit         点「退出」或右上角 ✕ 时执行
@@ -157,36 +200,60 @@ public class ControlWindow extends JFrame {
     private JPanel buildStatusArea(String url) {
         JPanel panel = new JPanel(new BorderLayout(0, 6));
 
-        JLabel status = new JLabel("● 运行中");
-        status.setForeground(RUNNING_COLOR);
-        status.setFont(status.getFont().deriveFont(Font.BOLD));
+        // 用类字段而不是局部变量：语言切换后要重新 setText，得留着引用
+        statusLabel.setText(runningText());
+        statusLabel.setForeground(RUNNING_COLOR);
+        statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
 
         // 用只读文本框而不是标签：用户可以选中、Ctrl+C 复制地址。
         // 自动打开浏览器失败时（或被 tinyquery.browser.auto-open 关掉时），
         // 手动复制粘贴是最后的退路
-        JTextField address = new JTextField(url);
-        address.setEditable(false);
-        address.setBorder(null);
-        address.setOpaque(false);
-        address.setForeground(Color.GRAY);
-        address.setPreferredSize(new Dimension(ADDRESS_WIDTH, 24));
-        address.setToolTipText("可选中后复制");
+        addressField.setText(url);
+        addressField.setEditable(false);
+        addressField.setBorder(null);
+        addressField.setOpaque(false);
+        addressField.setForeground(Color.GRAY);
+        addressField.setPreferredSize(new Dimension(ADDRESS_WIDTH, 24));
+        addressField.setToolTipText(addressTipText());
 
-        panel.add(status, BorderLayout.NORTH);
-        panel.add(address, BorderLayout.CENTER);
+        panel.add(statusLabel, BorderLayout.NORTH);
+        panel.add(addressField, BorderLayout.CENTER);
         return panel;
     }
 
     private JPanel buildButtonArea(Runnable onOpenBrowser, Runnable onExit) {
-        JButton open = new JButton("打开界面");
-        open.addActionListener(event -> onOpenBrowser.run());
+        openButton.setText(openButtonText());
+        openButton.addActionListener(event -> onOpenBrowser.run());
 
-        JButton exit = new JButton("退出");
-        exit.addActionListener(event -> onExit.run());
+        exitButton.setText(exitButtonText());
+        exitButton.addActionListener(event -> onExit.run());
 
         JPanel panel = new JPanel(new GridLayout(1, 2, 8, 0));
-        panel.add(open);
-        panel.add(exit);
+        panel.add(openButton);
+        panel.add(exitButton);
         return panel;
+    }
+
+    // ==================== 文案 ====================
+    //
+    // 抽成包可见的方法而不是内联 Messages.get(...)，是为了让测试够得着：
+    // ControlWindow 是 JFrame，构造它需要真实显示设备，无头环境里建不出来，
+    // 而「界面上的字有没有跟着语言走」恰恰必须在无头 CI 上也能验。
+    // 这几个方法把「取哪条文案」独立出来，测试直接调它们即可。
+
+    static String runningText() {
+        return Messages.get("desktop.window.running");
+    }
+
+    static String addressTipText() {
+        return Messages.get("desktop.window.addressTip");
+    }
+
+    static String openButtonText() {
+        return Messages.get("desktop.window.open");
+    }
+
+    static String exitButtonText() {
+        return Messages.get("desktop.window.exit");
     }
 }

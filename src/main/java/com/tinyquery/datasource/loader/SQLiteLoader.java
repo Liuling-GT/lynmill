@@ -3,6 +3,7 @@ package com.tinyquery.datasource.loader;
 import com.tinyquery.datasource.spec.DataSourceConfig;
 import com.tinyquery.datasource.spec.DataSourceException;
 import com.tinyquery.datasource.spec.FieldSpec;
+import com.tinyquery.i18n.Messages;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -24,7 +25,7 @@ public class SQLiteLoader extends JdbcLoader {
 
     @Override
     public String label() {
-        return "SQLite 文件";
+        return Messages.get("type.sqlite");
     }
 
     @Override
@@ -38,12 +39,11 @@ public class SQLiteLoader extends JdbcLoader {
     public List<FieldSpec> fields() {
         return List.of(
                 // 文件路径：SQLite 的全部连接信息
-                FieldSpec.text("path", "数据库文件路径", true,
-                        "SQLite 数据库文件的绝对路径或相对运行目录的路径",
+                FieldSpec.text("path", Messages.get("field.dbFilePath"), true,
+                        Messages.get("field.sqlitePathDesc"),
                         "data/app.db"),
-                FieldSpec.text("table", "表名", true,
-                        "该文件中的某张表。SQLite 一个文件里通常有多张表，"
-                                + "每张表注册为一个数据源",
+                FieldSpec.text("table", Messages.get("field.table"), true,
+                        Messages.get("field.sqliteTableDesc"),
                         "users")
         );
     }
@@ -58,15 +58,18 @@ public class SQLiteLoader extends JdbcLoader {
 
         File file = new File(path);
         if (!file.exists()) {
-            throw new DataSourceException(
-                    "数据库文件不存在：" + file.getAbsolutePath()
-                            + "（SQLite 不会自动创建，请检查路径）");
+            throw new DataSourceException("error.sqliteFileNotFound",
+                    new Object[]{file.getAbsolutePath()},
+                    Messages.get("error.sqliteFileNotFound", file.getAbsolutePath())
+                            + Messages.get("error.sqliteNoAutoCreate"));
         }
         if (!file.isFile()) {
-            throw new DataSourceException("该路径不是文件：" + file.getAbsolutePath());
+            throw new DataSourceException("error.notAFile", new Object[]{file.getAbsolutePath()},
+                    Messages.get("error.notAFile", file.getAbsolutePath()));
         }
         if (!file.canRead()) {
-            throw new DataSourceException("文件不可读（请检查权限）：" + file.getAbsolutePath());
+            throw new DataSourceException("error.fileNotReadable", new Object[]{file.getAbsolutePath()},
+                    Messages.get("error.fileNotReadable", file.getAbsolutePath()));
         }
     }
 

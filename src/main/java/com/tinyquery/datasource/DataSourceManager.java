@@ -4,6 +4,7 @@ import com.tinyquery.credential.CredentialResult;
 import com.tinyquery.credential.CredentialStore;
 import com.tinyquery.datasource.spec.*;
 import com.tinyquery.executor.ColumnStore;
+import com.tinyquery.i18n.Messages;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,27 +113,37 @@ public class DataSourceManager {
 
     private void register(DataSourceConfig config, boolean persist, SecretAction secretAction) {
         if (config.name() == null || config.name().isBlank()) {
-            throw new DataSourceException("数据源名称不能为空");
+            throw new DataSourceException("error.nameBlank", null, Messages.get("error.nameBlank"));
         }
         // 名称不允许带 '.'，否则 TableName 解析时无法区分「后缀」与「名字本身」
         if (config.name().contains(".")) {
-            throw new DataSourceException("数据源名称不能包含 '.'：" + config.name());
+            throw new DataSourceException("error.nameContainsDot", new Object[]{config.name()},
+                    Messages.get("error.nameContainsDot", config.name()));
         }
 
         DataLoader loader = findLoader(config.type());
 
         // 快速失败：先查一次给出清晰报错；真正防并发的是下面的 putIfAbsent
         if (entries.containsKey(config.name())) {
-            throw new DataSourceException("数据源已存在：" + config.name());
+            throw new DataSourceException("error.nameTaken", new Object[]{config.name()},
+                    Messages.get("error.nameTaken", config.name()));
         }
 
-        // 加载失败会抛 DataSourceException，不会走到写入
-        ColumnStore loaded = loader.load(config);
+        // 打上注册时间。前端靠它挑出「最新注册的那个」来生成默认 SQL。
+        // 调用方若已显式给了时间（如从文件恢复），尊重原值不覆盖
+        DataSourceConfig stamped = config.registeredAt() > 0
+                ? config
+                : new DataSourceConfig(config.name(), config.type(), config.properties(),
+                        System.currentTimeMillis());
 
-        DataSourceEntry entry = new DataSourceEntry(config, loaded);
-        if (entries.putIfAbsent(config.name(), entry) != null) {
+        // 加载失败会抛 DataSourceException，不会走到写入
+        ColumnStore loaded = loader.load(stamped);
+
+        DataSourceEntry entry = new DataSourceEntry(stamped, loaded);
+        if (entries.putIfAbsent(stamped.name(), entry) != null) {
             // 并发下另一个线程先注册成功，本次加载结果丢弃
-            throw new DataSourceException("数据源已存在：" + config.name());
+            throw new DataSourceException("error.nameTaken", new Object[]{stamped.name()},
+                    Messages.get("error.nameTaken", stamped.name()));
         }
 
         // 凭据动作放在注册成功之后：加载都失败了，没有理由去动系统凭据。
@@ -246,14 +257,16 @@ public class DataSourceManager {
     public void retry(String name, Map<String, Object> extraProperties) {
         FailedEntry entry = failed.get(name);
         if (entry == null) {
-            throw new DataSourceException("数据源不存在或本就可用：" + name);
+            throw new DataSourceException("error.datasourceNotFound", new Object[]{name},
+                    Messages.get("error.datasourceNotFound", name));
         }
 
         Map<String, Object> merged = new LinkedHashMap<>(entry.config().properties());
         if (extraProperties != null) {
             merged.putAll(extraProperties);
         }
-        DataSourceConfig config = new DataSourceConfig(name, entry.config().type(), merged);
+        DataSourceConfig config = new DataSourceConfig(name, entry.config().type(), merged,
+                entry.config().registeredAt());
 
         // 加载失败会抛异常，此时 failed 里那条原样保留，用户还能再试一次
         ColumnStore loaded = findLoader(config.type()).load(config);
@@ -337,7 +350,9 @@ public class DataSourceManager {
         if (!changed) {
             return config;
         }
-        return new DataSourceConfig(config.name(), config.type(), merged);
+        // 补密码是「同一个数据源」的内部修补，注册时间必须原样带过去 ——
+        // 否则每次重启（都要补一次密码）都会把它清成 0，默认 SQL 就失去依据
+        return new DataSourceConfig(config.name(), config.type(), merged, config.registeredAt());
     }
 
     /**
@@ -399,7 +414,8 @@ public class DataSourceManager {
     public void refresh(String name) {
         DataSourceEntry existing = entries.get(name);
         if (existing == null) {
-            throw new DataSourceException("数据源不存在：" + name);
+            throw new DataSourceException("error.datasourceNotFound", new Object[]{name},
+                    Messages.get("error.datasourceNotFound", name));
         }
 
         DataSourceConfig config = existing.config();
@@ -470,7 +486,8 @@ public class DataSourceManager {
         boolean removedFailed = failed.remove(name) != null;
 
         if (!removedLoaded && !removedFailed) {
-            throw new DataSourceException("数据源不存在：" + name);
+            throw new DataSourceException("error.datasourceNotFound", new Object[]{name},
+                    Messages.get("error.datasourceNotFound", name));
         }
 
         // 连同系统凭据一起删掉。漏了这一步的后果很隐蔽：用户删了数据源、
@@ -556,14 +573,15 @@ public class DataSourceManager {
             }
         });
 
-        return new DataSourceConfig(config.name(), config.type(), safe);
+        // 脱敏只摘敏感字段，注册时间要原样落盘，否则重启后就丢了
+        return new DataSourceConfig(config.name(), config.type(), safe, config.registeredAt());
     }
 
     // 表名解析：支持 "huge" 与 "huge.csv" 两种写法命中同一数据源。
     // 不判断具体后缀，未来 "users.mysql" 之类的写法也能自然生效。
     private String resolveTableName(String rawTableName) {
         if (rawTableName == null || rawTableName.isBlank()) {
-            throw new DataSourceException("表名不能为空");
+            throw new DataSourceException("error.nameBlank", null, Messages.get("error.nameBlank"));
         }
         String trimmed = rawTableName.trim();
 
@@ -590,7 +608,8 @@ public class DataSourceManager {
         DataLoader loader = loaders.get(type);
         if (loader == null) {
             throw new DataSourceException(
-                    "不支持的数据源类型：" + type + "，当前支持：" + loaders.keySet());
+                    Messages.get("error.typeUnsupported", type) + Messages.get("error.supportedTypes")
+                            + loaders.keySet());
         }
         return loader;
     }
@@ -599,9 +618,29 @@ public class DataSourceManager {
     private DataSourceEntry findEntry(String name) {
         DataSourceEntry entry = entries.get(name);
         if (entry == null) {
-            throw new DataSourceException("数据源不存在：" + name);
+            throw new DataSourceException("error.datasourceNotFound", new Object[]{name},
+                    Messages.get("error.datasourceNotFound", name));
         }
         return entry;
+    }
+
+    /**
+     * 已注册数据源的名字，按注册时间升序返回（最后一条即最新注册的）。
+     *
+     * <p>供两处使用：名称纠错提示的候选名单；以及前端生成默认 SQL。
+     * 只返回名字，不触发加载，也不泄露任何连接信息。</p>
+     *
+     * <p>不能直接返回 {@code entries.keySet()}：底层是 {@code ConcurrentHashMap}，
+     * 迭代顺序未定义，而「最新注册」恰恰依赖顺序。这里显式按 registeredAt 排，
+     * 时间相同（老文件没有该字段，一律为 0）时退回名称序，保证结果稳定。</p>
+     */
+    public List<String> listNames() {
+        return entries.values().stream()
+                .map(DataSourceEntry::config)
+                .sorted(Comparator.comparingLong(DataSourceConfig::registeredAt)
+                        .thenComparing(DataSourceConfig::name))
+                .map(DataSourceConfig::name)
+                .toList();
     }
 
     // 构造脱敏视图：哪些 key 敏感由对应 loader 的 fields() 决定
@@ -628,7 +667,7 @@ public class DataSourceManager {
                 safe.put(key, sensitiveKeys.contains(key) ? DataSourceInfo.MASK : value));
 
         return new DataSourceInfo(config.name(), config.type(), Map.copyOf(safe),
-                status, failureReason);
+                status, failureReason, config.registeredAt());
     }
 
     /**

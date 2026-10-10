@@ -23,6 +23,17 @@
         <!-- 前端 dist 新鲜度检查的逃生口。默认 false = 检查生效；
              确实要用旧 dist 时用 -Dskip.frontend.freshness=true 临时跳过 -->
         <skip.frontend.freshness>false</skip.frontend.freshness>
+
+        <!-- 构建信息，写进 build-info.properties 供运行时读取。
+             build.time 在这里定死：properties 只求值一次，整个构建过程
+             （编译、测试、打包）看到的是同一个时间，不会出现"编译时间"与
+             "打包时间"不一致。
+             文件本身由 antrun 的 generate-build-info 生成（含 git 短哈希），
+             见那个 execution 的说明 -->
+        <build.time>${maven.build.timestamp}</build.time>
+        <!-- maven.build.timestamp 的格式。用本地时间的可读形式，
+             而不是 ISO8601 的 UTC（用户看到的时间要和自己手表对得上） -->
+        <maven.build.timestamp.format>yyyy-MM-dd HH:mm</maven.build.timestamp.format>
     </properties>
 
     <!-- 阿里云镜像仓库（加速下载） -->
@@ -192,6 +203,60 @@
                             </target>
                         </configuration>
                     </execution>
+
+                    <!-- 生成 build-info.properties：版本 + 构建时间 + git 短哈希。
+                         
+                         【为什么整份文件都由 Ant 写，而不是让 Maven 过滤占位符】
+                         试过 resources 过滤，两处都卡住，最后放弃：
+                           ① Maven 已定义的属性会压过 Ant 的 <condition>，
+                              在 <properties> 里声明 build.commit 为空之后就永远填不上；
+                           ② 不声明的话，Ant 设的 git.commit.resolved 是【Ant 属性】，
+                              Maven 的 resources 过滤看不见它，会原样打进产物。
+                         转手到文件再读回来能work，但要额外一个 .properties 资源 + 
+                         额外一个阶段，链条长得不好维护。
+                         直接由 Ant 生成整份文件最简单：一次写清三个值，
+                         不经过任何过滤，链路只有一步。
+                         
+                         【取不到 git 怎么办】写空串。代码里识别为"未知"并省略这一段，
+                         界面上不会出现占位符。没装 git、不是仓库、尚未提交
+                         都属于这种情况，都不该让构建失败。
+                         
+                         放在 generate-resources：早于 process-resources
+                         （resources 插件会把这里生成的文件复制到 target/classes） -->
+                    <execution>
+                        <id>generate-build-info</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="git" dir="${project.basedir}"
+                                      outputproperty="git.commit.raw"
+                                      errorproperty="git.commit.err"
+                                      failonerror="false">
+                                    <arg value="rev-parse"/>
+                                    <arg value="--short"/>
+                                    <arg value="HEAD"/>
+                                </exec>
+                                <condition property="git.commit.resolved" value="${git.commit.raw}">
+                                    <and>
+                                        <isset property="git.commit.raw"/>
+                                        <not>
+                                            <equals arg1="${git.commit.raw}" arg2=""/>
+                                        </not>
+                                    </and>
+                                </condition>
+                                <!-- 取不到就用空串，不写任何占位符 —— 代码里会当"未知" -->
+                                <property name="git.commit.resolved" value=""/>
+
+                                <mkdir dir="${project.build.outputDirectory}"/>
+                                <echo file="${project.build.outputDirectory}/build-info.properties"
+                                      message="build.version=${project.version}${line.separator}build.time=${build.time}${line.separator}build.commit=${git.commit.resolved}${line.separator}"/>
+                                <echo message="构建标识：${project.version} · commit=${git.commit.resolved} · time=${build.time}"/>
+                            </target>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
 
@@ -200,7 +265,25 @@
             repackage 一旦执行，jar 结构就定了，之后再复制进去也没用。
             Spring Boot 会自动把 classpath:/static/ 下的 index.html
             作为欢迎页返回，所以访问 / 就能看到前端，不需要额外配置-->
-            <plugin>
+        <!-- 测试运行时的环境隔离。
+             必须把 TINYQUERY_HOME 指到 target 下：普通测试里没人在意，
+             但语言落盘（DesktopLocale.switchTo）与数据源持久化都会调
+             PathResolver.getDataDir()，不给它一个隔离目录就会写进开发者
+             真实的 %APPDATA%\TinyQuery —— 跑一次测试就把人家的语言和数据源改了 -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+                <environmentVariables>
+                    <TINYQUERY_HOME>${project.build.directory}/test-home</TINYQUERY_HOME>
+                </environmentVariables>
+                <!-- 环境变量 TINYQUERY_LOCALE 优先级高于 locale.txt。
+                     如果开发者本机恰好设过它，语言相关的测试会跟着变 —— 显式清掉 -->
+                <argLine>-Dfile.encoding=UTF-8</argLine>
+            </configuration>
+        </plugin>
+
+        <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
                 <executions>
@@ -221,6 +304,48 @@
                     </execution>
                 </executions>
             </plugin>
+
+        <!-- 复制前端产物之前，先清掉上一次留下的文件。
+            必须清 —— Vite 的产物名带内容哈希（index-CGfHrKqe.js），
+            文件名一变旧的就不会被覆盖，于是 target/classes/static/assets 会
+            一次次累积历史包：实测堆过 2 个 js + 2 个 css，而只有一个是对的。
+            两个后果：① 每个发布包都白白变大；
+            ② 谁要是加载到旧文件，就会拿到上一版的前端而毫无察觉
+            （对照实验里就踩中过：改了源码重新打包，浏览器却仍加载旧的）。
+
+            刻意不给插件加 configuration 里的 excludeDefaultDirectories：
+            那会让 `mvn clean` 连整个 target 都不删了（实测过，target 会残留）。
+            这里只用 executions 里的一次 fileset，默认的 clean 行为不受影响 -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-clean-plugin</artifactId>
+            <executions>
+                <execution>
+                    <id>clean-stale-frontend</id>
+                    <!-- 用 process-classes 而不是 prepare-package。
+                         两个插件同处一个阶段时，顺序只由 pom 里的声明先后决定 ——
+                         那是隐式的、改个位置就会静默失效。放到更早的阶段，
+                         「先清后复制」就是阶段本身保证的，与声明顺序无关。
+                         顺序反了的后果实测过：clean 把刚复制进去的产物一起删掉，
+                         jar 里一个前端文件都没有 -->
+                    <phase>process-classes</phase>
+                    <goals>
+                        <goal>clean</goal>
+                    </goals>
+                    <configuration>
+                        <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                        <filesets>
+                            <fileset>
+                                <directory>${project.build.outputDirectory}/static</directory>
+                                <includes>
+                                    <include>**/*</include>
+                                </includes>
+                            </fileset>
+                        </filesets>
+                    </configuration>
+                </execution>
+            </executions>
+        </plugin>
 
             <!-- Spring Boot 可执行 jar 打包插件。
                  它会产出 BOOT-INF 结构的 fat jar，并自动合并各依赖中的

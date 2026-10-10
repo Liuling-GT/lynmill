@@ -4,9 +4,13 @@ import com.tinyquery.executor.ChartResult;
 import com.tinyquery.executor.ColumnStore;
 import com.tinyquery.executor.QueryEngine;
 import com.tinyquery.executor.QueryResult;
+import com.tinyquery.parser.NameSuggester;
+import com.tinyquery.parser.QueryHintException;
 import com.tinyquery.parser.QueryStatement;
 import com.tinyquery.parser.SQLParser;
 import com.tinyquery.datasource.DataSourceManager;
+import com.tinyquery.datasource.spec.DataSourceException;
+import com.tinyquery.i18n.Messages;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
@@ -51,7 +55,7 @@ public class QueryController {
     @PostMapping("/query")
     public QueryResponse query(@RequestBody QueryRequest request) {
         try {
-            long start = System.currentTimeMillis();
+            QueryTimer timer = QueryTimer.start();
 
             QueryStatement stmt = parser.parse(request.sql());
 
@@ -65,12 +69,31 @@ public class QueryController {
 
             QueryResult result = engine.executePage(stmt, page, pageSize);
 
-            long elapsed = System.currentTimeMillis() - start;
+            // 用 nanoTime 而不是 currentTimeMillis：查询常在毫秒级，
+            // 墙上时间测不准、还会报 0（见 QueryTimer 的说明）
+            long elapsed = timer.elapsedMillis();
 
-            return new QueryResponse(0, "success", result.columns(), result.columnTypes(), result.rows(),
+            return new QueryResponse(0, "success", null, result.columns(), result.columnTypes(), result.rows(),
                     result.hasMore(), result.totalRows(), page, pageSize, elapsed);
+        } catch (QueryHintException e) {
+            // 业务失败，但顺带有一句给用户的提示（紫色并排展示）
+            return new QueryResponse(1, e.getMessage(), e.getHint(), null, null, null, false, 0, 0, 0, 0);
         } catch (Exception e) {
-            return new QueryResponse(1, e.getMessage(), null, null, null, false, 0, 0, 0, 0);
+            String hint = null;
+            // 数据源名只差大小写时给一句提示。列名那类候选在 ColumnStore 里就已经带上了，
+            // 这里只管数据源名 —— 表名解析发生在拿 ColumnStore 之前，那边查不到数据源名单
+            //
+            // 靠错误码判断而不是 message 前缀：message 会随界面语言变，
+            // 用中文前缀匹配的写法在英文模式下会静默失效（切了英文就没提示了）
+            if (e instanceof DataSourceException dse && dse.is("error.datasourceNotFound")) {
+                Object[] args = dse.errorArgs();
+                if (args.length > 0) {
+                    String requested = String.valueOf(args[0]).trim();
+                    hint = NameSuggester.describe(requested,
+                            NameSuggester.suggest(requested, manager.listNames()));
+                }
+            }
+            return new QueryResponse(1, e.getMessage(), hint, null, null, null, false, 0, 0, 0, 0);
         }
     }
 
@@ -86,7 +109,7 @@ public class QueryController {
     @PostMapping("/query/chart")
     public ChartResponse chart(@RequestBody ChartRequest request) {
         try {
-            long start = System.currentTimeMillis();
+            QueryTimer timer = QueryTimer.start();
 
             String aggregation = normalizeAggregation(request.aggregation());
 
@@ -97,7 +120,7 @@ public class QueryController {
             // count 不需要度量列，其余必须给。
             // 前端在自动重绘，这条失败会静默发生，所以错误信息要能说清原因
             if (!"count".equals(aggregation) && measures.isEmpty()) {
-                return new ChartResponse(1, "请选择度量列", null, null, 0, false, false, 0);
+                return new ChartResponse(1, Messages.get("error.measureRequired"), null, null, 0, false, false, 0);
             }
 
             QueryStatement stmt = parser.parse(request.sql());
@@ -108,7 +131,8 @@ public class QueryController {
             ChartResult result = engine.aggregateForChart(stmt, request.dimension(), measures,
                     aggregation, normalizeChartTopN(request.topN()));
 
-            long elapsed = System.currentTimeMillis() - start;
+            // 同上：图表聚合耗时同样常在毫秒级
+            long elapsed = timer.elapsedMillis();
 
             return new ChartResponse(0, "success", result.categories(), result.series(),
                     result.totalGroups(), result.truncated(), result.bucketed(), elapsed);
@@ -190,7 +214,7 @@ public class QueryController {
             stmt = parser.parse(request.sql());
 
             if (stmt.isAggregate()) {
-                writeError(response, "聚合查询不支持导出，请导出明细数据");
+                writeError(response, Messages.get("error.exportNotSupported"));
                 return;
             }
 

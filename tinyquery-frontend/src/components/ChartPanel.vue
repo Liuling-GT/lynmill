@@ -2,26 +2,26 @@
   <div class="chart-panel">
     <!-- 还没执行过查询：没有列信息，无法配置图表 -->
     <div v-if="columns.length === 0" class="panel-hint">
-      <el-empty description="请先执行一次查询，图表将基于该次查询的结果绘制" :image-size="80" />
+      <el-empty :description="t('chart.emptyHint')" :image-size="80" />
     </div>
 
     <template v-else>
       <!-- 配置区。任何一项变化都会自动重绘，不需要额外的按钮 -->
       <div class="chart-config">
         <div class="cfg-group">
-          <span class="cfg-label">维度</span>
+          <span class="cfg-label">{{ t('chart.dimension') }}</span>
           <el-select v-model="dimension" size="small" class="cfg-item">
             <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
           </el-select>
         </div>
 
         <div class="cfg-group">
-          <span class="cfg-label">度量1</span>
+          <span class="cfg-label">{{ t('chart.measure1') }}</span>
           <el-select
             v-model="measure"
             size="small"
             class="cfg-item"
-            placeholder="无数值列"
+            :placeholder="t('chart.noNumericColumn')"
             :disabled="aggregation === 'count'"
           >
             <el-option v-for="c in numericColumns" :key="c" :label="c" :value="c" />
@@ -30,12 +30,12 @@
 
         <!-- 第二个度量：饼图表示整体占比，放不下两个系列；count 模式度量整个不参与 -->
         <div v-if="showSecondMeasure" class="cfg-group">
-          <span class="cfg-label">度量2</span>
+          <span class="cfg-label">{{ t('chart.measure2') }}</span>
           <el-select
             v-model="measure2"
             size="small"
             class="cfg-item"
-            placeholder="（无）"
+            :placeholder="t('common.none')"
             clearable
           >
             <el-option v-for="c in secondMeasureOptions" :key="c" :label="c" :value="c" />
@@ -43,22 +43,22 @@
         </div>
 
         <div class="cfg-group">
-          <span class="cfg-label">聚合</span>
+          <span class="cfg-label">{{ t('chart.aggregate') }}</span>
           <el-select v-model="aggregation" size="small" class="cfg-item cfg-narrow">
-            <el-option v-for="a in AGGREGATIONS" :key="a.value" :label="a.label" :value="a.value" />
+            <el-option v-for="a in aggregations" :key="a.value" :label="a.label" :value="a.value" />
           </el-select>
         </div>
 
         <div class="cfg-group">
-          <span class="cfg-label">类型</span>
+          <span class="cfg-label">{{ t('chart.type') }}</span>
           <el-select v-model="chartType" size="small" class="cfg-item cfg-narrow">
-            <el-option v-for="t in CHART_TYPES" :key="t.value" :label="t.label" :value="t.value" />
+            <el-option v-for="c in chartTypes" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
         </div>
 
         <!-- 配色：一个度量一套。两个度量时先选改哪个，再点色卡 -->
         <div class="cfg-group">
-          <span class="cfg-label">配色</span>
+          <span class="cfg-label">{{ t('chart.palette') }}</span>
           <el-select
             v-if="hasTwoSeries"
             v-model="paletteTarget"
@@ -68,13 +68,13 @@
             <el-option
               v-for="(_, i) in [0, 1]"
               :key="i"
-              :label="`度量${i + 1}`"
+              :label="t('chart.measureN', { n: i + 1 })"
               :value="i"
             />
           </el-select>
           <div class="swatches">
             <button
-              v-for="p in PRESET_PALETTES"
+              v-for="p in presetPalettes"
               :key="p.id"
               type="button"
               class="swatch"
@@ -92,12 +92,21 @@
                   />
                 </span>
           </div>
+          <!-- 换整套配色会清掉逐扇区的手调颜色（见下方 watch，逻辑有意保留）。
+               只在真的调过扇区颜色时提示 —— 没调过就没有会被重置的东西 -->
+          <el-tooltip
+            v-if="hasManualSectorColors"
+            :content="t('chart.paletteResetDetail')"
+            placement="top"
+          >
+            <span class="cfg-note">{{ t('chart.paletteResetHint') }}</span>
+          </el-tooltip>
         </div>
 
         <!-- 突出显示：只在柱状图下有意义 —— 折线没有「一根根」的形态，
              饼图已经有逐扇区取色了 -->
         <el-checkbox v-if="chartType === 'bar'" v-model="highlightMode" size="small" class="cfg-check">
-          突出显示
+          {{ t('chart.highlight') }}
         </el-checkbox>
 
         <!-- 点亮了好几根时，一根根点回去太麻烦 -->
@@ -107,16 +116,16 @@
           size="small"
           @click="clearHighlight"
         >
-          清除点亮（{{ highlighted.length }}）
+          {{ t('chart.clearHighlight', { count: highlighted.length }) }}
         </el-button>
 
         <!-- 两个度量时才谈得上「统一」，单度量下开关没有意义 -->
         <el-checkbox v-if="hasTwoSeries" v-model="unifyScale" size="small" class="cfg-check">
-          统一度量单位
+          {{ t('chart.unifyScale') }}
         </el-checkbox>
 
         <el-checkbox v-model="keepFullPrecision" size="small" class="cfg-check">
-          保留全部小数
+          {{ t('chart.keepFullPrecision') }}
         </el-checkbox>
       </div>
 
@@ -156,11 +165,11 @@
             :predefine="PRESET_COLORS"
             :teleported="false"
           />
-          <el-button link size="small" @click="resetSectorColor">重置</el-button>
+          <el-button link size="small" @click="resetSectorColor">{{ t('common.reset') }}</el-button>
         </div>
 
         <div v-if="!hasChart && !errorMessage" class="chart-placeholder">
-          <el-empty :description="loading ? '正在聚合…' : '暂无数据'" :image-size="60" />
+          <el-empty :description="loading ? t('chart.loading') : t('common.empty')" :image-size="60" />
         </div>
       </div>
     </template>
@@ -170,7 +179,10 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import * as echarts from 'echarts'
-import { queryChart } from '../api/query'
+import { useI18n } from 'vue-i18n'
+import { queryChart, stripErrorPrefix } from '../api/query'
+
+const { t } = useI18n()
 
 const props = defineProps({
   // 上次执行成功的 SQL。图表用的是这个，不是文本框里的实时内容 ——
@@ -193,20 +205,27 @@ const props = defineProps({
 // 导出按钮在父组件的卡片头里，能否导出由这里算好再传出去
 const emit = defineEmits(['can-export'])
 
-// 聚合方式。value 与后端 normalizeAggregation 的白名单一致
-const AGGREGATIONS = [
-  { value: 'sum', label: '求和' },
-  { value: 'avg', label: '平均值' },
-  { value: 'count', label: '计数' },
-  { value: 'max', label: '最大值' },
-  { value: 'min', label: '最小值' },
+// 聚合方式。value 与后端 normalizeAggregation 的白名单一致。
+// label 存词条键 —— 切换语言时要跟着变，所以这里不能是常量数组
+const AGGREGATION_VALUES = [
+  { value: 'sum', labelKey: 'chart.aggSum' },
+  { value: 'avg', labelKey: 'chart.aggAvg' },
+  { value: 'count', labelKey: 'chart.aggCount' },
+  { value: 'max', labelKey: 'chart.aggMax' },
+  { value: 'min', labelKey: 'chart.aggMin' },
 ]
 
-const CHART_TYPES = [
-  { value: 'bar', label: '柱状图' },
-  { value: 'line', label: '折线图' },
-  { value: 'pie', label: '饼图' },
+const aggregations = computed(() =>
+  AGGREGATION_VALUES.map((item) => ({ value: item.value, label: t(item.labelKey) })))
+
+const CHART_TYPE_VALUES = [
+  { value: 'bar', labelKey: 'chart.typeBar' },
+  { value: 'line', labelKey: 'chart.typeLine' },
+  { value: 'pie', labelKey: 'chart.typePie' },
 ]
+
+const chartTypes = computed(() =>
+  CHART_TYPE_VALUES.map((item) => ({ value: item.value, label: t(item.labelKey) })))
 
 // 饼图扇区超过这个数就没法读了，让后端提前合并成「其他」。
 // 柱状图可以多放一些，横向滚动还能看
@@ -393,18 +412,23 @@ const derivePalette = (primary) => {
  * 排到前面会落进暂时性死区
  */
 const PRESET_MAIN_COLORS = [
-  { id: 'gold', label: '金黄', color: '#ffd700' },
-  { id: 'lime', label: '青柠', color: '#bfff00' },
-  { id: 'azure', label: '天青', color: '#00d4ff' },
-  { id: 'mist', label: '雾蓝', color: '#89c2ff' },
-  { id: 'graphite', label: '石墨', color: '#49495a' },
-  { id: 'lilac', label: '丁香', color: '#b19cd9' },
+  { id: 'gold', labelKey: 'palette.gold', color: '#ffd700' },
+  { id: 'lime', labelKey: 'palette.lime', color: '#bfff00' },
+  { id: 'azure', labelKey: 'palette.sky', color: '#00d4ff' },
+  { id: 'mist', labelKey: 'palette.azure', color: '#89c2ff' },
+  { id: 'graphite', labelKey: 'palette.graphite', color: '#49495a' },
+  { id: 'lilac', labelKey: 'palette.clove', color: '#b19cd9' },
 ]
 
-const PRESET_PALETTES = PRESET_MAIN_COLORS.map((preset) => ({
-  ...preset,
-  colors: derivePalette(preset.color),
-}))
+// label 在模板里取，这里只带出 id / color 与词条键 ——
+// 色卡名要跟着语言变，做成常量会在切换后停在上一种语言
+const presetPalettes = computed(() =>
+  PRESET_MAIN_COLORS.map((preset) => ({
+    id: preset.id,
+    label: t(preset.labelKey),
+    color: preset.color,
+    colors: derivePalette(preset.color),
+  })))
 
 /**
  * 柱子样式。
@@ -450,7 +474,7 @@ const keepFullPrecision = ref(false)
  * 第一个取色相序里的头一张（金黄），第二个走自定义 ——
  * 两套预设的主色如果撞在一起，两个度量会变成同一个颜色
  */
-const paletteIds = ref([PRESET_PALETTES[0].id, 'custom'])
+const paletteIds = ref([PRESET_MAIN_COLORS[0].id, 'custom'])
 const customColors = ref([DEFAULT_PRIMARY, DEFAULT_SECONDARY])
 
 // 配置区的色卡在改哪个度量。只有两个系列时才需要选
@@ -504,17 +528,18 @@ let lastRenderKey = ''
 
 // 取某个度量的整套配色。自定义的现场派生，预设的直接取
 const paletteOf = (index) => {
-  const id = paletteIds.value[index] || PRESET_PALETTES[0].id
+  const fallback = derivePalette(PRESET_MAIN_COLORS[0].color)
+  const id = paletteIds.value[index] || PRESET_MAIN_COLORS[0].id
   if (id === 'custom') {
     return derivePalette(customColors.value[index] || DEFAULT_PRIMARY)
   }
-  const preset = PRESET_PALETTES.find((p) => p.id === id)
-  return preset ? preset.colors : PRESET_PALETTES[0].colors
+  const preset = PRESET_MAIN_COLORS.find((p) => p.id === id)
+  return preset ? derivePalette(preset.color) : fallback
 }
 
 // 配置区正在编辑的那套。色卡的高亮与取色器的值都读它
 const activePaletteId = computed({
-  get: () => paletteIds.value[paletteTarget.value] || PRESET_PALETTES[0].id,
+  get: () => paletteIds.value[paletteTarget.value] || PRESET_MAIN_COLORS[0].id,
   // 下拉框或取色器把它改成 'custom' 时，颜色本身由 activeCustomColor 落盘
   set: (id) => {
     paletteIds.value[paletteTarget.value] = id
@@ -538,11 +563,37 @@ const pieSectorColors = computed(() => {
   return categories.map((name, i) => sectorColors.value[name] || base[i % base.length])
 })
 
-// 配色只影响渲染，不影响数据。拼成指纹统一观察，
-// 免得 watch 一堆深层对象还得逐个开 deep
+/*
+ * 配色指纹。配色只影响渲染、不影响数据，拼成一串字符串统一观察，
+ * 免得 watch 一堆深层对象还得逐个开 deep。
+ *
+ * ⚠️ 它把三份配色状态揉进了一个值，而这三个来源分别被下面三个 watch 盯着。
+ * 改一次配色时，「谁触发了」会变得不直观：
+ *
+ *     paletteIds / customColors 变化
+ *        ├─► watch A  重置 sectorColors
+ *        ├─► watch B  重绘（条件：highlightMode 为真）
+ *        └─► 本 computed 重算
+ *               │
+ *               └─► watch C  重绘（条件：chartData 有值）
+ *
+ * 而 watch A 重置 sectorColors 之后，本 computed 会**再算一次**，
+ * 于是 watch C 可能第二次触发。所以「点一次配色跑 2~3 次 renderChart」
+ * 是这个结构的必然结果，不是谁写错了。
+ *
+ * 代价很小（本地应用、用户主动操作、ECharts setOption 是毫秒级），
+ * 所以这里选择保留现状、写清关系，不做合并 —— 三个 watch 的
+ * 意图本来就不同，硬合并反而会让以后想单独调一个时无从下手。
+ *
+ * 改动前请先读下面三个 watch 各自的注释。
+ */
 const colorKey = computed(() =>
   JSON.stringify([paletteIds.value, customColors.value, sectorColors.value]),
 )
+
+// 是否手动调过扇区颜色。只有 true 时才提示"切换配色会重置" ——
+// 没调过就没有会被重置的东西，常驻提示只会变成噪音
+const hasManualSectorColors = computed(() => Object.keys(sectorColors.value).length > 0)
 
 // 数值列才能当度量
 const numericColumns = computed(() =>
@@ -620,7 +671,7 @@ const loadChart = async () => {
   // count 不需要度量列，其余情况没有数值列就没法画
   if (aggregation.value !== 'count' && !measure.value) {
     chartData.value = null
-    errorMessage.value = '当前结果集里没有数值列，无法作为度量'
+    errorMessage.value = t('chart.noNumericHint')
     return
   }
 
@@ -663,7 +714,8 @@ const loadChart = async () => {
       return
     }
     chartData.value = null
-    errorMessage.value = error.message
+    // 与查询页一致，统一以 "Error: " 开头（api 层已剥掉后端的 "error:" 前缀）
+    errorMessage.value = 'Error: ' + stripErrorPrefix(error.message)
   } finally {
     if (seq === requestSeq) {
       loading.value = false
@@ -708,26 +760,31 @@ const buildHint = (body) => {
   const parts = []
 
   if (body.bucketed) {
-    parts.push(`${dimension.value} 是数值列，已自动分为 ${body.categories.length} 段（X 轴为区间）`)
+    parts.push(t('chart.bucketHint', {
+      dimension: dimension.value,
+      count: body.categories.length,
+    }))
   } else if (body.truncated) {
     const aggLabel =
-      AGGREGATIONS.find((a) => a.value === aggregation.value)?.label || aggregation.value
-    parts.push(
-      `共 ${body.totalGroups} 个分组，按${aggLabel}降序仅展示前 ` +
-      `${body.categories.length - 1} 个，其余已合并为「其他」`,
-    )
+      aggregations.value.find((a) => a.value === aggregation.value)?.label || aggregation.value
+    parts.push(t('chart.truncatedHint', {
+      total: body.totalGroups,
+      agg: aggLabel,
+      shown: body.categories.length - 1,
+    }))
   } else if (body.categories.length > LABEL_MAX_CATEGORIES) {
-    parts.push(`共 ${body.categories.length} 个分组，柱子上不显示数值，鼠标悬停可查看`)
+    parts.push(t('chart.densityHint', { count: body.categories.length }))
   }
 
   // 这两个都是藏起来的功能，不提示没人会去点
   if (chartType.value === 'pie') {
-    parts.push('点击任意扇区可单独调整它的颜色')
+    parts.push(t('chart.pieHint'))
   } else if (chartType.value === 'bar' && highlightMode.value) {
-    parts.push('点击柱子可切换点亮，再点一次取消')
+    parts.push(t('chart.barHint'))
   }
 
-  return parts.join('；')
+  // 中文用全角分号，英文用半角分号加空格 —— 标点各按各的规范
+  return parts.join(t('chart.hintSeparator'))
 }
 
 /**
@@ -899,6 +956,25 @@ const resetSectorColor = () => {
   const next = { ...sectorColors.value }
   delete next[sectorPopup.value.name]
   sectorColors.value = next
+}
+
+/**
+ * 彻底销毁图表实例与尺寸监听。
+ *
+ * 必须在「容器被 v-if 换掉」和「组件卸载」两条路径上都调用。
+ * 只调其中一条会留下悬空引用：chart 指着已经移出 DOM 的旧容器，
+ * 而 renderChart 里的 if (!chart) 是首次初始化分支 —— 不清掉的话
+ * 新容器永远不会 echarts.init，图永久空白、resize 也失效
+ */
+const disposeChart = () => {
+  if (observer) {
+    observer.disconnect()
+    observer = null
+  }
+  if (chart) {
+    chart.dispose()
+    chart = null
+  }
 }
 
 const renderChart = () => {
@@ -1170,11 +1246,15 @@ watch([chartType, chartData], () => {
 })
 
 /**
- * 换整套配色时清掉逐扇区的自定义。
+ * 配色 watch ①／③：换整套配色时清掉逐扇区的自定义。
  *
  * 不清的话，选完主题饼图还是花花的，看着像没生效。
  * 自定义是一次点击的事，重做成本低。
- * 只看下标 0 —— 饼图用的是度量1 那套，度量2 的配色动不了饼图
+ * 只看下标 0 —— 饼图用的是度量1 那套，度量2 的配色动不了饼图。
+ *
+ * 副作用：清空 sectorColors 会让 colorKey 重算，进而可能多触发一次
+ * watch ③。这是可接受的（见 colorKey 处的说明），但别误以为 A 是
+ * 「无副作用的状态重置」—— 它是一条渲染链的起点。
  */
 watch(
   () => [paletteIds.value[0], customColors.value[0]],
@@ -1183,16 +1263,34 @@ watch(
   },
 )
 
-// 换配色或换数据后，点亮的柱子按新配色重绘 —— 点亮名单本身保留，
-// 同一批类别还在的话就该继续亮着
+/**
+ * 配色 watch ②／③：换配色或换数据后，点亮的柱子按新配色重绘。
+ *
+ * 点亮名单本身保留 —— 同一批类别还在的话就该继续亮着。
+ *
+ * 只在 highlightMode 为真时重绘：没开点亮功能时配色变化由 watch ③
+ * 经 colorKey 覆盖，这里再画一次纯属浪费。
+ * 换句话说，这个 watch 的存在理由是「点亮态有自己的绘制路径」，
+ * 而不是「配色变了要重绘」—— 后者是 watch ③ 的活。
+ */
 watch([paletteIds, customColors], () => {
   if (chartData.value && highlightMode.value) {
     renderChart()
   }
 })
 
-// 这几个开关只影响渲染，不影响数据，不必重新请求 ——
-// 直接重绘，避免白跑一趟后端
+/**
+ * 渲染 watch ③／③：这几个开关只影响渲染，不影响数据，不必重新请求 ——
+ * 直接重绘，避免白跑一趟后端。
+ *
+ * 依赖里的 colorKey 是**有意**放进去的：它让「扇区颜色变了」也能重绘。
+ * 但要注意 colorKey 里还包含 paletteIds 与 customColors，
+ * 而那两样已经被 watch ② 盯上了 —— 所以改配色时这个 watch 也会跟着触发，
+ * 与 watch ② 形成一次重复渲染。这正是 colorKey 注释里说的「2~3 次」。
+ *
+ * 想消掉重复的话，是把 colorKey 从这里拿掉，而不是去动 watch ②：
+ * 但拿掉之前必须先确认「改扇区颜色仍能重绘」有别的路径兜住。
+ */
 watch([unifyScale, keepFullPrecision, colorKey, highlightMode, highlighted], () => {
   if (chartData.value) {
     renderChart()
@@ -1202,6 +1300,26 @@ watch([unifyScale, keepFullPrecision, colorKey, highlightMode, highlighted], () 
 // 尺寸监听的绑定挪到了 renderChart 里 —— 容器要等 columns 非空才渲染，
 // 挂载时 chartRef 还是 null
 
+/*
+ * 容器消失时销毁图表实例。
+ *
+ * 模板是 v-if="columns.length === 0" / v-else 两条分支，查询失败会清空
+ * columns，v-else 整个被卸载、chartRef 变 null。此时不销毁的话：
+ *   · chart 仍指向已移出 DOM 的旧容器
+ *   · 下次查询重建了新容器，但 renderChart 的 if (!chart) 进不去
+ *   · 结果就是图永久空白、resize 失效，只能刷新页面
+ * 观察 columns（而不是 chartRef）是因为 ref 由 v-if 控制，
+ * 变化时机比 DOM 更新更早，能保证在新容器挂载前就把旧实例清干净
+ */
+watch(
+  () => props.columns.length,
+  (len) => {
+    if (len === 0) {
+      disposeChart()
+    }
+  },
+)
+
 onBeforeUnmount(() => {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
@@ -1209,15 +1327,8 @@ onBeforeUnmount(() => {
   if (animationTimer) {
     clearTimeout(animationTimer)
   }
-  if (observer) {
-    observer.disconnect()
-    observer = null
-  }
   document.removeEventListener('mousedown', handleDocumentMouseDown)
-  if (chart) {
-    chart.dispose()
-    chart = null
-  }
+  disposeChart()
 })
 </script>
 
@@ -1240,7 +1351,7 @@ onBeforeUnmount(() => {
 
 .cfg-label {
   font-size: 13px;
-  color: #606266;
+  color: var(--ui-text);
   white-space: nowrap;
 }
 
@@ -1254,6 +1365,16 @@ onBeforeUnmount(() => {
 
 .cfg-check {
   margin-right: 0;
+}
+
+/* 「切换配色会重置手调颜色」提示。做成可悬停的一行小字，
+   平时不抢注意力，悬停能看完整说明 */
+.cfg-note {
+  font-size: 12px;
+  color: var(--ui-warning);
+  white-space: nowrap;
+  cursor: help;
+  border-bottom: 1px dashed currentColor;
 }
 
 .swatches {
@@ -1273,11 +1394,11 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   cursor: pointer;
   /* 浅色主题在白色卡片上会糊掉，用内阴影勾一道边 */
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-ring);
 }
 
 .swatch.is-active {
-  border-color: #409eff;
+  border-color: var(--ui-selected);
 }
 
 /* 取色器触发按钮自带边框，套一层只为了给它加选中态 */
@@ -1290,7 +1411,7 @@ onBeforeUnmount(() => {
 }
 
 .swatch-custom.is-active {
-  border-color: #409eff;
+  border-color: var(--ui-selected);
 }
 
 .chart-alert {
@@ -1316,16 +1437,16 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: #ffffff;
-  border: 1px solid #dcdfe6;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
   border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-float);
 }
 
 .popup-title {
   max-width: 90px;
   font-size: 12px;
-  color: #606266;
+  color: var(--ui-text);
   /* 类别名可能很长，截断而不是把弹窗撑宽 */
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1338,8 +1459,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 遮挡住下面尚未绘制的画布 */
-  background: #ffffff;
+  /* 遮挡住下面尚未绘制的画布。这里必须是不透明白 ——
+     半透明会让画布上的旧内容透上来，看起来像"图还没换干净" */
+  background: var(--pure-white);
 }
 
 .panel-hint {

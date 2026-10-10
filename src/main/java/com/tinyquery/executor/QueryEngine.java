@@ -1,8 +1,9 @@
 package com.tinyquery.executor;
 
+import com.tinyquery.i18n.Messages;
+
 import com.tinyquery.parser.*;
 import com.tinyquery.parser.where.*;
-import com.tinyquery.parser.SortSpec;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -27,8 +28,8 @@ public record QueryEngine(ColumnStore store) {
     // 这里只是防御性约束，防止异常数据导致段数失控
     private static final int MAX_BUCKETS = 30;
 
-    // 维度值为 null 或空串时显示的类别名，避免前端出现一个空白的类别
-    private static final String EMPTY_LABEL = "(空)";
+    // 维度值为 null 或空串时显示的类别名，避免前端出现一个空白的类别。
+    // 取值见 chart.emptyCategory —— 它是按请求语言取的，不能是静态常量
 
     // 投影时列的种类。在行循环外判定一次即可，
     // 否则每行每列都要做一次 colName.matches("\\d+") 的正则匹配
@@ -38,10 +39,14 @@ public record QueryEngine(ColumnStore store) {
 
     /**
      * 分页执行查询
-     * 返回的是「排序后第 offset 到 offset+pageSize 行」。分页只影响返回哪一段
-     * 不影响 totalRows —— 前端靠 totalRows 算总页数
-     * SQL 里的 LIMIT 是结果集的硬上限，分页在它划定的范围内翻。
-     * 两者是「与」的关系：limit 10 时无论翻到第几页，总数都不会超过 10
+     * 返回的是「结果集里第 (page-1)*pageSize 到 page*pageSize 行」。
+     * 分页只影响返回哪一段，不影响 totalRows —— 前端靠 totalRows 算总页数
+     *
+     * <p>结果集由 SQL 的 OFFSET / LIMIT 划定：先跳过 offset 行，再取至多 limit 行。
+     * 分页在这个结果集内翻，三者是「与」的关系 ——
+     * {@code limit 10 offset 5} 时无论翻到第几页总数都不会超过 10，
+     * 且第一页的第一行是排序后的第 6 行。</p>
+     *
      * 注意：每翻一页都要重新执行一次完整的 filter（+ 排序）
      * 没有游标也没有缓存。单页耗时与不分页时相当，但翻页会线性累积服务端开销
      * @param page     页码，从 1 开始
@@ -58,28 +63,36 @@ public record QueryEngine(ColumnStore store) {
         List<Integer> indexes = filter(stmt);
         int matched = indexes.size();
 
-        // LIMIT 先收窄结果集范围，分页在这个范围内切。
+        // OFFSET / LIMIT 划定结果集：先跳过、后截断，分页在这个范围内切。
         // 不生效的话 select ... limit 10 会返回整表，是个不报错的静默错误
-        int totalRows = stmt.hasLimit() ? Math.min(matched, stmt.limit()) : matched;
+        ResultRange range = resultRange(stmt, matched);
+        int totalRows = range.size();
 
         if (stmt.hasOrderBy()) {
-            // 排序范围同时受「本页末尾」和「LIMIT 上限」约束，取较小者。
-            // 用 long 相乘再收窄，避免 page * pageSize 溢出 int
-            int need = (int) Math.min((long) page * pageSize, totalRows);
-            indexes = sortAndLimit(indexes, stmt.sort(), need);
-        } else if (indexes.size() > totalRows) {
-            indexes = indexes.subList(0, totalRows);
+            // 排序范围要同时覆盖「跳过的 offset 行」「本页末尾」和「LIMIT 上限」。
+            // 用 long 相加相乘再收窄，避免 page * pageSize 与 offset 相加溢出 int
+            long need = (long) range.offset() + Math.min((long) page * pageSize, totalRows);
+            indexes = sortAndLimit(indexes, stmt.sort(), (int) Math.min(need, matched));
+        } else if (indexes.size() > range.offset() + totalRows) {
+            indexes = indexes.subList(0, range.offset() + totalRows);
         }
+
+        // 结果集 = 跳过 offset 之后的部分。
+        // 类型推断必须只看这一段 —— offset 之前的行不属于结果集，
+        // 拿它们抽样会把列类型带偏（前几行恰好是文本，数值列就会被判成 string）
+        List<Integer> resultSet = range.offset() >= indexes.size()
+                ? List.of()
+                : indexes.subList(range.offset(), indexes.size());
 
         // 切出本页区间。上一页的数据直接跳过，不参与投影
         int from = (page - 1) * pageSize;
         List<Integer> pageIndexes;
-        if (from >= indexes.size()) {
+        if (from >= resultSet.size()) {
             // 页码超出范围，返回空页而不是报错 —— 前端可能停在删空了的页上
             pageIndexes = List.of();
         } else {
-            int to = Math.min(from + pageSize, indexes.size());
-            pageIndexes = indexes.subList(from, to);
+            int to = Math.min(from + pageSize, resultSet.size());
+            pageIndexes = resultSet.subList(from, to);
         }
 
         boolean hasMore = (long) page * pageSize < totalRows;
@@ -87,10 +100,30 @@ public record QueryEngine(ColumnStore store) {
         // 投影列只解析一次，行投影与类型推断共用
         ProjectionColumns cols = prepareColumns(stmt);
 
-        // 类型从「全部命中行」抽样，而不是只看当前页 ——
+        // 类型从「整个结果集」抽样，而不是只看当前页 ——
         // 当前页可能整列都是空值，会把它判成 empty
-        return new QueryResult(resolveColumnNames(stmt), resolveColumnTypes(cols, indexes),
+        return new QueryResult(resolveColumnNames(stmt), resolveColumnTypes(cols, resultSet),
                 buildRows(cols, pageIndexes), totalRows, hasMore);
+    }
+
+    /**
+     * LIMIT / OFFSET 划定的结果集区间
+     * @param offset 结果集在命中行中的起始位置（即已跳过的行数）
+     * @param size   结果集行数（已套用 limit 上限）
+     */
+    private record ResultRange(int offset, int size) {
+    }
+
+    /**
+     * 由 LIMIT / OFFSET 与命中行数算出结果集区间
+     * executePage 与 listRows 共用同一套算术，保证「界面看到的」与「导出的」是同一段
+     */
+    private static ResultRange resultRange(QueryStatement stmt, int matched) {
+        int offset = stmt.hasOffset() ? stmt.offset() : 0;
+        // offset 超出总行数时结果集为空，不能是负数
+        int afterOffset = Math.max(matched - offset, 0);
+        int size = stmt.hasLimit() ? Math.min(afterOffset, stmt.limit()) : afterOffset;
+        return new ResultRange(offset, size);
     }
 
     /**
@@ -109,12 +142,13 @@ public record QueryEngine(ColumnStore store) {
 
     // 解析结果表的列名
     private List<String> resolveColumnNames(QueryStatement stmt) {
-        // 聚合：直接用表达式原文作为表头，如 count(*) / avg(粉丝数)
+        // 聚合：直接用表达式原文作为表头，如 count(*) / avg(粉丝数)。
+        // 常量项要剥引号：原文是 '总计'，表头应当是 总计
         if (stmt.isAggregate()) {
             List<AggregationInfo> aggs = stmt.getAggregations();
             List<String> names = new ArrayList<>(aggs.size());
             for (AggregationInfo agg : aggs) {
-                names.add(agg.original());
+                names.add(unquote(agg.original()));
             }
             return names;
         }
@@ -129,14 +163,33 @@ public record QueryEngine(ColumnStore store) {
         List<String> names = new ArrayList<>(colNames.length);
         for (String colName : colNames) {
             // 字符串字面量作为列名时去掉引号，与结果行的取值保持一致
-            // 长度判断是必需的：单独的 ' 会同时满足前后缀条件，substring 会越界
-            if (colName.length() >= 2 && colName.startsWith("'") && colName.endsWith("'")) {
-                names.add(colName.substring(1, colName.length() - 1));
-            } else {
-                names.add(colName);
-            }
+            names.add(unquote(colName));
         }
         return names;
+    }
+
+    /**
+     * 去掉字符串字面量两侧的单引号；不是字面量则原样返回。
+     *
+     * <p>明细投影、常量项表头、常量项取值三处共用同一条规则 ——
+     * 早先常量那两处漏了剥离，于是 {@code select '总计', count(*)}
+     * 的表头和值都带着引号输出。</p>
+     */
+    private static String unquote(String text) {
+        if (isStringLiteral(text)) {
+            return text.substring(1, text.length() - 1);
+        }
+        return text;
+    }
+
+    /**
+     * 判断是否是两侧带单引号的字符串字面量（如 {@code '总计'}）。
+     *
+     * <p>长度判断是必需的：单独的 {@code '} 会同时满足前后缀条件，
+     * 直接 substring 会越界。</p>
+     */
+    private static boolean isStringLiteral(String text) {
+        return text != null && text.length() >= 2 && text.startsWith("'") && text.endsWith("'");
     }
 
     // ==================== 列类型推断 ====================
@@ -177,13 +230,17 @@ public record QueryEngine(ColumnStore store) {
     /**
      * 从样本推断列类型
      * ValueNormalizer 只产出 Integer / BigDecimal / String 三种，
-     * 因此非数值一律视为字符串。遇到第一个非空值即可定论
+     * 因此非数值一律视为字符串。遇到第一个「有值」的单元格即可定论
+     *
+     * <p>「有值」的判定统一走 isPresent：null、空串、纯空格串都算无值。
+     * 早先这里只跳过 null，于是列首的一个空串就把整列钉成 string ——
+     * 同一个概念在本类里有了两套裁判，图表也因此把数值列当文本分组。</p>
      */
     private static String inferType(List<Object> column, List<Integer> indexes) {
         int sample = Math.min(indexes.size(), TYPE_SAMPLE_SIZE);
         for (int k = 0; k < sample; k++) {
             Object value = column.get(indexes.get(k));
-            if (value == null) {
+            if (!isPresent(value)) {
                 continue;
             }
             return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
@@ -192,7 +249,7 @@ public record QueryEngine(ColumnStore store) {
         // 样本里全是空值。退回扫描整列，避免因为头部空值把数值列误判成 empty
         for (int idx : indexes) {
             Object value = column.get(idx);
-            if (value == null) {
+            if (!isPresent(value)) {
                 continue;
             }
             return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
@@ -236,17 +293,33 @@ public record QueryEngine(ColumnStore store) {
     // ==================== 排序 ====================
 
     /**
-     * 按条件过滤并排序，返回全部命中行号（不做行数截断）
-     * 供导出复用。导出必须与查询保持同样的行序
-     * 否则「先看一眼再导出」两边结果对不上
+     * 按条件过滤并排序，返回结果集内的全部行号
+     * 供导出复用。导出必须与界面看到的是同一段 ——
+     * 行序一致，行数与范围也一致：LIMIT / OFFSET 划定的结果集就是导出的范围
+     *
+     * <p>早先这里刻意「不做行数截断」，于是 SQL 写了 limit 10、界面显示 10 行，
+     * 点导出却拿到全部命中行。行序对得上而行数对不上，用户只会觉得导出坏了。</p>
      */
     public List<Integer> listRows(QueryStatement stmt) {
         List<Integer> indexes = filter(stmt);
+        int matched = indexes.size();
+
+        // 与 executePage 共用同一套 LIMIT / OFFSET 算术
+        ResultRange range = resultRange(stmt, matched);
+        int need = (int) Math.min((long) range.offset() + range.size(), matched);
+
         if (stmt.hasOrderBy()) {
-            // 导出不限行数，传入 Integer.MAX_VALUE 让它走「整体排序」分支
-            indexes = sortAndLimit(indexes, stmt.sort(), Integer.MAX_VALUE);
+            // 排到「offset + 结果集行数」即可，不必整体排序
+            indexes = sortAndLimit(indexes, stmt.sort(), need);
+        } else if (indexes.size() > need) {
+            indexes = indexes.subList(0, need);
         }
-        return indexes;
+
+        if (range.offset() >= indexes.size()) {
+            return new ArrayList<>();
+        }
+        // 返回独立副本：subList 是视图，调用方再动 store 会让它跟着变
+        return new ArrayList<>(indexes.subList(range.offset(), indexes.size()));
     }
 
     /**
@@ -255,20 +328,22 @@ public record QueryEngine(ColumnStore store) {
      * 只保留最优的 N 个，复杂度从 O(n log n) 降到 O(n log k)
      * 在 limit 远小于命中行数时（如百万行取前 10）收益显著
      */
-    private List<Integer> sortAndLimit(List<Integer> indexes, SortSpec sort, int limit) {
+    private List<Integer> sortAndLimit(List<Integer> indexes, SortSpecs sort, int limit) {
         // LIMIT 0 表示不要任何行；空结果也无需排序。
         // 这个提前返回同时避免了下面对 PriorityQueue 传非法容量
         if (limit <= 0 || indexes.isEmpty()) {
             return new ArrayList<>();
         }
 
-        List<Object> column = store.getColumns(sort.column());
+        // 比较器只构造一次：多列时它内部要按列取 store 的列引用，
+        // 放进循环里会随每次比较重复解析列名
+        Comparator<Integer> order = comparator(sort);
 
         if (indexes.size() <= limit) {
             // 全部都在返回范围内，直接整体排序即可。
             // List.sort 是稳定排序，同值行保持原有顺序
             List<Integer> sorted = new ArrayList<>(indexes);
-            sorted.sort(comparator(column, sort.desc()));
+            sorted.sort(order);
             return sorted;
         }
 
@@ -276,8 +351,9 @@ public record QueryEngine(ColumnStore store) {
         // 新行只要优于堆顶就替换掉它，最终堆里就是最优的 N 行。
         // 升序取最小 N 个 → 最差的是最大值 → 用最大堆
         // 降序取最大 N 个 → 最差的是最小值 → 用最小堆
-        // 两种情况都等价于「按目标顺序反转」
-        Comparator<Integer> worstFirst = comparator(column, sort.desc()).reversed();
+        // 两种情况都等价于「按目标顺序反转」——
+        // 多列时反转的是整条链，不是链上的某一列
+        Comparator<Integer> worstFirst = order.reversed();
         PriorityQueue<Integer> heap = new PriorityQueue<>(limit, worstFirst);
 
         for (int idx : indexes) {
@@ -286,7 +362,8 @@ public record QueryEngine(ColumnStore store) {
                 continue;
             }
             // 与堆顶（当前最差）比较，优于它才替换。
-            // 注意：有界堆不保证同值行保持原顺序，与上面的稳定排序略有差别
+            // 注意：有界堆不保证同值行保持原顺序，与上面的稳定排序略有差别。
+            // 「同值」是多列全等的口径，所以列数变多后这种差别比单列时更容易出现
             if (worstFirst.compare(idx, heap.peek()) > 0) {
                 heap.poll();
                 heap.add(idx);
@@ -302,10 +379,29 @@ public record QueryEngine(ColumnStore store) {
         return result;
     }
 
-    // 构造排序比较器。desc 为 true 时降序
-    private Comparator<Integer> comparator(List<Object> column, boolean desc) {
-        Comparator<Integer> byValue = (a, b) -> compareCells(column.get(a), column.get(b));
-        return desc ? byValue.reversed() : byValue;
+    /**
+     * 构造排序比较器：按列表顺序串联，前一项相等才看后一项
+     *
+     * <p>用 {@link Comparator#thenComparing} 串联，「相等才继续」的语义天然吻合。
+     * 每列的方向各自独立 —— {@code order by a asc, b desc} 是两段不同方向的比较器相加。</p>
+     */
+    private Comparator<Integer> comparator(SortSpecs sort) {
+        Comparator<Integer> chain = null;
+        // 列引用在链构造时取一次。同一列写两次（order by a, a desc）也照取，
+        // 不做去重 —— 去重会让「后者覆盖前者」这种用户写法变得难以解释
+        Map<String, List<Object>> columnCache = new HashMap<>();
+
+        for (SortSpec spec : sort.specs()) {
+            List<Object> column = columnCache.computeIfAbsent(spec.column(), store::getColumns);
+            Comparator<Integer> byValue = (a, b) -> compareCells(column.get(a), column.get(b));
+            if (spec.desc()) {
+                byValue = byValue.reversed();
+            }
+            chain = (chain == null) ? byValue : chain.thenComparing(byValue);
+        }
+
+        // specs 至少一个（构造函数保证），这里的非空判断只为消除静态分析告警
+        return chain == null ? (a, b) -> 0 : chain;
     }
 
     /**
@@ -401,7 +497,7 @@ public record QueryEngine(ColumnStore store) {
                 // 列是数值但条件值不是数字。此处才报错是刻意的：
                 // 若在编译期就报错，where name = 'abc' 这类纯字符串条件会被误伤
                 if (numberValue == null) {
-                    throw new IllegalArgumentException("error:条件值不是合法数字：" + stringValue);
+                    throw new IllegalArgumentException(Messages.get("parse.invalidNumber", stringValue));
                 }
                 return matchNumber(cellNumber, op, numberValue);
             }
@@ -559,6 +655,9 @@ public record QueryEngine(ColumnStore store) {
      * 预先解析好的投影列
      * 导出时每行都要投影，列的种类判定与列引用必须在循环外做一次
      * 否则会退化成「每行每列都做一次正则匹配 + HashMap 查找」
+     *
+     * <p>{@code names} 已剥掉字符串字面量的引号，与 {@link #resolveColumnNames}
+     * 的表头保持一致 —— 导出直接写这一份，不能再带引号。</p>
      */
     public record ProjectionColumns(String[] names, int[] kinds, String[] literals, List<List<Object>> columns) {
     }
@@ -583,9 +682,9 @@ public record QueryEngine(ColumnStore store) {
                 kinds[i] = COL_NUMBER_LITERAL;
                 literals[i] = colName;
                 columns.add(null);
-            } else if (colName.length() >= 2 && colName.startsWith("'") && colName.endsWith("'")) {
+            } else if (isStringLiteral(colName)) {
                 kinds[i] = COL_STRING_LITERAL;
-                literals[i] = colName.substring(1, colName.length() - 1);
+                literals[i] = unquote(colName);
                 columns.add(null);
             } else {
                 kinds[i] = COL_FIELD;
@@ -594,7 +693,21 @@ public record QueryEngine(ColumnStore store) {
             }
         }
 
-        return new ProjectionColumns(actualCols, kinds, literals, columns);
+        return new ProjectionColumns(headerNames(actualCols), kinds, literals, columns);
+    }
+
+    /**
+     * 把投影列名转成表头：字符串字面量去掉引号，其余原样。
+     *
+     * <p>界面表格与导出各取一次表头，两处必须一致，
+     * 否则会出现「界面显示 标签、导出文件里是 '标签'」这种对不上的情况。</p>
+     */
+    private static String[] headerNames(String[] cols) {
+        String[] names = new String[cols.length];
+        for (int i = 0; i < cols.length; i++) {
+            names[i] = unquote(cols[i]);
+        }
+        return names;
     }
 
     // 按预解析的列信息投影一行
@@ -631,9 +744,12 @@ public record QueryEngine(ColumnStore store) {
             String func = agg.function();
             String field = agg.field();
 
-            // 处理常量（SELECT 123）
+            // 常量项（select 1, count(*) 里的 1）：聚合结果只有一行，
+            // 常量在这一行里就是它自己，输出表达式原文即可。
+            // 字符串常量要剥引号（'总计' → 总计），否则界面会连引号一起显示
+            // 普通列走不到这里 —— SQLParser 的 validateAggregateSelect 已经把它拦在解析阶段
             if ("const".equals(func)) {
-                row[i] = agg.original();
+                row[i] = unquote(agg.original());
                 continue;
             }
 
@@ -709,8 +825,9 @@ public record QueryEngine(ColumnStore store) {
         return present;
     }
 
-    // 判断单元格是否有值：null 与空串（CSV 空字段归一后的形态）都视为无值
-    private boolean isPresent(Object cell) {
+    // 判断单元格是否有值：null、空串（CSV 空字段归一后的形态）、纯空格串都视为无值。
+    // 列类型推断（inferType）与 COUNT(列) 共用这一套判定，避免两处标准再次漂移
+    private static boolean isPresent(Object cell) {
         if (cell == null) {
             return false;
         }
@@ -742,6 +859,19 @@ public record QueryEngine(ColumnStore store) {
      * 因此不需要动 parser。分组在内存里完成，数据已在 ColumnStore 中
      * 维度是数值列时走分桶（直方图），文本列时走分组。
      * 两种模式对前端是同一种形状：类别标签 + 每个度量一列值
+     *
+     * <p><b>刻意不套用 LIMIT / OFFSET。</b>下面只做 {@code filter(stmt)}，
+     * 不经过 {@code resultRange} 那套算术 —— 也就是说 SQL 里的 {@code limit 10}
+     * 对图表无效，图表统计的是<b>全部命中行</b>。</p>
+     *
+     * <p>为什么这样才对：分页是「一屏看 50 行」的浏览手段，图表要看的是
+     * <b>整份数据的分布</b>。若跟着 LIMIT 走，{@code select * from t limit 10}
+     * 画出来的就是"前 10 行"的占比图 —— 而用户会把它当成全量占比，是彻底的误导。
+     * 写 LIMIT 的人通常只是想少取点数据，不会想到"顺带把图表变成局部图"。</p>
+     *
+     * <p>代价是大表上图表比表格多扫很多行，所以它是界面上显式的另一档操作，
+     * 不会跟着翻页自动触发。</p>
+     *
      * @param dimension   维度列名（分组键）
      * @param measures    度量列名，最多两个；aggregation 为 count 时忽略
      * @param aggregation 聚合方式：sum / avg / count / max / min，多个度量共用
@@ -749,6 +879,7 @@ public record QueryEngine(ColumnStore store) {
      */
     public ChartResult aggregateForChart(QueryStatement stmt, String dimension, List<String> measures,
                                          String aggregation, Integer topN) {
+        // 只过滤、不截断 —— 见上面对「刻意忽略 LIMIT」的说明
         List<Integer> indexes = filter(stmt);
 
         List<Object> dimColumn = store.getColumns(dimension);
@@ -784,10 +915,13 @@ public record QueryEngine(ColumnStore store) {
 
         // 分桶累加。用 LinkedHashMap 保证同值时的顺序稳定
         Map<String, GroupAcc> buckets = new LinkedHashMap<>();
+        // 空值类别名按当前语言取。不能提到静态常量里 —— 那份值在类加载时就定死了，
+        // 之后切语言也改不了，英文用户会看到一个「(空)」类别
+        String emptyLabel = Messages.get("chart.emptyCategory");
         for (int idx : indexes) {
             Object raw = dimColumn.get(idx);
             String key = (raw == null || String.valueOf(raw).isEmpty())
-                    ? EMPTY_LABEL : String.valueOf(raw);
+                    ? emptyLabel : String.valueOf(raw);
 
             buckets.computeIfAbsent(key, k -> new GroupAcc(seriesCount)).add(measureRefs, idx);
         }
@@ -942,7 +1076,7 @@ public record QueryEngine(ColumnStore store) {
     // 系列名：count 没有度量列，其余写成 sum(salary) 这样的表达式，前端直接当图例
     private static String seriesName(List<MeasureRef> measureRefs, int index, String aggregation) {
         if ("count".equals(aggregation) || index >= measureRefs.size()) {
-            return "计数";
+            return Messages.get("chart.seriesCount");
         }
         return aggregation + "(" + measureRefs.get(index).name() + ")";
     }

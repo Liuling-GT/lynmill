@@ -2,6 +2,7 @@ package com.tinyquery.datasource.loader;
 
 import com.tinyquery.datasource.*;
 import com.tinyquery.datasource.spec.*;
+import com.tinyquery.i18n.Messages;
 import com.tinyquery.executor.ColumnStore;
 
 import java.sql.Connection;
@@ -82,10 +83,10 @@ public abstract class JdbcLoader implements DataLoader {
             // 拿到列数即证明表可读
             int columnCount = rs.getMetaData().getColumnCount();
             return ConnectionTestResult.ok(
-                    "连接成功，表 " + tableRef + " 可读（探测到 " + columnCount + " 列）");
+                    Messages.get("test.connectionOk", tableRef, columnCount));
         } catch (SQLException e) {
             // SQLException 的消息本身已包含原因（Access denied / Unknown database / Table doesn't exist）
-            return ConnectionTestResult.fail("连接失败：" + e.getMessage());
+            return ConnectionTestResult.fail(Messages.get("error.connectFailed", e.getMessage()));
         }
     }
 
@@ -101,7 +102,8 @@ public abstract class JdbcLoader implements DataLoader {
 
         // 防止把脱敏后的配置原样回传注册，导致密码被替换成 "******"
         if (DataSourceInfo.MASK.equals(password)) {
-            throw new DataSourceException("数据源 [" + config.name() + "] 的密码是脱敏占位符，请填写真实密码");
+            throw new DataSourceException("error.passwordMasked", new Object[]{config.name()},
+                    Messages.get("error.passwordMasked", config.name()));
         }
 
         ColumnStore store = new ColumnStore();
@@ -126,7 +128,9 @@ public abstract class JdbcLoader implements DataLoader {
                 store.addRow(row);
             }
         } catch (SQLException e) {
-            throw new DataSourceException(label() + " 加载失败：" + e.getMessage(), e);
+            throw new DataSourceException("error.loadFailed",
+                    new Object[]{label(), e.getMessage()},
+                    Messages.get("error.loadFailed", label(), e.getMessage()), e);
         }
 
         return store;
@@ -146,7 +150,7 @@ public abstract class JdbcLoader implements DataLoader {
      * PostgreSQL 的引用带 schema 前缀，含点号，会通不过标识符白名单
      */
     protected final void validateCommon(DataSourceConfig config) {
-        requireIdentifier(config.requireString("table"), "表名");
+        requireIdentifier(config.requireString("table"), Messages.get("field.table"));
 
         // 无端口的源（SQLite）直接跳过，不依赖「配置里有没有 port 键」来推断
         Integer defaultPort = defaultPort();
@@ -156,15 +160,16 @@ public abstract class JdbcLoader implements DataLoader {
 
         int port = config.getInt("port", defaultPort);
         if (port <= 0 || port > 65535) {
-            throw new DataSourceException(
-                    "数据源 [" + config.name() + "] 的端口不合法：" + port);
+            throw new DataSourceException("error.portInvalid", new Object[]{config.name(), port},
+                    Messages.get("error.portInvalid", config.name(), port));
         }
     }
 
     // 校验标识符是否只含字母数字下划线
     protected final void requireIdentifier(String value, String fieldName) {
         if (!value.matches(IDENTIFIER_PATTERN)) {
-            throw new DataSourceException(fieldName + "只允许字母、数字和下划线：" + value);
+            throw new DataSourceException("error.identifierInvalid", new Object[]{fieldName, value},
+                    Messages.get("error.identifierInvalid", fieldName, value));
         }
     }
 }

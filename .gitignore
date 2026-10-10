@@ -26,6 +26,13 @@ data/*.sqlite3
 tinyquery-frontend/node_modules/
 tinyquery-frontend/dist/
 
-# jpackage 打包产物：约 175 MB（其中 128 MB 是自带的 JRE），
+# jpackage 打包产物：约 94 MB（其中 47 MB 是自带的运行时），
 # 体积大且可随时用 jpackage 重新生成，不该进版本库
 jpackage-out/
+
+# jlink 生成的精简运行时（packaging/make-runtime.py 的中间产物）：
+# 约 47 MB，每次打包都会重新生成，同样不该进版本库
+tinyquery-runtime/
+
+# Python 字节码缓存（packaging/*.py 跑过就会产生）
+__pycache__/

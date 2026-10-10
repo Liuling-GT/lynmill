@@ -1,5 +1,7 @@
 package com.tinyquery.desktop;
 
+import com.tinyquery.i18n.Messages;
+
 import com.tinyquery.config.BrowserOpener;
 import com.tinyquery.config.PathResolver;
 import org.slf4j.Logger;
@@ -43,9 +45,25 @@ public final class StartupFailureDialog {
 
     private static final Logger log = LoggerFactory.getLogger(StartupFailureDialog.class);
 
-    private static final String TITLE = "TinyQuery 启动失败";
+    /**
+     * 默认标题与首句。
+     *
+     * <p>做成方法而不是常量：常量在类加载时求值，而本类刻意设计成
+     * 「<b>启动最早期的失败</b>也能用」—— 那时 {@code DesktopLocale.apply()}
+     * 可能都还没跑。做成方法，取值时机就落在真正要弹窗的那一刻，
+     * 拿到的是当时已经确定好的语言。</p>
+     *
+     * <p>万一语言确实还没定（极端情况），{@link Messages#get} 会回落到中文，
+     * 弹窗照样弹得出来 —— 这条兜底比语言正确更重要：用户看到中文的报错，
+     * 总好过连报错都看不到。</p>
+     */
+    private static String title() {
+        return Messages.get("desktop.failure.title");
+    }
 
-    private static final String HEADLINE = "TinyQuery 启动失败，无法继续运行。";
+    private static String headline() {
+        return Messages.get("desktop.failure.headline");
+    }
 
     /**
      * 崩溃报告文件名。
@@ -58,8 +76,13 @@ public final class StartupFailureDialog {
     /** 异常链成环时的保护深度。正常链条不会超过几层 */
     private static final int MAX_CAUSE_DEPTH = 32;
 
-    private static final String BUTTON_OPEN_LOGS = "打开日志文件夹";
-    private static final String BUTTON_CONFIRM = "确定";
+    private static String buttonOpenLogs() {
+        return Messages.get("desktop.failure.openLogs");
+    }
+
+    private static String buttonConfirm() {
+        return Messages.get("desktop.failure.confirm");
+    }
 
     private StartupFailureDialog() {
         // 工具类，不实例化
@@ -73,7 +96,7 @@ public final class StartupFailureDialog {
      * @param failure 导致启动失败的原因，允许为 null
      */
     public static void report(Throwable failure) {
-        report(TITLE, HEADLINE, failure);
+        report(title(), headline(), failure);
     }
 
     /**
@@ -100,7 +123,7 @@ public final class StartupFailureDialog {
 
         // logback 这时多半已经就绪，让它也留一份；
         // 即便日志系统压根没起来，这一步也只是空转，不会抛
-        log.error("{}（详情见 {}）", title, report == null ? "标准错误输出" : report, failure);
+        log.error("{}（详情见 {}）", title, report == null ? Messages.get("desktop.failure.stderr") : report, failure);
 
         if (isHeadless()) {
             // 服务器 / CI：弹窗会抛 HeadlessException，直接写标准错误
@@ -128,7 +151,7 @@ public final class StartupFailureDialog {
             Path file = directory.resolve(CRASH_FILE_NAME);
 
             StringWriter buffer = new StringWriter();
-            buffer.append(buildMessage(HEADLINE, failure, file)).append(System.lineSeparator());
+            buffer.append(buildMessage(headline(), failure, file)).append(System.lineSeparator());
             if (failure != null) {
                 buffer.append(System.lineSeparator());
                 try (PrintWriter printer = new PrintWriter(buffer)) {
@@ -178,20 +201,20 @@ public final class StartupFailureDialog {
 
         text.append(headline).append(nl).append(nl);
 
-        text.append("原因：").append(nl);
+        text.append(Messages.get("desktop.failure.reason")).append(nl);
         text.append(describe(failure)).append(nl);
 
         Throwable root = rootCause(failure);
         if (root != failure) {
-            text.append(nl).append("根本原因：").append(nl);
+            text.append(nl).append(Messages.get("desktop.failure.rootCause")).append(nl);
             text.append(describe(root)).append(nl);
         }
 
         text.append(nl);
         if (detailFile == null) {
-            text.append("完整错误信息未能写入文件，请把本窗口内容截图发给开发者。");
+            text.append(Messages.get("desktop.failure.screenshotHint"));
         } else {
-            text.append("详细日志：").append(nl).append(detailFile);
+            text.append(Messages.get("desktop.failure.detailLog")).append(nl).append(detailFile);
         }
         return text.toString();
     }
@@ -204,7 +227,7 @@ public final class StartupFailureDialog {
      */
     static String describe(Throwable failure) {
         if (failure == null) {
-            return "（没有可用的错误信息）";
+            return Messages.get("desktop.failure.noInfo");
         }
         String name = failure.getClass().getName();
         String message = failure.getMessage();
@@ -261,11 +284,11 @@ public final class StartupFailureDialog {
 
     private static void showDialogNow(String title, String message, Path logDirectory) {
         try {
-            Object[] options = {BUTTON_OPEN_LOGS, BUTTON_CONFIRM};
+            Object[] options = {buttonOpenLogs(), buttonConfirm()};
             int choice = JOptionPane.showOptionDialog(
                     null, message, title,
                     JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE,
-                    null, options, BUTTON_CONFIRM);
+                    null, options, buttonConfirm());
 
             if (choice == 0 && logDirectory != null) {
                 openDirectory(logDirectory);

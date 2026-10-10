@@ -1,6 +1,7 @@
 package com.tinyquery.api;
 
 import com.tinyquery.datasource.spec.DataSourceException;
+import com.tinyquery.i18n.Messages;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public DataSourceResponse<Void> handleException(Exception e) {
         log.error("服务内部异常", e);
-        return DataSourceResponse.failure("服务内部错误，请查看后端日志");
+        return DataSourceResponse.failure(Messages.get("error.internal"));
     }
 }

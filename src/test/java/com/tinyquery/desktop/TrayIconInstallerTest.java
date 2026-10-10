@@ -1,6 +1,9 @@
 package com.tinyquery.desktop;
 
 import org.junit.jupiter.api.DisplayName;
+import com.tinyquery.i18n.Messages;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JMenuItem;
@@ -19,28 +22,82 @@ class TrayIconInstallerTest {
 
     private static final String ANY_URL = "http://localhost:8080";
 
+    /**
+     * 语言是全局状态（{@code Messages.desktopLocale}），测完必须还原，
+     * 否则后面跑的测试会拿到上一个用例留下的语言。
+     */
+    private String savedLocale;
+
+    @BeforeEach
+    void rememberLocale() {
+        savedLocale = Messages.desktopLocale();
+    }
+
+    @AfterEach
+    void restoreLocale() {
+        Messages.setDesktopLocale(savedLocale);
+    }
+
     // ==================== 字体 ====================
 
     @Test
-    @DisplayName("菜单字体能显示菜单里真实出现的每一个汉字，否则会渲染成方块")
-    void menuFontCoversAllMenuText() {
-        Font font = TrayIconInstaller.menuFont();
+    @DisplayName("两种语言下，菜单字体都能显示菜单里真实出现的每一个字符")
+    void menuFontCoversAllMenuTextInBothLocales() {
+        // 中文要 CJK 字形、英文要拉丁字形，字体覆盖要求不同，
+        // 只测一种语言会漏掉另一种。这里两种都过一遍
+        for (String locale : List.of(Messages.ZH, Messages.EN)) {
+            Messages.setDesktopLocale(locale);
+            Font font = TrayIconInstaller.menuFont();
+            String sample = TrayIconInstaller.menuTextSample();
 
-        // 校验的是常量拼出来的真实菜单文字，不是随便一个字符串，
-        // 因此菜单改了字而字体没跟上时，这个测试会失败
-        for (char c : TrayIconInstaller.MENU_TEXT_SAMPLE.toCharArray()) {
-            assertTrue(font.canDisplay(c),
-                    "字体 " + font.getFontName() + " 无法显示 '" + c + "'，托盘菜单会显示成方块");
+            for (char c : sample.toCharArray()) {
+                assertTrue(font.canDisplay(c),
+                        "[" + locale + "] 字体 " + font.getFontName()
+                                + " 无法显示 '" + c + "'，托盘菜单会显示成方块");
+            }
         }
     }
 
     @Test
-    @DisplayName("菜单文字常量确实覆盖了三个菜单项")
-    void sampleCoversAllLabels() {
-        assertEquals("打开界面显示窗口退出", TrayIconInstaller.MENU_TEXT_SAMPLE);
-        assertTrue(TrayIconInstaller.MENU_TEXT_SAMPLE.contains(TrayIconInstaller.MENU_LABEL_OPEN));
-        assertTrue(TrayIconInstaller.MENU_TEXT_SAMPLE.contains(TrayIconInstaller.MENU_LABEL_SHOW));
-        assertTrue(TrayIconInstaller.MENU_TEXT_SAMPLE.contains(TrayIconInstaller.MENU_LABEL_EXIT));
+    @DisplayName("菜单文字跟随语言变化，而不是写死中文")
+    void menuLabelsFollowLocale() {
+        Messages.setDesktopLocale(Messages.ZH);
+        assertEquals("打开界面", TrayIconInstaller.menuLabelOpen());
+        assertEquals("显示窗口", TrayIconInstaller.menuLabelShow());
+        assertEquals("退出", TrayIconInstaller.menuLabelExit());
+        assertEquals("打开界面显示窗口退出", TrayIconInstaller.menuTextSample());
+
+        Messages.setDesktopLocale(Messages.EN);
+        assertEquals("Open Interface", TrayIconInstaller.menuLabelOpen());
+        assertEquals("Show Window", TrayIconInstaller.menuLabelShow());
+        assertEquals("Exit", TrayIconInstaller.menuLabelExit());
+    }
+
+    @Test
+    @DisplayName("英文模式下菜单文字里没有中文")
+    void menuLabelsHaveNoChineseInEnglish() {
+        Messages.setDesktopLocale(Messages.EN);
+
+        for (String label : List.of(TrayIconInstaller.menuLabelOpen(),
+                TrayIconInstaller.menuLabelShow(), TrayIconInstaller.menuLabelExit())) {
+            assertFalse(label.matches(".*[\\u4e00-\\u9fff].*"),
+                    "英文模式下托盘菜单仍是中文：「" + label + "」");
+        }
+    }
+
+    @Test
+    @DisplayName("菜单文字取自词表，键名对得上")
+    void menuLabelsUseMessageTable() {
+        // 直接比对词表值，确认不是「碰巧一样的中文字面量」。
+        // 若有人把实现改回硬编码常量，这两个断言仍会通过 ——
+        // 所以真正拦得住的是下面那条：改语言后文字必须跟着变
+        Messages.setDesktopLocale(Messages.ZH);
+        String zh = TrayIconInstaller.menuLabelOpen();
+        Messages.setDesktopLocale(Messages.EN);
+        String en = TrayIconInstaller.menuLabelOpen();
+
+        assertNotEquals(zh, en,
+                "切换桌面端语言后菜单文字没变，说明没走词表（可能被写死或缓存了）");
     }
 
     @Test

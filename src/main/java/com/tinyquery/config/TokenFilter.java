@@ -1,5 +1,6 @@
 package com.tinyquery.config;
 
+import com.tinyquery.i18n.Messages;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -164,17 +165,16 @@ public class TokenFilter extends OncePerRequestFilter {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(
-                "{\"code\":403,\"message\":\"请求的地址不是本机。"
-                        + "TinyQuery 只服务于 127.0.0.1 与 localhost\"}");
+                "{\"code\":403,\"message\":\"" + Messages.get("security.hostRejected") + "\"}");
     }
 
     private static void reject(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json;charset=UTF-8");
         // 手工拼 JSON：过滤器里拿不到 MVC 的消息转换器，
-        // 而这段内容是固定的，不值得为它引一个序列化依赖进来
+        // 而这段内容是固定的，不值得为它引一个序列化依赖进来。
+        // 文案按语言取（LocaleFilter 排在本过滤器之前，此处语言已就位）
         response.getWriter().write(
-                "{\"code\":401,\"message\":\"缺少或无效的访问令牌。"
-                        + "请从 TinyQuery 控制窗口点「打开界面」重新进入\"}");
+                "{\"code\":401,\"message\":\"" + Messages.get("security.tokenRejected") + "\"}");
     }
 }

@@ -19,6 +19,26 @@
 
 set -euo pipefail
 
+# ---------- 参数 ----------
+# -FullRuntime / --full-runtime：逃生口。出问题时一条命令回到"带整个 JRE"的旧行为。
+#
+# 为什么要留这个：精简 runtime 靠一份**手工维护的模块清单**（见 make-runtime.py）。
+# 漏掉一个模块不会在打包时报错，而是在用户那里表现为「双击了没反应」。
+# 真出了这种事，先用 -FullRuntime 出一个能跑的包救急，再慢慢定位缺的是哪个模块。
+FULL_RUNTIME=0
+for arg in "$@"; do
+    case "$arg" in
+        -FullRuntime|--full-runtime) FULL_RUNTIME=1 ;;
+        -h|--help)
+            echo "用法: $0 [-FullRuntime]"
+            echo "  （不带参数）    精简 runtime，体积约 94 MB"
+            echo "  -FullRuntime   完整 JRE，体积约 130 MB，作为逃生口使用"
+            exit 0
+            ;;
+        *) echo "未知参数：$arg（用 --help 看用法）" >&2; exit 1 ;;
+    esac
+done
+
 # ---------- 0. 应用标识 ----------
 # 这些值必须与 pom.xml 的 <version> 保持一致。jpackage 的 --app-version
 # 只接受「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝，所以版本号已统一为 1.0.0。
@@ -30,7 +50,8 @@ vendor='Liuling'
 bundleId='com.liuling.tinyquery'
 
 # 本脚本在 packaging/ 下，上一级就是项目根目录
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+scriptDir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$scriptDir/.." && pwd)"
 jar="$root/target/tinyquery-$appVersion.jar"
 icon="$root/packaging/tinyquery.icns"
 in="$root/target/jpackage-input"
@@ -77,7 +98,42 @@ rm -f "$dmg"
 # 先出 app-image 再出 dmg，而不是一步 --type dmg：因为 .dmg 里只有一个压缩过的
 #   .app，验证「双击能不能起来」还得先挂载。让 jpackage 先把 .app 留在
 #   jpackage-out 里，本地验证、看 Info.plist、量体积都方便得多。
+
+# ---------- 3.5 精简 runtime ----------
+# 默认走精简：先 jlink 出一个只含必需模块的 runtime，再让 jpackage 用它。
+#
+# 【为什么不能直接用 jpackage 的 --jlink-options 减模块】
+# jpackage 手册写明：非模块化应用（--main-jar）一律使用「默认模块集」，
+# --add-modules 只能加不能减。所以必须自己 jlink 再用 --runtime-image 喂进去。
+#
+# 【模块清单从哪来】见 make-runtime.py —— 靠 `java --show-module-resolution`
+# 实测，不是靠 jdeps 猜。jdeps 只给出 4 个模块，按它裁会在启动时报
+# NoClassDefFoundError: GSSException。
+#
+# 【逃生口】-FullRuntime：出问题时回到"带整个 JRE"的旧行为。
+runtimeArgs=()
+if [ "$FULL_RUNTIME" = "1" ]; then
+    echo '【-FullRuntime】跳过裁剪，使用完整的 JRE（逃生口）'
+else
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo '找不到 python3 —— 精简 runtime 需要它。用 -FullRuntime 可跳过（体积大 80 MB 左右）' >&2
+        exit 1
+    fi
+    echo '正在生成精简 runtime ...'
+    python3 "$scriptDir/make-runtime.py" --jar "$jar" --version "$appVersion" --out "$root"
+    runtime="$root/tinyquery-runtime"
+    if [ ! -d "$runtime" ]; then
+        echo "runtime 没生成出来：$runtime" >&2
+        exit 1
+    fi
+    runtimeArgs=(--runtime-image "$runtime")
+fi
+
 echo '正在生成 .app ...'
+# 【为什么要写 ${runtimeArgs[@]+"${runtimeArgs[@]}"}】
+# 在 set -u 下，老 bash（4.3 及更早，macOS 自带的那个就是）展开空数组会报
+# 「unbound variable」并直接退出。而 -FullRuntime 时 runtimeArgs 正好是空的。
+# 这个写法是「有元素才展开」的惯用法，bash 3.2 也认。
 jpackage \
     --type app-image \
     --input "$in" \
@@ -86,6 +142,7 @@ jpackage \
     --app-version "$appVersion" \
     --vendor "$vendor" \
     --mac-package-identifier "$bundleId" \
+    ${runtimeArgs[@]+"${runtimeArgs[@]}"} \
     --icon "$icon" \
     --dest "$dest"
 
