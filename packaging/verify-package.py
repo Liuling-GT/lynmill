@@ -171,10 +171,10 @@ class App:
     def _root_cause(log):
         """从日志里挑出最有解释力的那几行。
 
-        <p>缺模块的典型形态是：顶层报的是 "Unable to start web server"，
+        缺模块的典型形态是：顶层报的是 "Unable to start web server"，
         真正的根因埋在下面几层 Caused by 里（实测是
         {@code NoClassDefFoundError: org/ietf/jgss/GSSException}）。
-        只报顶层等于让排查的人重走一遍。</p>
+        只报顶层等于让排查的人重走一遍。
         """
         if not log:
             return "      （启动器没有输出，可能根本没跑起来）"

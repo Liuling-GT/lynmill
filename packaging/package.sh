@@ -128,7 +128,10 @@ else
         exit 1
     fi
     echo '正在生成精简 runtime ...'
-    python3 "$scriptDir/make-runtime.py" --jar "$jar" --version "$appVersion" --out "$root"
+    # --runtime-only：只要 runtime。下面第 4 步会自己调 jpackage，
+    # 因为 macOS 需要追加 --mac-* 专属选项，make-runtime.py 打不出来。
+    python3 "$scriptDir/make-runtime.py" --jar "$jar" --version "$appVersion" \
+        --out "$root" --runtime-only
     runtime="$root/tinyquery-runtime"
     if [ ! -d "$runtime" ]; then
         echo "runtime 没生成出来：$runtime" >&2

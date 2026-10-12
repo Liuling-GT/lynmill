@@ -172,7 +172,10 @@ else
     command -v python3 >/dev/null 2>&1 || {
         echo '找不到 python3 —— 精简 runtime 需要它。用 --full-runtime 可跳过' >&2; exit 1; }
     echo '正在生成精简 runtime ...'
-    python3 "$scriptDir/make-runtime.py" --jar "$jar" --version "$appVersion" --out "$root"
+    # --runtime-only：只要 runtime。下面的第 5 步会自己调 jpackage，
+    # 因为 deb/rpm 需要追加 --linux-* 专属选项，make-runtime.py 打不出来。
+    python3 "$scriptDir/make-runtime.py" --jar "$jar" --version "$appVersion" \
+        --out "$root" --runtime-only
     runtime="$root/tinyquery-runtime"
     [ -d "$runtime" ] || { echo "runtime 没生成出来：$runtime" >&2; exit 1; }
     runtimeArgs=(--runtime-image "$runtime")

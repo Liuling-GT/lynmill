@@ -31,8 +31,8 @@ from pathlib import Path
 def _find_jdk():
     """定位 JDK。优先 JAVA_HOME，找不到就按平台猜常见位置。
 
-    <p>写死一个 Windows 路径是不行的 —— 这个脚本被三个平台的打包脚本共用
-    （package.ps1 / package.sh / package-linux.sh）。</p>
+    写死一个 Windows 路径是不行的 —— 这个脚本被三个平台的打包脚本共用
+    （package.ps1 / package.sh / package-linux.sh）。
     """
     env = os.environ.get("JAVA_HOME")
     if env and (Path(env) / "bin").is_dir():
@@ -88,7 +88,6 @@ MODULES = [
     "jdk.crypto.ec",        # ★ 椭圆曲线 TLS。连 MySQL/PostgreSQL 的 TLS 握手要它。
                             # 没有它时明文连接仍然能通，所以【只有在 TLS 场景才暴露】
     "jdk.crypto.cryptoki",  # PKCS#11（Windows 证书存储 / 智能卡）
-    "jdk.crypto.mscapi",    # Windows 原生加密 API
     "jdk.charsets",         # ★ 非 UTF-8 字符集（GBK 等）。读 GBK 编码的 CSV 要它
     "jdk.localedata",       # ★ 本地化数据。中文日期/月份名/数字分组要它。
                             # 默认含全部语言（很大），下面用 --include-locales 收窄
@@ -101,6 +100,28 @@ MODULES = [
     "jdk.security.auth",    # JAAS
     "jdk.security.jgss",
 ]
+
+# 只存在于特定平台的模块，必须按平台加，不能写进上面的公共列表。
+#
+# 【为什么】jlink 对「不存在的模块」不是忽略而是**直接失败**：
+#     Error: Module jdk.crypto.mscapi not found
+# 而 jdk.crypto.mscapi（Windows 原生加密 API）**只在 Windows 的 JDK 里有**，
+# Linux / macOS 的 OpenJDK 都不含。把它写进公共列表，结果是
+# **Windows 上打得出来、Linux 上直接失败** —— 而 Windows 恰恰是开发机，
+# 所以这个坑在开发时完全看不见，只在换平台打包时才炸。
+# 实测：在 Ubuntu 22.04 的 OpenJDK 17 上打 Linux 包时暴露。
+PLATFORM_MODULES = {
+    "nt": ["jdk.crypto.mscapi"],
+    "darwin": ["jdk.crypto.mscapi"],
+    "posix": [],
+}
+# os.name 在 Linux/macOS 上都是 "posix"，用 sys.platform 区分这两者。
+# jdk.crypto.mscapi 在 macOS 的 OpenJDK 里也不存在，所以按平台名显式列。
+if sys.platform == "darwin":
+    _plat = "darwin"
+else:
+    _plat = os.name
+MODULES += PLATFORM_MODULES.get(_plat, [])
 
 # 语言数据只保留中英 —— jdk.localedata 默认含全部语言，是个大头
 LOCALES = "zh,en"
@@ -122,14 +143,14 @@ def dir_size(p):
 def rmtree_retry(p, tries=20, wait=2.5):
     """删目录，遇到只读文件先清掉只读位，遇到占用再重试。
 
-    <p>【根因，别被 WinError 5 骗了】jpackage 产出的 {@code TinyQuery.exe}
+    【根因，别被 WinError 5 骗了】jpackage 产出的 {@code TinyQuery.exe}
     **自带只读属性**（实测 mode 0o555）。Python 的 {@code shutil.rmtree}
     在 Windows 上不会自动清只读位，删这种文件直接抛 WinError 5「拒绝访问」。
     而 PowerShell 的 {@code Remove-Item -Force} 会先清属性再删 —— 所以会出现
-    「PowerShell 删得掉、python 删不掉」这种看着像权限问题的怪现象。</p>
+    「PowerShell 删得掉、python 删不掉」这种看着像权限问题的怪现象。
 
-    <p>实测：连带重试 50 秒都没用，因为只读属性不会自己消失；
-    改成先 chmod 之后一次就过。重试只用来兜住真正的瞬时占用。</p>
+    实测：连带重试 50 秒都没用，因为只读属性不会自己消失；
+    改成先 chmod 之后一次就过。重试只用来兜住真正的瞬时占用。
     """
     p = Path(p)
     if not p.exists():
@@ -172,6 +193,10 @@ def main():
     ap.add_argument("--out", default=None, help="输出根目录")
     ap.add_argument("--keep-runtime", action="store_true",
                     help="保留中间产物 runtime（默认保留，便于排查）")
+    ap.add_argument("--runtime-only", action="store_true",
+                    help="只生成精简 runtime，不打包。给 package-linux.sh / package.sh 用 —— "
+                         "那两个脚本自己要按平台传不同的 jpackage 选项，"
+                         "这里再打一次会撞在同一个输出目录上")
     a = ap.parse_args()
 
     root = Path(__file__).resolve().parent.parent
@@ -206,6 +231,16 @@ def main():
     print("        runtime: %.1f MB" % (rt_size / 1024 / 1024))
     print()
 
+    # ---- 只出 runtime 就到此为止 ----
+    # package.sh / package-linux.sh 会在后面自己调 jpackage —— 它们需要按包类型
+    # 追加平台专属选项（--linux-* / --mac-*），这里打不出来。
+    # 早先没有这个分支，于是两个脚本各打一次 app-image，第二次撞在同一个
+    # 输出目录上，报 "Application destination directory ... already exists"。
+    if a.runtime_only:
+        print("  [--runtime-only] 只出 runtime，不打包")
+        print("        runtime: %s" % runtime_dir)
+        return
+
     # ---- 2. 准备输入目录 ----
     if in_dir.exists():
         rmtree_retry(in_dir)
@@ -227,9 +262,26 @@ def main():
             "--runtime-image", runtime_dir,
             "--dest", dest,
             "--java-options", "-XX:MaxRAMPercentage=50"]
-    icon = root / "packaging" / "tinyquery.ico"
+    # jpackage 的 --icon 是**平台特定**的：Windows 只认 .ico，macOS 只认 .icns，
+    # Linux 只认 PNG。传错格式时它**不报错**，只打一行警告然后改用默认图标 ——
+    # 也就是「打包成功、图标却没了」，很容易漏掉。
+    # 实测：在 Ubuntu 上打 Linux 包时，因为这里写死了 .ico，打出的是默认图标：
+    #     The specified icon ".../tinyquery.ico" is not a PNG file and will not be used.
+    ICON_BY_PLATFORM = {
+        "nt": "tinyquery.ico",
+        "darwin": "tinyquery.icns",
+        "posix": "tinyquery-512.png",
+    }
+    icon = root / "packaging" / ICON_BY_PLATFORM.get(_plat, "tinyquery-512.png")
+    if not icon.exists():
+        # 换一个可能的位置找（PNG 素材放在 resources 下）
+        alt = root / "src" / "main" / "resources" / "icons" / icon.name
+        if alt.exists():
+            icon = alt
     if icon.exists():
         args += ["--icon", icon]
+    else:
+        print("  ⚠ 找不到图标 %s，将使用 jpackage 默认图标" % icon.name)
     run(args)
 
     total = dir_size(app)
@@ -237,9 +289,20 @@ def main():
     print("  [3/3] 完成")
     print("        产物   : %s" % app)
     print("        总体积 : %.1f MB" % (total / 1024 / 1024))
-    print("        其中 runtime %.1f MB / app %.1f MB"
-          % (dir_size(app / "runtime") / 1024 / 1024,
-             dir_size(app / "app") / 1024 / 1024))
+    # app-image 的布局**按平台不同**，两个都要认：
+    #   Windows：<app>/app 与 <app>/runtime（扁平）
+    #   Linux  ：<app>/lib/app 与 <app>/lib/runtime（多一层 lib）
+    # 早先只按 <app>/runtime 取，Windows 上恰好对得上，在 Linux 上则恒报 0.0 MB。
+    def sub_size(name):
+        for cand in (app / name, app / "lib" / name):
+            if cand.exists():
+                return dir_size(cand)
+        return 0
+
+    rt, ap = sub_size("runtime"), sub_size("app")
+    if rt or ap:
+        print("        其中 runtime %.1f MB / app %.1f MB"
+              % (rt / 1024 / 1024, ap / 1024 / 1024))
     print()
     print("  下一步：python packaging/verify-package.py --app \"%s\"" % app)
 

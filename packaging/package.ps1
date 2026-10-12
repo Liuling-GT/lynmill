@@ -171,7 +171,13 @@ if ($FullRuntime) {
     if (-not (Test-Path $mk)) { throw "找不到 $mk" }
 
     Write-Host '正在生成精简 runtime...'
-    & $py.Source $mk --jar $jar --version $appVersion --out $root
+    # --runtime-only：只要 runtime，不要 make-runtime.py 顺手打的那个 app-image。
+    # 下面第 4 步会自己调 jpackage（Windows 需要 --win-* 之类的选项）。
+    # 不加这个参数的话，这里会先打一个 app-image 到 jpackage-out\TinyQuery，
+    # 紧接着又被下面「清掉旧的输出目录」删掉、重新打一遍 —— 白打一次，
+    # 而且如果不是恰好删得掉（比如上次打出的程序还在运行占着文件），
+    # 就会直接失败在 "目标目录已存在"。
+    & $py.Source $mk --jar $jar --version $appVersion --out $root --runtime-only
     if ($LASTEXITCODE -ne 0) { throw "生成 runtime 失败，退出码 $LASTEXITCODE" }
     if (-not (Test-Path $runtime)) { throw "runtime 没生成出来：$runtime" }
     $runtimeArgs = @('--runtime-image', $runtime)
@@ -218,17 +224,34 @@ if (Test-Path $cfgFile) {
 # ---------- 6. 汇报 ----------
 $exe  = Join-Path $app 'TinyQuery.exe'
 $size = (Get-ChildItem $app -Recurse -File | Measure-Object Length -Sum).Sum
-$rt   = Join-Path $app 'runtime'
-$rtSize = if (Test-Path $rt) {
-    (Get-ChildItem $rt -Recurse -File | Measure-Object Length -Sum).Sum
-} else { 0 }
+# app-image 的布局**按平台不同**，两个都要认：
+#   Windows：<app>\app 与 <app>\runtime（扁平）
+#   Linux  ：<app>\lib\app 与 <app>\lib\runtime（多一层 lib）
+# 早先只按 <app>\runtime 取，Windows 上恰好对得上；但同一个错误写法
+# 搬到 make-runtime.py 后就在 Linux 上恒报 0.0 MB。这里做成两者都试。
+function Get-SubDirSize($base, $name) {
+    foreach ($cand in @((Join-Path $base $name),
+                        (Join-Path $base (Join-Path 'lib' $name)))) {
+        if (Test-Path $cand) {
+            return (Get-ChildItem $cand -Recurse -File |
+                    Measure-Object Length -Sum).Sum
+        }
+    }
+    return 0
+}
+$rtSize = Get-SubDirSize $app 'runtime'
+$apSize = Get-SubDirSize $app 'app'
 Write-Host ''
 Write-Host "打包完成：$app"
 # 分开报 runtime 与应用的大小 —— 只报一个总数的话，
 # 看不出裁剪到底有没有生效（曾经这里写死「约 128 MB 是自带的 JRE」，
 # 精简之后那行就成了错的）
 Write-Host ("  总大小   {0:N1} MB" -f ($size / 1MB))
-Write-Host ("  其中 runtime {0:N1} MB / 应用 {1:N1} MB" -f ($rtSize / 1MB), (($size - $rtSize) / 1MB))
+if ($rtSize -gt 0 -or $apSize -gt 0) {
+    Write-Host ("  其中 runtime {0:N1} MB / 应用 {1:N1} MB" -f ($rtSize / 1MB), ($apSize / 1MB))
+} else {
+    Write-Host "  （未找到 runtime 与 app 目录，体积明细跳过）"
+}
 Write-Host "  启动器 $exe"
 if (-not $FullRuntime) {
     Write-Host ''
