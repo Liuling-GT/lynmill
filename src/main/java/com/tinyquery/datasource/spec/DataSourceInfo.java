@@ -22,7 +22,7 @@ public record DataSourceInfo(String name,
                              String failureReason,
                              long registeredAt) {
 
-    //敏感字段的掩码占位符
+    // 敏感字段的掩码占位符
     public static final String MASK = "******";
 
     public DataSourceInfo {

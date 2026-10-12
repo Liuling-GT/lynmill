@@ -8,23 +8,17 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 后端文案表。
  *
- * <h2>为什么不直接用 Spring 的 MessageSource</h2>
+ * <p>不用 Spring 的 {@code MessageSource}：它绑定在 {@code ApplicationContext} 上，
+ * 而本项目里需要文案的地方有一批拿不到它 —— {@code TokenFilter} 是 Filter
+ * （在 MVC 之前），{@code DataLoader} 实现是普通 {@code @Component}，
+ * {@code DataSourceException} 可能在任意层被构造。为了几十条文案给这些地方
+ * 全部做依赖注入，代价大于收益。所以这里做成一张静态表：无状态、无 IO、
+ * 可以在任何地方调用，词条数量是几十条量级，全部驻留内存的代价可以忽略。</p>
  *
- * <p>Spring 的 {@code MessageSource} 绑定在 {@code ApplicationContext} 上，而本项目里
- * 需要文案的地方有一批拿不到它：{@code TokenFilter} 是 Filter（在 MVC 之前），
- * {@code DataLoader} 实现是普通 {@code @Component}，{@code DataSourceException}
- * 可能在任意层被构造。为了几十条文案给这些地方全部做依赖注入，代价大于收益。</p>
- *
- * <p>所以这里做成一张静态表：<b>无状态、无 IO、可以在任何地方调用</b>。
- * 词条数量是几十条量级，全部驻留内存的代价可以忽略。</p>
- *
- * <h2>语言从哪来</h2>
- *
- * <p>由 {@link LocaleFilter} 每个请求解析一次请求头并写进 {@link #current()}，
- * 请求线程内共享。<b>不读 Cookie、不读会话</b> —— 本服务只绑本机、单用户，
- * 语言是纯前端偏好，跟着请求走最简单也最不容易出错。</p>
- *
- * <p>拿不到请求上下文时（如后台线程）回落到中文，与默认语言一致。</p>
+ * <p>语言由 {@link LocaleFilter} 每个请求解析一次请求头并写进 {@link #current()}，
+ * 请求线程内共享。不读 Cookie、不读会话：本服务只绑本机、单用户，语言是纯前端偏好，
+ * 跟着请求走最简单也最不容易出错。拿不到请求上下文时（如后台线程）回落到中文，
+ * 与默认语言一致。</p>
  */
 public final class Messages {
 
@@ -41,19 +35,19 @@ public final class Messages {
     /**
      * 请求线程之外使用的语言（桌面端：托盘菜单、控制窗口、启动失败对话框）。
      *
-     * <p>为什么需要它：{@link #CURRENT} 是 ThreadLocal，由 {@link LocaleFilter} 在
-     * <b>HTTP 请求线程</b>上设置。而托盘菜单构建在 AWT 事件分发线程、控制窗口在启动阶段，
-     * 那两个线程上没有任何人设过语言，{@code current()} 只会返回默认值 ——
-     * 桌面端于是永远是中文，跟用户在设置页选的语言无关。</p>
+     * <p>{@link #CURRENT} 是 ThreadLocal，由 {@link LocaleFilter} 在 HTTP 请求线程上设置。
+     * 而托盘菜单构建在 AWT 事件分发线程、控制窗口在启动阶段，那两个线程上没有任何人
+     * 设过语言，{@code current()} 只会返回默认值，桌面端于是永远是中文，
+     * 跟用户在设置页选的语言无关。</p>
      *
-     * <p>这里的取值优先级是 <b>ThreadLocal &gt; 本字段 &gt; 中文</b>：
-     * 请求线程有明确语言就用它；桌面线程没有，用启动时定下的这一份。</p>
+     * <p>取值优先级是 ThreadLocal &gt; 本字段 &gt; 中文：请求线程有明确语言就用它；
+     * 桌面线程没有，用启动时定下的这一份。</p>
      *
-     * <p><b>为什么是启动期定一次而不是实时同步</b>：用户在设置页切语言只改了浏览器里的
-     * localStorage，服务端并不知道（语言是跟着请求头走的，见类注释）。要让桌面端实时跟着变，
-     * 得额外做一个「前端通知后端」的接口，而托盘菜单在用户切完语言后本来就多半看不见
-     * （它只在右键时出现），重启即生效的代价可以接受。这比给 Messages 引入可变全局状态、
-     * 再担心它与 ThreadLocal 打架要稳。</p>
+     * <p>启动期定一次而不是实时同步：用户在设置页切语言只改了浏览器里的
+     * localStorage，服务端并不知道（语言是跟着请求头走的，见类注释）。要让桌面端
+     * 实时跟着变，得额外做一个「前端通知后端」的接口，而托盘菜单在用户切完语言后
+     * 本来就多半看不见（它只在右键时出现），重启即生效的代价可以接受。
+     * 这比给 Messages 引入可变全局状态、再担心它与 ThreadLocal 打架要稳。</p>
      *
      * <p>用 {@code volatile}：写在启动线程，读在 AWT 线程。</p>
      */
@@ -82,9 +76,9 @@ public final class Messages {
     /**
      * 当前语言。
      *
-     * <p>取值顺序：<b>请求线程的 ThreadLocal &gt; 桌面端语言 &gt; 中文</b>。</p>
+     * <p>取值顺序：请求线程的 ThreadLocal &gt; 桌面端语言 &gt; 中文。</p>
      *
-     * <p>关键在于第一层是「请求线程**表过态**」而不是「ThreadLocal 非空」。
+     * <p>关键在于第一层是「请求线程表过态」而不是「ThreadLocal 非空」。
      * 早先的实现把中文存成 {@code CURRENT.remove()}（不存脏数据），
      * 于是「请求明确要中文」和「压根不在请求线程里」两种情况长得一模一样，
      * 都会被后面的桌面端语言接管 —— 结果是：桌面端配了英文时，
@@ -104,8 +98,8 @@ public final class Messages {
     /**
      * 标记当前线程处于请求上下文。
      *
-     * <p>为什么要这个标记：只靠 {@code CURRENT} 非空判断不出「请求要中文」，
-     * 因为中文在 ThreadLocal 里存的就是 null。详见 {@link #current()}。</p>
+     * <p>只靠 {@code CURRENT} 非空判断不出「请求要中文」，因为中文在 ThreadLocal 里
+     * 存的就是 null。详见 {@link #current()}。</p>
      */
     private static final ThreadLocal<Boolean> IN_REQUEST = new ThreadLocal<>();
 
@@ -123,7 +117,7 @@ public final class Messages {
     /**
      * 请求结束后清理。
      *
-     * <p><b>必须调用。</b>Tomcat 复用线程，不清会把上一个请求的语言带给下一个请求 ——
+     * <p>必须调用。Tomcat 复用线程，不清会把上一个请求的语言带给下一个请求，
      * 表现是「偶尔弹一句英文」，极难复现。标记也必须一起清，
      * 否则下一个请求会被误判成「已经表过态」而跳过桌面端语言。</p>
      */
@@ -173,7 +167,7 @@ public final class Messages {
      * 全部词条键（中英合并去重，已排序）。
      *
      * <p>给测试用：{@code NoChineseInEnglishModeTest} 靠它整体扫一遍英文词表，
-     * 确认没有哪条漏翻成中文。做成公开方法是刻意的 —— 那种「遍历所有键」的检查
+     * 确认没有哪条漏翻成中文。做成公开方法是因为那种「遍历所有键」的检查
      * 只能靠反射去掏私有字段，脆得一改就断。</p>
      */
     public static List<String> allKeys() {
@@ -373,7 +367,7 @@ public final class Messages {
         zh("error.sqliteNotFound", "数据库文件不存在：{0}");
         en("error.sqliteNotFound", "Database file not found: {0}");
 
-        // 内存预检。写清「要多少、有多少、怎么办」—— 用户看到这句时
+        // 内存预检。写清「要多少、有多少、怎么办」：用户看到这句时
         // 本来会是一个 OOM 崩溃，所以它必须能指导下一步动作
         zh("error.memoryInsufficient",
                 "「{0}」太大，无法加载：文件 {1}，预计需要约 {2} 内存，"
@@ -530,11 +524,11 @@ public final class Messages {
         zh("parse.valueHasSpace", "值含空格，用单引号包裹：{0}");
         en("parse.valueHasSpace", "Value contains spaces; wrap it in single quotes: {0}");
 
-        // 单独的 offset m 是**真的支持**的（见清单编号 37），所以这句必须留着。
-        // 曾有人建议删掉它、理由是「SQL 里 offset 不能脱离 limit 单独用」——
-        // 那是标准 SQL 的习惯，不是本解析器的现状，照改会让文案与实际行为不符。
-        // 用引号把三种写法括起来：不用引号时 "limit n, limit n offset m, offset m"
-        // 这条逗号串读起来像一整个语法，加了引号才看得出是三个独立选项
+        // 单独的 offset m 是确实支持的，所以这句必须留着。
+        // 不能按「SQL 里 offset 不能脱离 limit 单独用」的标准 SQL 习惯删掉它，
+        // 那会让文案与实际行为不符。用引号把三种写法括起来：不用引号时
+        // "limit n, limit n offset m, offset m" 这条逗号串读起来像一整个语法，
+        // 加了引号才看得出是三个独立选项
         zh("parse.limitOffsetUnsupported", "LIMIT/OFFSET 写法不受支持。只支持三种："
                 + "\"limit n\"、\"limit n offset m\"、\"offset m\"");
         en("parse.limitOffsetUnsupported", "Unsupported LIMIT/OFFSET syntax. Supported forms: "
@@ -626,7 +620,7 @@ public final class Messages {
         en("desktop.window.exit", "Exit");
 
         // ---------- 桌面端：启动失败对话框 ----------
-        // 注意：这个对话框在**启动失败**时弹出，那一刻 Spring 上下文可能都没起来。
+        // 注意：这个对话框在启动失败时弹出，那一刻 Spring 上下文可能都没起来。
         // 它的文案必须有兜底 —— 见 StartupFailureDialog 里的注释
         zh("desktop.failure.title", "TinyQuery 启动失败");
         en("desktop.failure.title", "TinyQuery Failed to Start");
@@ -681,11 +675,10 @@ public final class Messages {
                 + "either use only aggregate functions such as count/sum/avg/max/min, "
                 + "or remove the aggregate functions to query detail rows");
 
-        // 注意：这里**没有** chart.other。
-        // 「其他」这个类别的显示名由前端负责（前端 locales 里的 chart.other）——
+        // 注意：这里没有 chart.other 词条。
+        // 「其他」这个类别的显示名由前端负责（前端 locales 里的 chart.other）：
         // 后端只产出 ChartResult.OTHER = "其他" 这个协议值，前端拿它做合并判断、
-        // 再换成当前语言的显示名。后端曾经也放了一份 chart.other 词条，
-        // 但没有任何调用点读过它，纯属死条目，已删。
+        // 再换成当前语言的显示名。后端曾经也放了一份 chart.other，但没有任何调用点读过它，已删。
     }
 
     private static void zh(String key, String text) {

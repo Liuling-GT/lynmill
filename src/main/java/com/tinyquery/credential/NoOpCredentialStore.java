@@ -6,28 +6,21 @@ import org.slf4j.LoggerFactory;
 /**
  * 「不用系统凭据存储」时的兜底实现：什么都不存。
  *
- * <p>存在的意义是保证 {@link CredentialStore} 这个 Bean <b>永远存在</b>。</p>
- *
- * <h2>为什么必须有它</h2>
- *
- * <p>如果不可用时干脆不注册 Bean，那么注入 {@code CredentialStore} 的
- * {@code DataSourceManager} 会因为找不到依赖而<b>启动失败</b> ——
- * 于是「Linux 上没装 keyring」这种完全正常的情况会让整个程序起不来。
- * 这与启动恢复时踩过的是同一条：<b>可选能力的缺失不能拖垮主流程。</b></p>
+ * <p>存在的意义是保证 {@link CredentialStore} 这个 Bean 永远存在：如果不可用时
+ * 干脆不注册 Bean，那么注入 {@code CredentialStore} 的 {@code DataSourceManager}
+ * 会因为找不到依赖而启动失败，于是「Linux 上没装 keyring」这种完全正常的情况会让
+ * 整个程序起不来。可选能力的缺失不能拖垮主流程。</p>
  *
  * <p>在这里，「不支持」的表现是：{@link #isAvailable()} 返回 false，
  * 界面把「保存密码」勾选框置灰并说明原因，其余功能一切照常。</p>
  *
- * <p>现在<b>所有</b>平台判断都收在 {@link CredentialStoreConfig} 里，
- * 本类只在下面几种情况下被选中：</p>
- * <ul>
- *   <li>{@code tinyquery.credential.store=none}（显式关闭）；</li>
- *   <li>平台既不是 Windows 也不是 macOS（例如 Linux）；</li>
- *   <li>配置值无法识别，或凭据存储初始化时抛了异常（兜底）。</li>
- * </ul>
+ * <p>所有平台判断都收在 {@link CredentialStoreConfig} 里，本类只在下面几种情况下
+ * 被选中：{@code tinyquery.credential.store=none}（显式关闭）；平台既不是
+ * Windows 也不是 macOS（例如 Linux）；配置值无法识别，或凭据存储初始化时抛了
+ * 异常（兜底）。</p>
  *
- * <p>本类不再自带 {@code @Component}：原因见
- * {@link WindowsCredentialStore} 类注释里「为什么不再自带 @Component」一节。</p>
+ * <p>本类不再自带 {@code @Component}，原因见 {@link WindowsCredentialStore}
+ * 类注释。</p>
  */
 public class NoOpCredentialStore implements CredentialStore {
 

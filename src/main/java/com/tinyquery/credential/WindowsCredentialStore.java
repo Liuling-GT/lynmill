@@ -11,25 +11,20 @@ import java.util.Locale;
  * <p>通过 {@link WinCred} 调 advapi32 的 CredWrite/CredRead/CredDelete，
  * 不依赖 jna-platform。</p>
  *
- * <h2>可用性判断为什么是「双重」的</h2>
+ * <p>可用性判断是「双重」的：第一次先看操作系统名字，避免在 Linux/macOS 上白白
+ * 尝试加载 advapi32；但如果名字判断通过、真正调用时仍然可能失败（系统策略禁用、
+ * 服务未启动），因此 {@link #isAvailable()} 还会做一次真实的探测调用 —— 只有真能
+ * 读写，才算可用。光看平台名字会让界面显示「可以保存密码」却在实际保存时报错。</p>
  *
- * <p>第一次先看操作系统名字，避免在 Linux/macOS 上白白尝试加载 advapi32；
- * 但如果名字判断通过、真正调用时仍然可能失败（系统策略禁用、服务未启动），
- * 因此 {@link #isAvailable()} 还会做一次真实的探测调用 —— 只有真能读写，
- * 才算可用。光看平台名字会让界面显示「可以保存密码」却在实际保存时报错。</p>
- *
- * <h2>为什么不再自带 @Component（2026-10-03 改）</h2>
- *
- * <p>本类的 Bean 现在统一由 {@link CredentialStoreConfig} 创建。
- * 原来这里挂的是
+ * <p>2026-10-03 起本类不再自带 {@code @Component}，Bean 统一由
+ * {@link CredentialStoreConfig} 创建。原来这里挂的是
  * {@code @ConditionalOnProperty(…, havingValue = "windows", matchIfMissing = true)}，
- * 而 {@code tinyquery.credential.store} 项目里从来没被设置过，全靠 matchIfMissing 生效。
- * 给 macOS 实现也加同样的条件后，属性缺省时<b>两个 Bean 都会被创建</b>，
- * 而 DataSourceManager 是按类型注入单个的 → 抛
- * {@code NoUniqueBeanDefinitionException}，程序直接起不来。</p>
- *
- * <p><b>本类的逻辑一行都没有改动</b>，只是把「谁来决定用它」挪到了配置类里。
- * Windows 上的运行行为与改动前完全一致。</p>
+ * 而 {@code tinyquery.credential.store} 项目里从来没被设置过，全靠 matchIfMissing
+ * 生效。给 macOS 实现也加同样的条件后，属性缺省时两个 Bean 都会被创建，
+ * 而 DataSourceManager 是按类型注入单个的，于是抛
+ * {@code NoUniqueBeanDefinitionException}，程序直接起不来。本类的逻辑一行都没有
+ * 改动，只是把「谁来决定用它」挪到了配置类里，Windows 上的运行行为与改动前完全
+ * 一致。</p>
  */
 public class WindowsCredentialStore implements CredentialStore {
 

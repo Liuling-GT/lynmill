@@ -22,22 +22,15 @@ import java.util.zip.ZipFile;
 /**
  * Excel（.xlsx）数据源加载器。
  *
- * <h2>为什么值得单独支持</h2>
+ * <p>支持 .xlsx 而不是要求用户先转成 CSV：{@link CSVLoader} 里有两处专门为 Excel
+ * 做的兼容（剥离 UTF-8 BOM、GBK 编码选项），只对「从 Excel 导出的文件」有意义，
+ * 说明用户本来就在用 Excel 的数据。直接读 .xlsx 省掉手动转换这一步。</p>
  *
- * <p>{@link CSVLoader} 里有两处专门为 Excel 做的兼容 —— 剥离 UTF-8 BOM、
- * 提供 GBK 编码选项 —— 那两处只对「从 Excel 导出的文件」有意义。
- * 说明用户本来就在用 Excel 的数据，只是被迫先手动转成 CSV。
- * 直接读 .xlsx 省掉这一步。</p>
+ * <p>没有编码选项：xlsx 内部一律是 UTF-8 的 XML，不存在 CSV 那种「同一个文件可能是
+ * GBK 也可能是 UTF-8」的问题，给一个永远只有唯一正确答案的选项只会让人困惑。</p>
  *
- * <h2>为什么没有编码选项</h2>
- *
- * <p>故意不给。xlsx 内部一律是 UTF-8 的 XML，不存在 CSV 那种「同一个文件可能是
- * GBK 也可能是 UTF-8」的问题。给一个永远只有唯一正确答案的选项只会让人困惑。</p>
- *
- * <h2>文件格式校验</h2>
- *
- * <p>只认 .xlsx（ZIP 容器）。.xls 是 2003 的二进制格式，需要完全不同的解析器
- * （POI 的 HSSF），本加载器不支持 —— 探测到就明确告诉用户去另存为 .xlsx，
+ * <p>文件格式只认 .xlsx（ZIP 容器）。.xls 是 2003 的二进制格式，需要完全不同的
+ * 解析器（POI 的 HSSF），本加载器不支持 —— 探测到就明确告诉用户去另存为 .xlsx，
  * 而不是抛一个看不懂的 ZIP 异常。</p>
  */
 @Component
@@ -53,8 +46,8 @@ public class XlsxLoader implements DataLoader {
     private static final String EXTENSION_XLS = ".xls";
 
     /**
-     * ZIP 的魔数（PK\x03\x04）。用来区分「真的不是 xlsx」与「文件路径写错了」——
-     * 这两种失败对用户来说要做的事完全不同
+     * ZIP 的魔数（PK\x03\x04）。用来区分「真的不是 xlsx」与「文件路径写错了」：
+     * 这两种失败对用户来说要做的事完全不同。
      */
     private static final byte[] ZIP_MAGIC = {0x50, 0x4B, 0x03, 0x04};
 
@@ -97,12 +90,12 @@ public class XlsxLoader implements DataLoader {
 
             if (requested != null && !requested.isBlank()
                     && !sheets.contains(requested.trim())) {
-                // 说清有哪些表可选 —— 用户打错字时最想知道的就是这个
+                // 说清有哪些表可选：用户打错字时最想知道的就是这个
                 return ConnectionTestResult.fail(Messages.get("error.xlsxSheetNotFound",
                         requested.trim(), file.getName(), String.join("、", sheets)));
             }
 
-            // 真的读一次表头，而不是只看结构 —— 「能打开」不等于「能读」。
+            // 真的读一次表头，而不是只看结构：「能打开」不等于「能读」。
             // 只探测结构的话，一个内容损坏的文件会自检通过、注册成功，
             // 问题被推迟到用户第一次查询时才暴露
             List<LinkedHashMap<String, Object>> rows = reader.readSheet(requested);
@@ -130,7 +123,7 @@ public class XlsxLoader implements DataLoader {
         String sheetName = config.getString(FIELD_SHEET_NAME);
 
         // 先做一遍文件级校验。注册路径是直接调 load() 的（见 DataSourceManager.register），
-        // 不经过 test()，所以这些「用户看得懂的原因」必须在这里也过一遍 ——
+        // 不经过 test()，所以这些「用户看得懂的原因」必须在这里也过一遍：
         // 否则用户拿到的是一个来自 FileInputStream 的「系统找不到指定的文件」，
         // 既重复了路径、又没说清该怎么办
         ConnectionTestResult problem = testFailureFor(config);
@@ -139,7 +132,7 @@ public class XlsxLoader implements DataLoader {
         }
 
         // 与 CSV 同样的预检。xlsx 是压缩包，解压后的常驻量通常比文件本身大得多，
-        // 系数按文件大小估偏保守；这里仍用它是因为「宁可误拒不可漏放」
+        // 系数按文件大小估偏保守；这里仍用它是因为漏放会崩、误拒只是换个数据源
         MemoryGuard.checkFile(new File(filePath).toPath());
 
         ColumnStore store = new ColumnStore();
@@ -210,9 +203,8 @@ public class XlsxLoader implements DataLoader {
      * <p>与 CSV 的做法一致：能确定原因时说清原因，别一律「测试未通过」——
      * 「文件不存在」和「文件是 .xls」用户要做的事完全不同。</p>
      *
-     * <p>注意这里<b>同时服务于 {@code test()} 与 {@code load()}</b>。
-     * 注册路径直接调 {@code load()}，不经过 {@code test()}，
-     * 所以校验逻辑必须放在这里共用，不能只写在 test 里。</p>
+     * <p>这里同时服务于 {@code test()} 与 {@code load()}。注册路径直接调 {@code load()}，
+     * 不经过 {@code test()}，所以校验逻辑必须放在这里共用，不能只写在 test 里。</p>
      */
     private ConnectionTestResult testFailureFor(DataSourceConfig config) {
         String path = config == null ? null : config.getString(FIELD_PATH);
@@ -234,7 +226,7 @@ public class XlsxLoader implements DataLoader {
             return ConnectionTestResult.fail(Messages.get("error.fileEmpty", file.getAbsolutePath()));
         }
 
-        // 扩展名是 .xls 就直接说清楚。**必须排在下面的魔数检查之前** ——
+        // 扩展名是 .xls 就直接说清楚。必须排在下面的魔数检查之前：
         // .xls 不是 ZIP，会被通用的「不是有效 xlsx」拦下，
         // 而那句话对 .xls 用户没有帮助：他需要知道的是「去另存为 .xlsx」
         String lower = file.getName().toLowerCase(java.util.Locale.ROOT);

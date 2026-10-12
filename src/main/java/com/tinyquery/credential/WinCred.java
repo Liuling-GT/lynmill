@@ -20,20 +20,20 @@ import java.util.List;
  * 这样调用方（{@link WindowsCredentialStore}）只需要关心业务语义，
  * 而这里的指针、结构体、错误码全部封在内部。</p>
  *
- * <h2>实现时踩过的三个坑（都是实测出来的）</h2>
+ * <p>实现时踩过的三个坑（都是实测出来的）：</p>
  *
  * <ol>
- *   <li><b>GetLastError 不在 advapi32.dll 里，在 kernel32.dll 里。</b>
- *       把它声明在 {@link Advapi32} 接口上会抛
+ *   <li>GetLastError 不在 advapi32.dll 里，在 kernel32.dll 里。把它声明在
+ *       {@link Advapi32} 接口上会抛
  *       {@code UnsatisfiedLinkError: Error looking up function 'GetLastError'}，
- *       而且<b>只在第一次真正出错、最需要错误码的时候才炸</b>，正常路径完全看不出来。
+ *       而且只在第一次真正出错、最需要错误码的时候才炸，正常路径完全看不出来。
  *       正确做法是用 JNA 自带的 {@link Native#getLastError()}，
  *       它从本机线程状态读取，不绑定任何具体 DLL。</li>
- *   <li><b>{@code Structure(Pointer)} 构造函数是 protected</b>，从 CredRead 拿回来的
+ *   <li>{@code Structure(Pointer)} 构造函数是 protected，从 CredRead 拿回来的
  *       裸指针不能直接 {@code new}，必须走 {@link Structure#newInstance}。</li>
- *   <li><b>密码有长度上限：2560 字节（UTF-16LE，即 1280 个字符）。</b>
- *       实测二分确认：1280 字符可写，1281 字符返回错误码 1783。
- *       这与微软文档的 {@code CRED_MAX_CREDENTIAL_BLOB_SIZE = 5 * 512} 吻合。</li>
+ *   <li>密码有长度上限：2560 字节（UTF-16LE，即 1280 个字符）。实测二分确认：
+ *       1280 字符可写，1281 字符返回错误码 1783。这与微软文档的
+ *       {@code CRED_MAX_CREDENTIAL_BLOB_SIZE = 5 * 512} 吻合。</li>
  * </ol>
  */
 final class WinCred {
@@ -49,7 +49,7 @@ final class WinCred {
     /** 持久化到本机。随用户账户保存，重启后仍在 */
     static final int CRED_PERSIST_LOCAL_MACHINE = 2;
 
-    /** 密码（CredentialBlob）的最大字节数。见类注释坑 ③ */
+    /** 密码（CredentialBlob）的最大字节数。见类注释坑 3 */
     static final int MAX_BLOB_BYTES = 5 * 512;   // 2560
 
     /** ERROR_NOT_FOUND：凭据不存在。这是正常状态，不是错误 */
@@ -64,7 +64,7 @@ final class WinCred {
     // ==================== 结构体 ====================
 
     /**
-     * CREDENTIALW 结构体。<b>字段顺序必须与 Windows SDK 完全一致</b>，
+     * CREDENTIALW 结构体。字段顺序必须与 Windows SDK 完全一致，
      * 顺序错了会读到垃圾数据甚至崩溃，而且不会有任何编译期提示。
      */
     public static class CREDENTIAL extends Structure {
@@ -106,7 +106,7 @@ final class WinCred {
 
     // ==================== 错误码工具 ====================
 
-    /** 最近一次 Win32 调用的错误码。见类注释坑 ① */
+    /** 最近一次 Win32 调用的错误码。见类注释坑 1 */
     static int lastError() {
         return Native.getLastError();
     }
@@ -134,7 +134,7 @@ final class WinCred {
     /**
      * 校验密码长度是否在系统上限之内。
      *
-     * <p><b>提前自己校验，而不是等系统拒绝</b>，原因是：系统只回一个错误码，
+     * <p>提前自己校验，而不是等系统拒绝，原因是：系统只回一个错误码，
      * 而我们能给出「你的密码超过了 1280 个字符」这种用户看得懂的说明。
      * 另外也避免把一个必然失败的操作真的提交给系统。</p>
      *
@@ -195,10 +195,9 @@ final class WinCred {
     /**
      * 读取一条凭据的结果。
      *
-     * <p>这里刻意用具名类型而不是 {@code String[]}：最初用「长度 1 = 成功、长度 2 = 失败」
-     * 的数组约定，调用方一眼看不出哪个是哪个，结果真的把成功当成了失败 ——
-     * 而后果是「保存密码」在所有 Windows 机器上都是灰的，看起来像功能没做，
-     * 极难发现。类型系统挡不住这种错误，具名方法可以。</p>
+     * <p>这里刻意用具名类型而不是 {@code String[]}：最初用「长度 1 = 成功、长度 2 =
+     * 失败」的数组约定，调用方一眼看不出哪个是哪个，结果真的把成功当成了失败。
+     * 后果是「保存密码」在所有 Windows 机器上都是灰的，看起来像功能没做，极难发现。</p>
      */
     record ReadOutcome(boolean found, String password, String error) {
 
@@ -233,7 +232,7 @@ final class WinCred {
 
         Pointer p = ref.getValue();
         try {
-            CREDENTIAL cred = Structure.newInstance(CREDENTIAL.class, p);   // 见类注释坑 ②
+            CREDENTIAL cred = Structure.newInstance(CREDENTIAL.class, p);   // 见类注释坑 2
             cred.read();
             byte[] blob = cred.CredentialBlob.getByteArray(0, cred.CredentialBlobSize);
             return ReadOutcome.of(new String(blob, StandardCharsets.UTF_16LE));

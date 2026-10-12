@@ -1,7 +1,6 @@
 package com.tinyquery.api;
 
 import com.tinyquery.datasource.*;
-
 import com.tinyquery.datasource.spec.ConnectionTestResult;
 import com.tinyquery.datasource.spec.DataSourceConfig;
 import com.tinyquery.datasource.spec.DataSourceInfo;

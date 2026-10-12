@@ -1,7 +1,6 @@
 package com.tinyquery.executor;
 
 import com.tinyquery.i18n.Messages;
-
 import com.tinyquery.parser.*;
 import com.tinyquery.parser.where.*;
 
@@ -860,12 +859,12 @@ public record QueryEngine(ColumnStore store) {
      * 维度是数值列时走分桶（直方图），文本列时走分组。
      * 两种模式对前端是同一种形状：类别标签 + 每个度量一列值
      *
-     * <p><b>刻意不套用 LIMIT / OFFSET。</b>下面只做 {@code filter(stmt)}，
+     * <p>刻意不套用 LIMIT / OFFSET。下面只做 {@code filter(stmt)}，
      * 不经过 {@code resultRange} 那套算术 —— 也就是说 SQL 里的 {@code limit 10}
-     * 对图表无效，图表统计的是<b>全部命中行</b>。</p>
+     * 对图表无效，图表统计的是全部命中行。</p>
      *
      * <p>为什么这样才对：分页是「一屏看 50 行」的浏览手段，图表要看的是
-     * <b>整份数据的分布</b>。若跟着 LIMIT 走，{@code select * from t limit 10}
+     * 整份数据的分布。若跟着 LIMIT 走，{@code select * from t limit 10}
      * 画出来的就是"前 10 行"的占比图 —— 而用户会把它当成全量占比，是彻底的误导。
      * 写 LIMIT 的人通常只是想少取点数据，不会想到"顺带把图表变成局部图"。</p>
      *

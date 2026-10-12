@@ -21,27 +21,26 @@ import java.util.concurrent.TimeUnit;
  * 那个时刻 Spring 还没启动）。若把逻辑留在 {@code BrowserLauncher} 里，
  * 平台命令表就得抄第二遍。</p>
  *
- * <p>打开方式分两级，顺序是刻意的 —— <b>先系统命令，后 {@link Desktop}</b>。
- * 系统命令不依赖 AWT：在无图形界面的环境（无 DISPLAY 的 Linux、以服务方式运行）
- * 下依然可用，而那时 {@code Desktop.isDesktopSupported()} 恒为 false。
- * 把不依赖图形环境的方式放在前面，服务端场景下也才打得开浏览器。</p>
+ * <p>打开方式分两级，顺序是先系统命令、后 {@link Desktop}。系统命令不依赖 AWT：
+ * 在无图形界面的环境（无 DISPLAY 的 Linux、以服务方式运行）下依然可用，
+ * 而那时 {@code Desktop.isDesktopSupported()} 恒为 false。把不依赖图形环境的方式
+ * 放在前面，服务端场景下也才打得开浏览器。</p>
  *
- * <p>（注：桌面外壳会把 {@code java.awt.headless} 设为 false，因此 Desktop 这条路
- * 在带界面的机器上是可用的退路，而不再是一段永远执行不到的代码。）</p>
+ * <p>桌面外壳会把 {@code java.awt.headless} 设为 false，因此 Desktop 这条路
+ * 在带界面的机器上是可用的退路，而不是一段永远执行不到的代码。</p>
  *
- * <p>两级都失败返回 false，不抛异常 —— 打不开浏览器不是致命错误，
+ * <p>两级都失败返回 false，不抛异常：打不开浏览器不是致命错误，
  * 服务本身是可用的，调用方提示用户手动访问即可。</p>
  *
- * <h2>为什么一级必须检验退出码（Linux 上踩过的坑）</h2>
- * <p>早先的实现只判断「命令进程有没有启动起来」，起来就算成功。这在 Linux 上是错的：
- * {@code xdg-open} 在<b>系统没有设置默认浏览器</b>时照常能启动，只是立刻以非 0
- * 退出码失败、什么也不打开。于是得到一个<b>静默的假成功</b> —— 浏览器没打开，
- * 应用却认为打开了，而 {@code Desktop} 那条退路永远轮不到。</p>
+ * <p>一级必须检验退出码。早先的实现只判断「命令进程有没有启动起来」，起来就算成功，
+ * 这在 Linux 上是错的：{@code xdg-open} 在系统没有设置默认浏览器时照常能启动，
+ * 只是立刻以非 0 退出码失败、什么也不打开，于是得到一个静默的假成功 ——
+ * 浏览器没打开，应用却认为打开了，而 {@code Desktop} 那条退路永远轮不到。</p>
  *
- * <p>更麻烦的是 Linux 上这两条路<b>共用同一个前提</b>：{@code Desktop.browse()}
- * 在 OpenJDK 里（{@code XDesktopPeer}）底层同样是去调 {@code xdg-open}。
- * 所以默认浏览器没配好时，两条路会一起失败。这种情况下唯一有用的事
- * 就是<b>把原因和怎么修说清楚</b>，见 {@link #manualHint(String)}。</p>
+ * <p>Linux 上这两条路还共用同一个前提：{@code Desktop.browse()} 在 OpenJDK 里
+ * （{@code XDesktopPeer}）底层同样是去调 {@code xdg-open}。所以默认浏览器没配好时，
+ * 两条路会一起失败。这种情况下唯一有用的事就是把原因和怎么修说清楚，
+ * 见 {@link #manualHint(String)}。</p>
  */
 public final class BrowserOpener {
 
@@ -50,8 +49,8 @@ public final class BrowserOpener {
     /**
      * 等待打开命令结束的宽限时间，单位秒。
      *
-     * <p>为什么必须等：见类注释里「假成功」那一段。不等就判断成功，
-     * 会在 Linux 上产生「日志说打开了、实际没打开」的假象。</p>
+     * <p>为什么必须等：不等就判断成功，会在 Linux 上产生「日志说打开了、实际没打开」
+     * 的假象。</p>
      *
      * <p>为什么只等 2 秒：成功的 {@code rundll32} / {@code open} / {@code xdg-open}
      * 都很快返回 —— 它们只负责把请求交给浏览器，不等浏览器退出。
@@ -99,7 +98,7 @@ public final class BrowserOpener {
     }
 
     /**
-     * 执行打开命令，并判断它<b>是否真的成功</b>。
+     * 执行打开命令，并判断它是否真的成功。
      *
      * <p>包可见，便于测试直接喂一个必定失败的命令（例如 {@code /bin/false}）
      * 来验证「失败必须返回 false」，不必在测试里伪造操作系统。</p>
@@ -128,7 +127,7 @@ public final class BrowserOpener {
         }
 
         StringBuilder captured = new StringBuilder();
-        // 输出必须被读走，且在**独立线程**里读：
+        // 输出必须被读走，且在独立线程里读：
         //   ① 管道缓冲区写满时子进程会阻塞在写上面，主线程就永远等不到它结束；
         //   ② 但也不能在主线程同步读到 EOF —— 有些实现会把 stdout 交给浏览器，
         //      那样读到最后也等不到 EOF，反而把启动流程挂住。
@@ -198,9 +197,9 @@ public final class BrowserOpener {
     /**
      * 按操作系统给出打开 URL 的命令，三者均为系统自带，不引入任何新依赖。
      *
-     * <p><b>这是一个纯函数</b>：操作系统名由参数传入而非读系统属性，
+     * <p>这是一个纯函数：操作系统名由参数传入而非读系统属性，
      * 测试因此可以在任意一台机器上验证全部分支 —— 否则 macOS / Linux
-     * 两条分支永远跑不到，等于「写了但从没执行过」的代码。</p>
+     * 两条分支永远跑不到。</p>
      *
      * <p>包可见，仅用于测试。</p>
      *
@@ -229,14 +228,14 @@ public final class BrowserOpener {
     }
 
     /**
-     * 两级都失败时，给用户一句<b>可执行</b>的补救指引；没有针对性建议时返回空串。
+     * 两级都失败时，给用户一句可执行的补救指引；没有针对性建议时返回空串。
      *
      * <p>Linux 是唯一需要这句提示的平台：Windows 的 {@code rundll32} 与 macOS 的
      * {@code open} 都直接依赖系统里写好的 URL 关联，几乎不会「两条路一起失败」；
      * 而 Linux 上如果从没设置过默认浏览器，{@code xdg-open} 和 {@code Desktop.browse}
      * 会一起失败，光说「请手动访问」用户并不知道该怎么修。</p>
      *
-     * <p><b>纯函数</b>，包可见，仅用于测试与调用方拼装日志。</p>
+     * <p>纯函数，包可见，仅用于测试与调用方拼装日志。</p>
      */
     static String manualHint(String osName) {
         String os = osName == null ? "" : osName.toLowerCase(Locale.ROOT);

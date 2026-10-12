@@ -23,11 +23,9 @@ import java.util.List;
 /**
  * 数据源配置的落盘与读取。
  *
- * <p>职责刻意收窄成「把一串配置变成文件、再从文件变回来」，
- * 不认识 DataLoader、不碰内存里的数据源表。因此它可以脱离 Spring 单独测试，
- * 将来若要把存储换成 SQLite 之类，也只需替换本类。</p>
- *
- * <h2>文件长什么样</h2>
+ * <p>职责收窄成「把一串配置变成文件、再从文件变回来」：不认识 DataLoader、
+ * 不碰内存里的数据源表。因此可以脱离 Spring 单独测试，将来换成 SQLite
+ * 之类也只需替换本类。</p>
  *
  * <pre>
  * {
@@ -36,26 +34,18 @@ import java.util.List;
  * }
  * </pre>
  *
- * <p>{@code version} 是刻意留的：格式将来要变（加字段、换结构）时，
- * 靠它才能写出迁移逻辑。没有版本号，老文件撞上新代码只能报错。</p>
+ * <p>{@code version} 是格式迁移的依据：格式将来变化（加字段、换结构）时靠它
+ * 写迁移逻辑，没有版本号则老文件撞上新代码只能报错。</p>
  *
- * <h2>两条不可让步的约束</h2>
+ * <p>{@link #save} 必须原子写：先写临时文件再改名。直接覆写时写到一半崩溃或断电
+ * 会留下半个文件，下次启动读不出来，用户配过的数据源全部丢失。</p>
  *
- * <ol>
- *   <li><b>{@link #save} 必须原子写。</b>先写临时文件再改名。直接覆写的话，
- *       写到一半崩溃或断电会留下半个文件 —— 下次启动读不出来，
- *       用户配过的所有数据源一次性全丢。这不是「少存一个字段」级别的事故。</li>
- *   <li><b>{@link #load} 绝不抛异常。</b>文件损坏是用户环境的问题，不是程序该崩的理由。
- *       读不出来就按「没有已保存的数据源」处理，程序照常启动 ——
- *       能打开界面，用户才有机会重新配。</li>
- * </ol>
+ * <p>{@link #load} 绝不抛异常：文件损坏属于用户环境问题，读不出来就按
+ * 「没有已保存的数据源」处理，程序照常启动，用户才有机会进界面重新配。</p>
  *
- * <h2>损坏的文件会被改名保留，而不是被覆盖</h2>
- *
- * <p>这条容易漏：若 {@code load()} 遇到损坏文件返回空列表，紧接着任何一次
- * {@code save()} 都会用内存里的内容把原文件<b>覆盖掉</b> ——
- * 用户的配置就此彻底消失。所以这里在解析失败时先把坏文件改名成
- * {@code datasources.json.corrupt-时间戳} 留档，并在日志里写明位置。</p>
+ * <p>解析失败时必须先改名保留原文件：{@code load()} 返回空列表后，任何一次
+ * {@code save()} 都会用内存内容把原文件覆盖掉，用户配置就此消失。因此坏文件
+ * 改名为 {@code datasources.json.corrupt-时间戳} 留档，并在日志里写明位置。</p>
  */
 @Component
 public class DataSourceStore {
@@ -77,7 +67,7 @@ public class DataSourceStore {
     private final Path file;
 
     private final ObjectMapper mapper = new ObjectMapper()
-            // 缩进输出：这个文件用户可能会打开看，可读性比体积重要
+            // 缩进输出：用户可能会打开这个文件，可读性比体积重要
             .enable(SerializationFeature.INDENT_OUTPUT);
 
     /** Spring 用的构造器：固定落在用户数据目录里。 */
@@ -93,8 +83,8 @@ public class DataSourceStore {
     /**
      * 读回已保存的数据源配置。
      *
-     * <p>文件不存在、内容为空、格式损坏、版本不认识 —— 全部返回空列表，
-     * <b>不抛异常</b>。区别只体现在日志上。</p>
+     * <p>文件不存在、内容为空、格式损坏、版本不认识均返回空列表，不抛异常，
+     * 区别只体现在日志上。</p>
      *
      * @return 配置列表，顺序与保存时一致；永不返回 null
      */
@@ -113,9 +103,9 @@ public class DataSourceStore {
             return List.of();
         }
 
-        // 剥掉 UTF-8 BOM。用户用 Windows 记事本编辑这个文件时，保存出来可能带 BOM，
-        // 而 Jackson 会把 BOM 当成非法字符开头直接报错 —— 那会导致整份配置被判定为
-        // 「损坏」而隔离。为一个看不见的字符丢掉用户全部数据源，代价完全不成比例
+        // 剥掉 UTF-8 BOM：用 Windows 记事本编辑这个文件时保存出来可能带 BOM，
+        // 而 Jackson 会把 BOM 当成非法字符开头直接报错，整份配置因此被判定为
+        // 「损坏」而隔离。为一个看不见的字符丢掉用户全部数据源不划算
         if (!json.isEmpty() && json.charAt(0) == '\uFEFF') {
             json = json.substring(1);
             log.debug("数据源配置文件带 BOM，已忽略：{}", file);
@@ -130,8 +120,8 @@ public class DataSourceStore {
             DataSourceDocument document = mapper.readValue(json, DataSourceDocument.class);
             return normalize(document);
         } catch (Exception e) {
-            // 解析失败不要把原文件留在原地 —— 否则下一次 save 会直接覆盖它，
-            // 用户连「抢救一下」的机会都没有
+            // 解析失败必须把原文件改名，否则下一次 save 会直接覆盖它，
+            // 用户没有机会抢救
             Path kept = quarantine();
             log.warn("数据源配置文件解析失败，已改名保留为 {}，本次按「没有已保存的数据源」处理",
                     kept == null ? "（改名也失败了，原文件未动）" : kept, e);
@@ -144,7 +134,7 @@ public class DataSourceStore {
      *
      * <p>原子写：先写同目录下的临时文件，再改名覆盖。
      * 文件名相同的 rename 在同一文件系统内是原子操作，因此读到的永远是
-     * 「完整的旧文件」或「完整的新文件」，不会是半个。</p>
+     * 「完整的旧文件」或「完整的新文件」。</p>
      *
      * @param configs 要保存的配置；null 视为空列表（相当于清空已保存的配置）
      * @throws IOException 写盘失败。调用方应捕获并只记日志 ——
@@ -177,8 +167,8 @@ public class DataSourceStore {
      * 把临时文件改名到正式位置。
      *
      * <p>优先要求原子性；个别文件系统（某些网络盘、部分 FAT 实现）不支持原子改名，
-     * 这时退回普通改名 —— 有极小概率不是原子的，但<b>远好过直接覆写</b>，
-     * 也远好过因为「做不到完美」而干脆失败。</p>
+     * 这时退回普通改名：有极小概率不是原子的，但仍好过直接覆写，
+     * 也好过因为做不到完美而干脆失败。</p>
      */
     private static void moveIntoPlace(Path temp, Path target) throws IOException {
         try {
@@ -193,7 +183,7 @@ public class DataSourceStore {
     /**
      * 尽量把文件权限收紧到「只有本人可读」。
      *
-     * <p>Windows 不支持 POSIX 权限，会抛 {@code UnsupportedOperationException} ——
+     * <p>Windows 不支持 POSIX 权限，会抛 {@code UnsupportedOperationException}：
      * 那里靠 {@code %APPDATA%} 本身的用户隔离，因此失败是正常的，只记 debug。</p>
      */
     private static void restrictToOwner(Path target) {
@@ -220,8 +210,8 @@ public class DataSourceStore {
     /**
      * 把读到的文档归一成配置列表。
      *
-     * <p>版本处理现在是「只认 1」：未来若出现 2，这里要加迁移分支而不是报错 ——
-     * 老用户升上来时，他们的文件还是 1。</p>
+     * <p>版本处理现在是「只认 1」：未来若出现 2，这里要加迁移分支而不是报错，
+     * 老用户升上来时他们的文件还是 1。</p>
      */
     private static List<DataSourceConfig> normalize(DataSourceDocument document) {
         if (document == null || document.datasources() == null) {

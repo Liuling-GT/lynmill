@@ -67,7 +67,7 @@ public class DataSourceManager {
      * 注册数据源，并可选地把密码存进系统凭据管理器。
      *
      * @param savePassword 用户是否勾选了「保存密码」。
-     *                     勾了但系统凭据存储不可用时，<b>注册仍然成功</b>，
+     *                     勾了但系统凭据存储不可用时，注册仍然成功，
      *                     只是密码没被保存 —— 不能因为存不了密码就拒绝注册
      */
     public void register(DataSourceConfig config, boolean savePassword) {
@@ -75,7 +75,7 @@ public class DataSourceManager {
     }
 
     /**
-     * 启动恢复专用：不落盘，<b>并且绝不动系统凭据</b>。
+     * 启动恢复专用：不落盘，并且绝不动系统凭据。
      *
      * <p>这个方法的存在是因为踩过一次严重的坑：起初恢复走的是
      * {@code register(config, false)}，而那个重载把「不落盘」和
@@ -177,7 +177,7 @@ public class DataSourceManager {
     /**
      * 启动时恢复一个已保存的数据源。
      *
-     * <p>与 {@link #register} 的关键区别：<b>失败不抛异常</b>，
+     * <p>与 {@link #register} 的关键区别：失败不抛异常，
      * 而是把这个数据源记进 {@link #failed}，稍后由 {@link #list()} 带给界面。</p>
      *
      * <p>为什么必须这样：一个数据源失效（CSV 被删、数据库连不上、没存密码）
@@ -507,7 +507,7 @@ public class DataSourceManager {
     /**
      * 把当前所有数据源的配置写入文件。
      *
-     * <p><b>失败只记日志，不向上抛。</b>存盘是「尽力而为」的收尾动作：
+     * <p>失败只记日志，不向上抛。存盘是「尽力而为」的收尾动作：
      * 数据源已经注册进内存、用户已经能查询了，不能因为磁盘满了就把这次操作回滚 ——
      * 那只会让用户既用不上、又不知道发生了什么。写失败要说清楚后果（重启后会丢），
      * 由日志和后续的界面提示去交代。</p>
@@ -542,7 +542,7 @@ public class DataSourceManager {
     /**
      * 做一份去掉敏感字段的配置副本，用于落盘。
      *
-     * <p><b>密码一类的字段绝不写进文件。</b>当前版本不提供「保存密码」，
+     * <p>密码一类的字段绝不写进文件。当前版本不提供「保存密码」，
      * 因此落盘时必须把它们摘掉 —— 否则用户没勾任何选项，密码却已经躺在
      * {@code %APPDATA%\TinyQuery\datasources.json} 里了，而且没人知道。</p>
      *

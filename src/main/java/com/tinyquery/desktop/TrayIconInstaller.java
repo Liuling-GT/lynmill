@@ -2,7 +2,6 @@ package com.tinyquery.desktop;
 
 import com.tinyquery.i18n.DesktopLocale;
 import com.tinyquery.i18n.Messages;
-
 import com.tinyquery.config.BrowserOpener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,40 +39,39 @@ import java.util.List;
 /**
  * 安装系统托盘图标。
  *
- * <p>托盘是<b>增强而非依赖</b>：Linux 的 GNOME 3 默认移除了托盘区（需要额外装扩展），
+ * <p>托盘只是增强，不是依赖：Linux 的 GNOME 3 默认移除了托盘区（需要额外装扩展），
  * {@link SystemTray#isSupported()} 会返回 false。那种情况下控制窗口仍然是完整的退出入口，
- * 这里只记一条日志然后返回 false，绝不抛异常。</p>
+ * 这里只记一条日志然后返回 false，不抛异常。</p>
  *
- * <h2>为什么菜单用 Swing 的 {@link JPopupMenu} 而不是 AWT 的 {@code PopupMenu}</h2>
- *
- * <p>{@link TrayIcon} 的构造器只接受 AWT 的 {@code PopupMenu}，但<b>那条路走不通</b>：
- * Windows 上 AWT 菜单是<b>原生菜单</b>，{@code MenuItem.setFont()} 对原生菜单无效
- * （JDK 官方在 {@code MenuComponent.setFont} 的文档里就承认「部分平台不支持设置菜单字体」
- * ），菜单会用系统里的 Segoe UI 一类<b>不含中日韩字形</b>的物理字体渲染，
+ * <p>菜单用 Swing 的 {@link JPopupMenu} 而不是 AWT 的 {@code PopupMenu}：
+ * {@link TrayIcon} 的构造器只接受 AWT 的 {@code PopupMenu}，但那条路走不通 ——
+ * Windows 上 AWT 菜单是原生菜单，{@code MenuItem.setFont()} 对原生菜单无效
+ * （JDK 在 {@code MenuComponent.setFont} 的文档里也承认「部分平台不支持设置菜单字体」），
+ * 菜单会用系统里的 Segoe UI 一类不含中日韩字形的物理字体渲染，
  * 结果是每个汉字显示成一个方块。</p>
  *
  * <p>因此这里不设置 tray icon 的 popup，改为自己监听鼠标事件，右键时弹出一个
- * Swing 的 {@link JPopupMenu} —— 它由 Swing 自己绘制，字体来自外观（中文 Windows 上是
+ * Swing 的 {@link JPopupMenu}：它由 Swing 自己绘制，字体来自外观（中文 Windows 上是
  * Microsoft YaHei UI），中文正常显示。</p>
  *
- * <h2>外观：三处都必须自己接管，不能沿用外观默认值</h2>
+ * <p>外观有三处必须自己接管，不能沿用外观默认值：菜单项 UI 换成
+ * {@link CenteredMenuItemUI}，否则文字贴着右边不居中；底色字色写成普通
+ * {@link Color} 的黑底白字，避免被外观覆盖；分隔线换成 {@link #menuSeparator()}，
+ * 原因见该方法注释。</p>
  *
- * <ol>
- *   <li><b>菜单项 UI</b> —— 换成 {@link CenteredMenuItemUI}，否则文字贴着右边不居中</li>
- *   <li><b>底色字色</b> —— 黑底白字，写成普通 {@link Color} 避免被外观覆盖</li>
- *   <li><b>分隔线</b> —— 换成 {@link #menuSeparator()}，原因见该方法注释</li>
- * </ol>
+ * <p>托盘菜单不做整体换肤，底色永远是黑、字永远是白，只有鼠标悬停时的高亮色取
+ * 当前主题的强调色调暗（见 {@link CenteredMenuItemUI#hover()}）。理由是托盘菜单
+ * 浮在用户桌面上，背景是别人的壁纸：浅色底（本程序四套主题都是浅色）在深色壁纸上
+ * 会糊成一片，在浅色壁纸上又会和桌面混在一起，而黑底白字在任何壁纸上都读得清。
+ * 所以这里只借主题的色相做一点点识别，不搬整套配色。分隔线与边框同理保持中性灰：
+ * 它们压在黑底上，中性灰对四套主题都成立。</p>
  *
- * <h2>收起菜单：为什么不能只靠 AWT 全局监听</h2>
- *
- * <p>菜单弹出来之后，点<b>别的地方</b>就该收起它。直觉做法是挂一个
- * {@code Toolkit.addAWTEventListener}，但实测<b>不管用</b>：这个监听器只能收到
- * <b>本程序自己窗口</b>的鼠标事件。用户点桌面或任务栏时，事件根本不在本进程里，
- * 监听器一次都不会被触发 —— 菜单就一直留在屏幕上，只能点菜单项或点本程序窗口才消失。</p>
- *
- * <p>所以改为在菜单四周铺 4 块近乎全透明的窗口（{@link #surroundingStrips}），
- * 由它们去接住菜单外面的点击。这些窗口<b>不与菜单重叠</b>，所以不存在
- * 「谁盖住谁」的层级问题 —— 这是刻意选的方案，比赌两个置顶窗口的先后顺序可靠。</p>
+ * <p>收起菜单不能只靠 AWT 全局监听：挂 {@code Toolkit.addAWTEventListener} 实测
+ * 不管用，这个监听器只能收到本程序自己窗口的鼠标事件。用户点桌面或任务栏时，
+ * 事件根本不在本进程里，监听器一次都不会被触发，菜单就一直留在屏幕上，
+ * 只能点菜单项或点本程序窗口才消失。所以改为在菜单四周铺 4 块近乎全透明的窗口
+ * （{@link #surroundingStrips}），由它们去接住菜单外面的点击。这些窗口不与菜单
+ * 重叠，因此不存在「谁盖住谁」的层级问题，比赌两个置顶窗口的先后顺序可靠。</p>
  */
 public final class TrayIconInstaller {
 
@@ -95,7 +93,7 @@ public final class TrayIconInstaller {
 
     // 菜单文字走词表，语言由 Messages.desktopLocale() 在启动时定下。
     //
-    // 原来是 static final 常量，改成方法是被迫的：常量在**类加载时**求值，
+    // 原来是 static final 常量，改成方法是被迫的：常量在类加载时求值，
     // 而语言要到启动流程里才确定（读环境变量或 locale.txt），
     // 常量会永远停在默认值上。同理，这里的取值不能提到构造器或静态块里。
     static String menuLabelOpen() {
@@ -113,7 +111,7 @@ public final class TrayIconInstaller {
     /**
      * 菜单里出现的全部文字，供测试校验字体覆盖。
      *
-     * <p>拿的是当前语言下的实际文字 —— 中文两个字、英文两个词，
+     * <p>拿的是当前语言下的实际文字：中文两个字、英文两个词，
      * 字体覆盖要求也不同（英文只要拉丁字形，中文要 CJK 字形），
      * 用一份写死的样本文本会漏掉另一种语言。</p>
      */
@@ -136,10 +134,10 @@ public final class TrayIconInstaller {
      * 托盘菜单使用的字体。
      *
      * <p>优先跟随当前外观（{@code PopupMenu.font}），观感最贴近系统；外观尚未设置、
-     * 或该字体显示不了菜单里的汉字时，退回逻辑字体 {@link Font#SANS_SERIF} ——
+     * 或该字体显示不了菜单里的汉字时，退回逻辑字体 {@link Font#SANS_SERIF}，
      * 它是复合字体，带完整的中文回退链。</p>
      *
-     * <p>这里做的是<b>运行时探测</b>而不是写死字体名：{@code TrayIconInstallerTest}
+     * <p>这里做的是运行时探测而不是写死字体名：{@code TrayIconInstallerTest}
      * 会逐个汉字校验覆盖情况，选错字体测试即失败。</p>
      */
     static Font menuFont() {
@@ -279,9 +277,9 @@ public final class TrayIconInstaller {
     /**
      * 菜单分隔线。
      *
-     * <p><b>刻意不用 {@code JPopupMenu.Separator}</b>。它由外观绘制，实测结果：
-     * 首选尺寸是 10 像素高，并且会<b>用白色背景把整条铺满</b>（截图里连着 10 行、
-     * 每行 99 个亮像素，横跨整个菜单宽度）—— 在纯黑菜单上就是一根刺眼的白条。</p>
+     * <p>刻意不用 {@code JPopupMenu.Separator}。它由外观绘制，实测结果：
+     * 首选尺寸是 10 像素高，并且会用白色背景把整条铺满（截图里连着 10 行、
+     * 每行 99 个亮像素，横跨整个菜单宽度），在纯黑菜单上就是一根刺眼的白条。</p>
      *
      * <p>这里改成自己画：只画中间一行细线，颜色 {@code #555555}，左右各留
      * {@link #SEPARATOR_INSET} 像素空隙。</p>
@@ -325,10 +323,10 @@ public final class TrayIconInstaller {
     // 右键的判定时机各平台不同，pressed 与 released 都要检查 isPopupTrigger()
     private static void maybeShowMenu(MouseEvent event, MenuPopup popup) {
         if (event.isPopupTrigger()) {
-            // 语言可能在网页上被改过（设置页会同步到服务端）。菜单项文字是构建时定死的，
-            // 所以每次弹出前对一下版本号，变过就重建 —— 这样用户切完语言
-            // 下次右键就能看到新语言，不必重启程序
-            popup.refreshIfLocaleChanged();
+            // 语言或主题可能在网页上被改过（设置页会同步到服务端）。菜单项文字与
+            // 选中色是构建时定死的，所以每次弹出前对一下版本号，变过就重建 ——
+            // 这样用户切完偏好下次右键就能看到新的，不必重启程序
+            popup.refreshIfChanged();
             popup.show();
         }
     }
@@ -350,14 +348,15 @@ public final class TrayIconInstaller {
         private final Runnable onExit;
 
         /**
-         * 当前菜单，以及它构建时所用的语言版本号。
+         * 当前菜单，以及它构建时所用的语言与主题版本号。
          *
          * <p>不每次右键都重建：菜单里有自定义 UI、字体探测这类一次性开销，
-         * 每次重建会让右键变慢。只在语言真的变过之后才重建 ——
-         * 靠 {@link DesktopLocale#version()} 比对。</p>
+         * 每次重建会让右键变慢。只在偏好真的变过之后才重建，
+         * 靠 {@link DesktopLocale#version()} 与 {@link DesktopTheme#version()} 比对。</p>
          */
         private JPopupMenu menu;
         private long builtAtVersion;
+        private long builtAtThemeVersion;
         private final List<JWindow> strips = new ArrayList<>();
 
         MenuPopup(String url, Runnable onShowWindow, Runnable onExit) {
@@ -370,34 +369,43 @@ public final class TrayIconInstaller {
         /**
          * 构建菜单并挂上「点菜单外面就收起」的守卫。
          *
-         * <p>守卫必须跟着菜单实例走 —— {@code installDismissGuard} 把监听器挂在
+         * <p>守卫必须跟着菜单实例走：{@code installDismissGuard} 把监听器挂在
          * 具体的 {@link JPopupMenu} 上，重建后不重新挂就等于失去了这个行为。
          * 所以构建与挂载放在一起，避免将来有人在重建时漏掉一步。</p>
          */
         private void buildAndWire() {
             this.menu = buildMenu(url, onShowWindow, onExit);
             this.builtAtVersion = DesktopLocale.version();
+            this.builtAtThemeVersion = DesktopTheme.version();
             installDismissGuard(menu, this);
         }
 
         /**
-         * 语言变过就重建菜单，让菜单项显示新语言。
+         * 语言或主题变过就重建菜单。
          *
-         * <p>必须在<b>弹出之前</b>、且在事件分发线程上调用 ——
+         * <p>语言影响菜单项文字，主题影响悬停高亮色（见
+         * {@link CenteredMenuItemUI#hover()}）。后者虽然是绘制时读的，
+         * 但重建一次最省事，也顺带保证菜单里所有颜色同时切过去，
+         * 不会出现「文字是新语言、高亮还是旧主题」这种半新半旧的状态。</p>
+         *
+         * <p>必须在弹出之前、且在事件分发线程上调用：
          * 重建会替换掉 {@link #menu} 这个被多处引用的对象。</p>
          */
-        void refreshIfLocaleChanged() {
-            long current = DesktopLocale.version();
-            if (current == builtAtVersion) {
+        void refreshIfChanged() {
+            long localeVersion = DesktopLocale.version();
+            long themeVersion = DesktopTheme.version();
+            if (localeVersion == builtAtVersion && themeVersion == builtAtThemeVersion) {
                 return;
             }
 
             // 先把旧的收起来：它可能正显示着，直接换掉会留下一个孤儿窗口
             dismiss();
 
-            long previous = builtAtVersion;
+            long previousLocale = builtAtVersion;
+            long previousTheme = builtAtThemeVersion;
             buildAndWire();
-            log.debug("界面语言已变更（版本 {} → {}），托盘菜单已重建", previous, current);
+            log.debug("界面偏好已变更（语言 {} → {}，主题 {} → {}），托盘菜单已重建",
+                    previousLocale, localeVersion, previousTheme, themeVersion);
         }
 
         JPopupMenu menu() {
@@ -431,7 +439,7 @@ public final class TrayIconInstaller {
         // ---------- 接住层 ----------
 
         private void showStrips(Rectangle menuBounds) {
-            // 菜单尺寸拿不到时<b>绝不能</b>铺接住层：那时算出来的 4 条会把整个屏幕
+            // 菜单尺寸拿不到时绝不能铺接住层：那时算出来的 4 条会把整个屏幕
             // 都盖上，包括菜单自己所在的位置 —— 菜单就点不动了，
             // 比「点别处不消失」严重得多。宁可退回原来的行为
             if (menuBounds.width <= 0 || menuBounds.height <= 0) {
@@ -490,9 +498,9 @@ public final class TrayIconInstaller {
     /**
      * 菜单四周那 4 块「接住点击」的区域（不含菜单自身）。
      *
-     * <p>拆成上下左右 4 条、而不是一整块盖住全屏，是为了<b>绝不与菜单重叠</b>：
+     * <p>拆成上下左右 4 条、而不是一整块盖住全屏，是为了绝不与菜单重叠：
      * 一整块全屏窗口和菜单都是置顶窗口，谁压在谁上面取决于层级细节，
-     * 赌错就变成「菜单点不动」这种严重问题。4 条围着放，这个风险根本不存在。</p>
+     * 赌错就变成「菜单点不动」这种严重问题。4 条围着放，这个风险不存在。</p>
      *
      * <p>纯函数，可直接测。</p>
      *
@@ -523,7 +531,7 @@ public final class TrayIconInstaller {
     /**
      * 找出包含目标矩形的那块屏幕。
      *
-     * <p>多显示器时不能简单用主屏 —— 托盘图标在副屏上时，接住层会铺到主屏去，
+     * <p>多显示器时不能简单用主屏：托盘图标在副屏上时，接住层会铺到主屏去，
      * 副屏上的点击就接不住。</p>
      */
     static Rectangle screenBoundsContaining(Rectangle target) {
@@ -541,7 +549,7 @@ public final class TrayIconInstaller {
     /**
      * 兜底：本程序自己窗口范围内的点击也要能收起菜单。
      *
-     * <p>接住层只铺在菜单外面，但用户点的可能是<b>本程序自己的窗口</b>
+     * <p>接住层只铺在菜单外面，但用户点的可能是本程序自己的窗口
      * （比如控制窗口）。那种点击是能收到 AWT 事件的，直接收掉即可，
      * 不必依赖接住层。</p>
      */

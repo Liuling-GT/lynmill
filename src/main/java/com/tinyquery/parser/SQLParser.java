@@ -1,7 +1,6 @@
 package com.tinyquery.parser;
 
 import com.tinyquery.i18n.Messages;
-
 import com.tinyquery.parser.where.*;
 
 import java.util.ArrayList;
@@ -233,7 +232,7 @@ public class SQLParser {
      *
      * <p>用锚定匹配抓出「order by 之后的整段」，避免
      * {@code WHERE note = 'a order by b'} 这类字面量被误判；
-     * 再按<b>顶层逗号</b>切分成若干个「列名 [asc|desc]」。</p>
+     * 再按顶层逗号切分成若干个「列名 [asc|desc]」。</p>
      *
      * <p>切分必须跳过引号内的逗号，否则 {@code order by 'a,b'} 会被切成两段。
      * 归一化阶段不会把引号内的逗号改写，所以这里能直接复用 literalMask。</p>

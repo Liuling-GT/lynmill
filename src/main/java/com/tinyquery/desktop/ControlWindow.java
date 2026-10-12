@@ -24,7 +24,7 @@ import java.awt.event.WindowEvent;
 /**
  * TinyQuery 的控制窗口 —— 一个极小的 Swing 窗口，是整个桌面外壳的主界面。
  *
- * <p>它存在的首要理由是<b>让用户能退出</b>。这个应用没有控制台，用户关掉浏览器之后，
+ * <p>它存在的首要理由是让用户能退出。这个应用没有控制台，用户关掉浏览器之后，
  * 后台的 java 进程仍在跑；只靠系统托盘不行，因为 Linux 的 GNOME 3 默认没有托盘区。
  * 一个普通窗口在三个平台上都可靠，托盘则降级为「有更好、没有也行」的增强。</p>
  *
@@ -45,12 +45,35 @@ public class ControlWindow extends JFrame {
     private static final int SCREEN_MARGIN = 24;
 
     /**
-     * 「● 运行中」的颜色，用应用主色紫（与图标、网页主题一致）。
+     * 「● 运行中」的颜色，跟随当前主题的强调色。
      *
      * <p>原来是绿色 {@code #1E7B34} —— 那是当年占位图标用的颜色，
-     * 换成紫色标志后两边就对不上了。</p>
+     * 换成紫色标志后两边就对不上了。现在改为从 {@link DesktopTheme} 取，
+     * 于是网页上换了主题，这里也跟着变。</p>
+     *
+     * <p>不再是 {@code static final}：主题可以在运行期变，
+     * 所以每次取值都要重新问一遍。见 {@link #refreshAppearance()}。</p>
+     *
+     * <p>包可见是为了能直接测 —— {@code ControlWindow} 是 JFrame，
+     * 无头环境里建不出来（理由同 {@link #runningText()} 那一段）。</p>
      */
-    private static final Color RUNNING_COLOR = new Color(0x6D4AFF);
+    static Color runningColor() {
+        return DesktopTheme.accent();
+    }
+
+    /**
+     * 语言或主题任一版本变过就该刷新。
+     *
+     * <p>抽成包可见的纯函数是为了能直接测：{@code ControlWindow} 是 JFrame，
+     * 无头环境里建不出来（同 {@link #runningText()} 那一段的理由），
+     * 而「只变了主题时会不会刷新」恰恰是这里最容易写错的地方 ——
+     * 把两个版本号合成一个（比如只比 {@code DesktopLocale.version()}）
+     * 就会丢掉「只有主题变了」，颜色不更新，而语言切换看起来完全正常。</p>
+     */
+    static boolean needsRefresh(long appliedLocale, long appliedTheme,
+                                long localeVersion, long themeVersion) {
+        return localeVersion != appliedLocale || themeVersion != appliedTheme;
+    }
 
     // 界面控件留引用，语言切换后要重新 setText（见 refreshTexts）
     private final JLabel statusLabel = new JLabel();
@@ -61,16 +84,19 @@ public class ControlWindow extends JFrame {
     /** 当前界面文字对应的语言版本号，用来判断要不要刷新 */
     private long appliedVersion = DesktopLocale.version();
 
+    /** 当前界面颜色对应的主题版本号。与语言分开记 —— 两者各变各的 */
+    private long appliedThemeVersion = DesktopTheme.version();
+
     /**
      * 把窗口摆到屏幕右下角。
      *
-     * <p>刻意<b>不用</b> {@code setLocationRelativeTo(null)} —— 那是「屏幕居中」。
+     * <p>刻意不用 {@code setLocationRelativeTo(null)} —— 那是「屏幕居中」。
      * 居中会正好压在用户要看的东西上：这个窗口只是「程序在运行」的状态指示，
      * 真正的内容在自动打开的浏览器里，它挡在中间纯属碍事。
      * 右下角是系统托盘、通知气泡所在的角落，用户已经习惯去那里看状态。</p>
      *
      * <p>用 {@link GraphicsEnvironment#getMaximumWindowBounds()} 而不是
-     * {@code Toolkit.getScreenSize()}：前者<b>自动排除任务栏</b>，
+     * {@code Toolkit.getScreenSize()}：前者自动排除任务栏，
      * 后者不会 —— 用后者算出来的位置会把窗口压在任务栏下面，
      * 底部那条按钮正好被挡住，而且这个问题只在任务栏位于底部时才出现，
      * 换个设置就复现不了，很费时间。</p>
@@ -86,7 +112,7 @@ public class ControlWindow extends JFrame {
     }
 
     /**
-     * 计算右下角坐标。抽成<b>纯函数</b>是为了能直接测 —— 真实屏幕尺寸、
+     * 计算右下角坐标。抽成纯函数是为了能直接测 —— 真实屏幕尺寸、
      * 任务栏位置在测试里都拿不到，而这段算术恰恰是最容易写错的地方
      * （正负号、边界、窗口比屏幕还大）。
      *
@@ -112,8 +138,8 @@ public class ControlWindow extends JFrame {
      * <p>这是启动后窗口的默认形态：屏幕上不占地方，但任务栏里留着一个按钮，
      * 用户随时点一下就能调出来。</p>
      *
-     * <p><b>顺序不能反</b>：必须 {@code setState(ICONIFIED)} 在前、
-     * {@code setVisible(true)} 在后。反过来（先显示再最小化）实测是个<b>竞态</b> ——
+     * <p>顺序不能反：必须 {@code setState(ICONIFIED)} 在前、
+     * {@code setVisible(true)} 在后。反过来（先显示再最小化）实测是个竞态 ——
      * 最小化请求发出时窗口可能还没被窗口管理器映射出来，请求就丢了，
      * 结果窗口要么留在屏幕上、要么干脆不出现。实测数据（三个全新 JVM，各跑 5 轮）：
      * 本顺序 15/15 成功；反过来 14/15，失败那次窗口就明晃晃留在屏幕上。
@@ -121,7 +147,7 @@ public class ControlWindow extends JFrame {
      *
      * <p>顺带的好处：正因为一出生就是最小化，窗口不会先在屏幕上闪一下。</p>
      *
-     * <p><b>不要</b>改成「先挪到屏幕外再显示」那种写法：窗口的还原位置取的就是
+     * <p>不要改成「先挪到屏幕外再显示」那种写法：窗口的还原位置取的就是
      * 最小化之前的位置，挪到 (-32000,-32000) 之后用户从任务栏把它调出来，
      * 它会出现在屏幕外面，等于又找不着了。</p>
      */
@@ -131,17 +157,18 @@ public class ControlWindow extends JFrame {
     }
 
     /**
-     * 语言切换后刷新界面上的文字。
+     * 语言或主题切换后刷新界面上的文字与颜色。
      *
-     * <p>Swing 控件在 {@code setText} 之后不会自己察觉语言变了 ——
-     * 语言表里改的是「下次取值时用什么」，而已经设进控件的文字是那一刻定死的。
-     * 所以必须显式重设一遍。</p>
+     * <p>Swing 控件在 {@code setText} / {@code setForeground} 之后不会自己察觉
+     * 偏好变了 —— 语言表与主题表里改的是「下次取值时用什么」，
+     * 而已经设进控件的文字与颜色是那一刻定死的。所以必须显式重设一遍。</p>
      *
-     * <p>由 {@code LocaleSyncService} 在语言变更后调（经
+     * <p>由 {@code DesktopSyncService} 在偏好变更后调（经
      * {@link javax.swing.SwingUtilities#invokeLater} 切到事件分发线程）。</p>
      */
-    void refreshTexts() {
+    void refreshAppearance() {
         statusLabel.setText(runningText());
+        statusLabel.setForeground(runningColor());
         addressField.setToolTipText(addressTipText());
         openButton.setText(openButtonText());
         exitButton.setText(exitButtonText());
@@ -149,16 +176,21 @@ public class ControlWindow extends JFrame {
     }
 
     /**
-     * 语言版本号。与托盘菜单用的是同一套机制：
-     * 只在版本变过时才刷新，避免无谓的 {@code setText} 与重绘。
+     * 语言或主题任一版本变过就刷新。
+     *
+     * <p>两个版本号分开比对、共用一个刷新动作：两者都会改到界面上的东西，
+     * 但改的不是同一批 —— 语言动文字，主题动颜色。合成一个版本号会丢掉
+     * 「只有主题变了」这种情况，那样颜色就不会更新。</p>
      */
-    void refreshTextsIfLocaleChanged() {
-        long current = DesktopLocale.version();
-        if (current == appliedVersion) {
+    void refreshIfChanged() {
+        long localeVersion = DesktopLocale.version();
+        long themeVersion = DesktopTheme.version();
+        if (!needsRefresh(appliedVersion, appliedThemeVersion, localeVersion, themeVersion)) {
             return;
         }
-        appliedVersion = current;
-        refreshTexts();
+        appliedVersion = localeVersion;
+        appliedThemeVersion = themeVersion;
+        refreshAppearance();
     }
 
     /**
@@ -202,7 +234,7 @@ public class ControlWindow extends JFrame {
 
         // 用类字段而不是局部变量：语言切换后要重新 setText，得留着引用
         statusLabel.setText(runningText());
-        statusLabel.setForeground(RUNNING_COLOR);
+        statusLabel.setForeground(runningColor());
         statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
 
         // 用只读文本框而不是标签：用户可以选中、Ctrl+C 复制地址。

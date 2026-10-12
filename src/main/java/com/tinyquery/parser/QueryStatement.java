@@ -1,7 +1,6 @@
 package com.tinyquery.parser;
 
 import com.tinyquery.i18n.Messages;
-
 import com.tinyquery.parser.where.Condition;
 
 import java.util.ArrayList;

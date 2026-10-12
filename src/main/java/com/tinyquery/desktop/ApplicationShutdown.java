@@ -36,7 +36,7 @@ public class ApplicationShutdown {
     /**
      * 关闭应用。重复调用是安全的 —— 第二次及以后直接返回。
      *
-     * <p>注意本方法<b>不会返回</b>：走到最后会调用 {@link System#exit} 结束进程。
+     * <p>注意本方法不会返回：走到最后会调用 {@link System#exit} 结束进程。
      * 这是必要的 —— Swing 会留下非守护的 AWT 线程，不显式退出的话 JVM 不会自己结束。</p>
      */
     public void shutdown() {

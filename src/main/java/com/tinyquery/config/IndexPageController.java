@@ -14,13 +14,13 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>这是「令牌怎么送到前端」的答案。前端是从同一个服务加载的，
  * 所以后端有机会在自己发出的 HTML 里把令牌塞进去 —— 前端只要能读到
- * {@code window.__TINYQUERY_TOKEN__} 就行，而<b>跨域的恶意网页读不到这个页面</b>，
+ * {@code window.__TINYQUERY_TOKEN__} 就行，而跨域的恶意网页读不到这个页面，
  * 也就拿不到令牌。</p>
  *
  * <p>放在 {@code config} 包而不是 {@code api}：它不属于业务接口，
  * 只服务于安全加固，和 {@link SecurityToken}、{@link TokenFilter} 是一组。</p>
  *
- * <p><b>开发模式下这里拿不到页面</b>：前端由 Vite 提供，
+ * <p>开发模式下这里拿不到页面：前端由 Vite 提供，
  * {@code static/index.html} 要等前端构建产物被复制进来才存在（打包阶段的事）。
  * 那种情况下本方法返回 404，页面照旧由 Vite 提供，令牌改走
  * {@link DevTokenController}。</p>
@@ -56,7 +56,7 @@ public class IndexPageController {
     /**
      * 在 {@code </head>} 之前插入一行赋值脚本。
      *
-     * <p><b>纯函数</b>：不读文件、不碰运行时，便于直接喂字符串测试。</p>
+     * <p>纯函数：不读文件、不碰运行时，便于直接喂字符串测试。</p>
      *
      * @param html 原始页面，允许为 null
      * @return 注入后的页面；没有 {@code </head>} 时原样返回

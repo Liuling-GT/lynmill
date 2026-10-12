@@ -7,12 +7,12 @@ package com.tinyquery.datasource.spec;
  */
 public record ConnectionTestResult(boolean success, String message) {
 
-    //测试通过
+    // 测试通过
     public static ConnectionTestResult ok(String message) {
         return new ConnectionTestResult(true, message);
     }
 
-    //测试未通过
+    // 测试未通过
     public static ConnectionTestResult fail(String message) {
         return new ConnectionTestResult(false, message);
     }

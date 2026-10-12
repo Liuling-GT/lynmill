@@ -53,10 +53,10 @@ public class ControlWindowLauncher implements ApplicationListener<ApplicationRea
                     () -> BrowserOpener.open(url),
                     shutdown::shutdown);
 
-            // 登记给 LocaleSyncService：用户在网页上切语言时，服务端要能找到
-            // 这个窗口去刷新它上面的文字。窗口创建晚于 Spring 容器就绪，
-            // 注入不进来，所以走静态登记（见 LocaleSyncService 的类注释）
-            LocaleSyncService.registerWindow(window);
+            // 登记给 DesktopSyncService：用户在网页上切语言或主题时，服务端要能找到
+            // 这个窗口去刷新它。窗口创建晚于 Spring 容器就绪，
+            // 注入不进来，所以走静态登记（见 DesktopSyncService 的类注释）
+            DesktopSyncService.registerWindow(window);
 
             // 先把窗口建出来，再决定它以什么形态出现。
             //

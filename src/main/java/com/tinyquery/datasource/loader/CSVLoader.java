@@ -351,7 +351,7 @@ public class CSVLoader implements DataLoader {
      * <p>除了历史值 {@code "自动"}，还要认英文界面存下来的 {@code "Auto"} ——
      * 下拉选项的显示名是翻译过的，用户选中的是「Auto」这个字符串本身，
      * 它会原样存进配置文件。只认中文会让英文用户选的「自动」在下次启动时
-     * 变成「不支持的编码」。<b>两个值都要认，且都是合法输入。</b></p>
+     * 变成「不支持的编码」。两个值都要认，且都是合法输入。</p>
      */
     private boolean isAutoEncoding(String raw) {
         return ENCODING_AUTO.equals(raw) || "Auto".equalsIgnoreCase(raw);

@@ -15,52 +15,35 @@ import java.util.Locale;
  * <p>和 {@link WinCred} 一样刻意做成「只有静态方法的纯工具类」：指针、引用计数、
  * 错误码全部封在内部，调用方（{@link MacCredentialStore}）只面对普通 Java 类型。</p>
  *
- * <h2>查找只用 service，不用 account ★</h2>
- *
- * <p>这是本实现最容易写错的地方。<b>所有查找（读、判断存在、改、删）都只按
- * service 匹配，account 传 NULL</b>，理由有两条：</p>
- *
- * <ol>
- *   <li>{@link CredentialStore#read} 只收 key、<b>根本拿不到用户名</b>，
- *       所以读这条路径只能是「按 service 找」。</li>
- *   <li>如果写路径按 (service, account) 找，那么用户改了数据库用户名之后，
- *       查找会落空 → 走到新建 → 钥匙串里出现<b>两条同 service 的条目</b>，
- *       此后 read 随机读到哪条都说不清。只用 service 找就永远不会重复。</li>
- * </ol>
- *
- * <p>代价：用户名改动后，条目的 account 字段仍是旧值。它只是给人看的元数据
+ * <p>所有查找（读、判断存在、改、删）都只按 service 匹配，account 传 NULL。
+ * 理由有两条：{@link CredentialStore#read} 只收 key、拿不到用户名，所以读这条
+ * 路径只能是「按 service 找」；如果写路径按 (service, account) 找，那么用户改了
+ * 数据库用户名之后查找会落空，进而走到新建，钥匙串里出现两条同 service 的条目，
+ * 此后 read 随机读到哪条都说不清。只用 service 找就永远不会重复。代价是用户名
+ * 改动后条目的 account 字段仍是旧值，它只是给人看的元数据
  * （{@link CredentialStore#read} 从不读回用户名），不影响功能。</p>
  *
- * <h2>为什么用旧的 SecKeychain*（10.10 起标记 deprecated）而不是新的 SecItem*</h2>
- *
- * <p>新的 {@code SecItemAdd} / {@code SecItemCopyMatching} 要求自己用 CoreFoundation
- * 构造 CFDictionary（{@code CFStringCreateWithCString} / {@code CFDictionaryCreate} /
- * {@code CFRelease}…），JNA 代码量要翻好几倍，而且每一步都要管引用计数，写错就是
- * 内存泄漏或野指针。旧的这套直接收 C 字符串和长度，正好落在 JNA 的舒适区。
+ * <p>用的是旧的 {@code SecKeychain*} 而不是新的 {@code SecItem*}。前者自 10.10 起
+ * 被标记 deprecated，但新的 {@code SecItemAdd} / {@code SecItemCopyMatching} 要求
+ * 自己用 CoreFoundation 构造 CFDictionary（{@code CFStringCreateWithCString} /
+ * {@code CFDictionaryCreate} / {@code CFRelease}…），JNA 代码量要翻好几倍，而且
+ * 每一步都要管引用计数，写错就是内存泄漏或野指针；旧的这套直接收 C 字符串和长度。
  * 代价只是编译期 deprecation 警告。</p>
  *
- * <h2>2026-10-03 在 macOS 14.4 / arm64 / JDK 17 上实测确认</h2>
+ * <p>2026-10-03 在 macOS 14.4 / arm64 / JDK 17 上实测确认：
+ * {@code Native.load("Security", …)} 按框架名加载可用，不需要绝对路径；
+ * 只看 service、account 传 NULL 查找能命中（这一步专门验过，因为整个读路径都
+ * 建立在它上面）；只取 itemRef、不读密码（{@code passwordLength}/{@code passwordData}
+ * 传 NULL）可行，写路径因此不必解密旧密码；实测条目不存在的错误码 = {@code -25300}，
+ * 与下面常量一致。{@code SecKeychainItemModifyContent} 与
+ * {@code SecKeychainItemModifyAttributesAndData} 两个符号都存在且签名完全相同，
+ * 但 Apple 头文件写着 {@code ModifyContent}「应当只与
+ * {@code SecKeychainItemCopyContent()} 配合使用」，而我们的 itemRef 来自
+ * {@code FindGenericPassword}，按文档语义用 {@code ModifyAttributesAndData}。</p>
  *
- * <ul>
- *   <li>{@code Native.load("Security", …)} 按框架名加载可用，不需要绝对路径。</li>
- *   <li>只看 service、account 传 NULL 查找，<b>能命中</b>（这一步专门验过，
- *       因为整个读路径都建立在它上面）。</li>
- *   <li>只取 itemRef、不读密码（{@code passwordLength}/{@code passwordData} 传 NULL）
- *       可行 —— 写路径因此不必解密旧密码。</li>
- *   <li>{@code SecKeychainItemModifyContent} 与
- *       {@code SecKeychainItemModifyAttributesAndData} <b>两个符号都存在</b>，
- *       签名完全相同。但 Apple 头文件写着 {@code ModifyContent}「应当只与
- *       {@code SecKeychainItemCopyContent()} 配合使用」，而我们的 itemRef 来自
- *       {@code FindGenericPassword} → 按文档语义用
- *       {@code ModifyAttributesAndData}。<b>本实现用它。</b></li>
- *   <li>实测错误码：条目不存在 = {@code -25300}，与下面常量一致。</li>
- * </ul>
- *
- * <h2>密码编码</h2>
- *
- * <p><b>UTF-8 字节，不是 UTF-16LE</b> —— 这是和 Windows 实现最大的区别
+ * <p>密码按 UTF-8 字节存，不是 UTF-16LE，这是和 Windows 实现最大的区别
  * （Windows 的 {@code CredentialBlob} 是 UTF-16LE）。长度参数因此也必须传
- * <b>字节数</b>而不是字符数。</p>
+ * 字节数而不是字符数。</p>
  */
 final class MacKeychain {
 
@@ -70,7 +53,7 @@ final class MacKeychain {
     // ==================== 错误码（OSStatus，int32） ====================
 
     static final int ERR_SEC_SUCCESS = 0;
-    /** 条目不存在。这是<b>正常状态</b>，不是故障。本机实测确认其值为 -25300 */
+    /** 条目不存在。这是正常状态，不是故障。本机实测确认其值为 -25300 */
     static final int ERR_SEC_ITEM_NOT_FOUND = -25300;
     /** 条目已存在。write 时出现说明「先找再改」的逻辑有漏洞 */
     static final int ERR_SEC_DUPLICATE_ITEM = -25299;
@@ -86,7 +69,7 @@ final class MacKeychain {
     /**
      * Security.framework。
      *
-     * <p>{@code INSTANCE} 是接口的静态字段，只有<b>第一次真正用到这个接口时</b>
+     * <p>{@code INSTANCE} 是接口的静态字段，只有第一次真正用到这个接口时
      * 才会触发 {@code Native.load}。这一点是刻意的：非 macOS 平台上只要不调用
      * 本类的方法，就不会加载 Security，也就不会抛 {@code UnsatisfiedLinkError}。</p>
      */
@@ -114,7 +97,7 @@ final class MacKeychain {
                                          PointerByReference itemRef);
 
         /**
-         * 原地修改已有条目的密码 —— <b>保住 ACL 的关键</b>。
+         * 原地修改已有条目的密码，这是保住 ACL 的关键。
          *
          * <p>{@code attrList} 传 null：service 不变，我们只换密码。</p>
          *
@@ -143,10 +126,9 @@ final class MacKeychain {
     /**
      * 读取一条密码的结果。
      *
-     * <p>沿用了 {@link WinCred.ReadOutcome} 的具名类型做法。之所以不用
-     * 「长度为 1 的数组 = 成功」这类约定：调用方一眼看不出哪个是哪个，
-     * Windows 端就因此把成功当成了失败，后果是「保存密码」在所有机器上都是灰的，
-     * 看起来像功能没做。类型系统挡不住这种错，具名方法可以。</p>
+     * <p>沿用了 {@link WinCred.ReadOutcome} 的具名类型做法。不用「长度为 1 的数组
+     * = 成功」这类约定，是因为调用方一眼看不出哪个是哪个，Windows 端就因此把成功
+     * 当成了失败，后果是「保存密码」在所有机器上都是灰的，看起来像功能没做。</p>
      */
     record ReadOutcome(boolean found, String password, String error) {
 
@@ -188,8 +170,8 @@ final class MacKeychain {
     /**
      * 是否是 macOS。
      *
-     * <p><b>注意不能写成 {@code os.contains("win")}</b> —— 字符串 {@code "darwin"}
-     * 里就含 {@code "win"}，Mac 会被误判成 Windows。这个坑本项目已经踩过一次。</p>
+     * <p>不能写成 {@code os.contains("win")} —— 字符串 {@code "darwin"}
+     * 里就含 {@code "win"}，Mac 会被误判成 Windows。</p>
      */
     static boolean isSupported() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
@@ -197,12 +179,12 @@ final class MacKeychain {
     }
 
     /**
-     * 只确认原生库能被加载，<b>不碰钥匙串</b>。
+     * 只确认原生库能被加载，不碰钥匙串。
      *
      * <p>这是 macOS 上「可用性」的判定依据。刻意不做「写一条、读一条、删一条」的
-     * 真实探测：在 macOS 上访问钥匙串条目<b>可能弹系统授权框</b>，尤其应用未签名时，
+     * 真实探测：在 macOS 上访问钥匙串条目可能弹系统授权框，尤其应用未签名时，
      * 那就变成「每次启动弹一个对话框」，比把勾选框置灰还糟。
-     * 代价是勾选框一开始显示为可用，用户点下去才知道能不能用 —— 这个代价可接受。</p>
+     * 代价是勾选框一开始显示为可用，用户点下去才知道能不能用。</p>
      *
      * @throws Throwable 原生库加载失败时抛出（可能是不满足链接的 Error）
      */
@@ -255,7 +237,7 @@ final class MacKeychain {
      *
      * <p>任何非成功状态都当作「不存在」。这样做是安全的：最坏情况是接下来去
      * {@link #add} 然后拿到「条目已存在」，用户看到一个可以理解的错误；
-     * <b>绝不会造成 ACL 丢失</b>，因为我们在这条路径上永远不会调用 delete。</p>
+     * 因为这条路径上永远不会调用 delete，所以不会造成 ACL 丢失。</p>
      */
     static boolean exists(String service) {
         byte[] svc = utf8(service);
@@ -271,11 +253,11 @@ final class MacKeychain {
     }
 
     /**
-     * <b>原地</b>修改已存在条目的密码。
+     * 原地修改已存在条目的密码。
      *
-     * <p>这是本类存在的核心理由。macOS 钥匙串条目带一张 ACL 分区列表，
-     * 记录「哪些程序读它时不用弹窗」。如果写成「先删后建」，分区列表会被重置，
-     * 用户点过的「始终允许」立刻失效，于是每次都要重新授权 —— 而且看起来永远修不好。</p>
+     * <p>macOS 钥匙串条目带一张 ACL 分区列表，记录「哪些程序读它时不用弹窗」。
+     * 如果写成「先删后建」，分区列表会被重置，用户点过的「始终允许」立刻失效，
+     * 于是每次都要重新授权。</p>
      *
      * @return 成功返回 null；失败返回给用户看的原因（含条目不存在）
      */
@@ -322,7 +304,7 @@ final class MacKeychain {
     /**
      * 删除条目（只按 service 找）。
      *
-     * @return 成功或<b>本来就不存在</b>返回 null；其它失败返回原因
+     * @return 成功或本来就不存在返回 null；其它失败返回原因
      */
     static String delete(String service) {
         byte[] svc = utf8(service);
@@ -351,7 +333,7 @@ final class MacKeychain {
     /**
      * 密码的 UTF-8 字节。
      *
-     * <p><b>空密码也必须给一个非 null 的缓冲</b>：{@code ModifyAttributesAndData}
+     * <p>空密码也必须给一个非 null 的缓冲：{@code ModifyAttributesAndData}
      * 把 data=null 解释成「不修改数据」，那样旧密码会被原样留下 —— 用户点「保存」
      * 反而改不掉密码。传一个 1 字节的缓冲、长度为 0，才是真正的「设成空」。</p>
      */

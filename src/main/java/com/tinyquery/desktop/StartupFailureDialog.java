@@ -1,7 +1,6 @@
 package com.tinyquery.desktop;
 
 import com.tinyquery.i18n.Messages;
-
 import com.tinyquery.config.BrowserOpener;
 import com.tinyquery.config.PathResolver;
 import org.slf4j.Logger;
@@ -21,23 +20,23 @@ import java.nio.file.Path;
 /**
  * 启动失败时，把「为什么起不来」告诉用户。
  *
- * <p><b>要解决的是打包后最难受的一种失败：双击了，什么都没发生。</b>
+ * <p>要解决的是打包后最难受的一种失败：双击了，什么都没发生。
  * 打包成 exe 之后程序没有控制台，启动过程中任何一处抛异常，堆栈都写进了那个
  * 并不存在的黑窗口，进程随即退出 —— 用户看到的只有鼠标转了一下圈。
  * 他不知道发生了什么，也不知道该找谁。</p>
  *
  * <p>因此这里按「先保证留痕、再尝试告知」的顺序做三件事：</p>
  * <ol>
- *   <li><b>留痕</b> —— 把「人话摘要 + 完整堆栈」写进用户数据目录；连数据目录都写不进去时
+ *   <li>留痕 —— 把「人话摘要 + 完整堆栈」写进用户数据目录；连数据目录都写不进去时
  *       （磁盘满、无权限 —— 这本身就是常见的启动失败原因）退回系统临时目录。
  *       这样即使用户关掉了窗口、事后也无法复现，证据仍然在。</li>
- *   <li><b>告知</b> —— 弹窗给出「原因 + 根本原因 + 详细日志路径」，
+ *   <li>告知 —— 弹窗给出「原因 + 根本原因 + 详细日志路径」，
  *       并提供一个直达日志文件夹的按钮。</li>
- *   <li><b>兜底</b> —— 无图形环境（服务器、CI）时不弹窗，改写标准错误；
+ *   <li>兜底 —— 无图形环境（服务器、CI）时不弹窗，改写标准错误；
  *       弹窗本身失败也退回标准错误。</li>
  * </ol>
  *
- * <p><b>这个类是最后一道防线，因此它自己绝不抛异常。</b>它被调用的时刻，
+ * <p>这个类是最后一道防线，因此它自己绝不抛异常。它被调用的时刻，
  * 程序的其它部分已经全部失效了；此时再抛一个异常，只会把用户真正需要看到的
  * 原因覆盖掉。下面每一处 catch 都是为这条约定服务的。</p>
  */
@@ -49,7 +48,7 @@ public final class StartupFailureDialog {
      * 默认标题与首句。
      *
      * <p>做成方法而不是常量：常量在类加载时求值，而本类刻意设计成
-     * 「<b>启动最早期的失败</b>也能用」—— 那时 {@code DesktopLocale.apply()}
+     * 「启动最早期的失败也能用」—— 那时 {@code DesktopLocale.apply()}
      * 可能都还没跑。做成方法，取值时机就落在真正要弹窗的那一刻，
      * 拿到的是当时已经确定好的语言。</p>
      *
@@ -188,7 +187,7 @@ public final class StartupFailureDialog {
     /**
      * 拼出给用户看的那段文字。
      *
-     * <p><b>这是一个纯函数</b>：不打日志、不碰文件系统。测试因此可以直接喂造出来的异常
+     * <p>这是一个纯函数：不打日志、不碰文件系统。测试因此可以直接喂造出来的异常
      * 校验措辞，不需要真的制造一次启动失败 —— 那种事在自动化测试里既难做又不该做。</p>
      *
      * @param headline   首句，例如「TinyQuery 启动失败，无法继续运行。」
@@ -222,7 +221,7 @@ public final class StartupFailureDialog {
     /**
      * 把异常描述成一行。
      *
-     * <p>刻意保留类的<b>全名</b>而不是只取 message：只为 {@code NullPointerException}
+     * <p>刻意保留类的全名而不是只取 message：只为 {@code NullPointerException}
      * 这类没有 message 的异常，光看类型名才知道发生了什么。</p>
      */
     static String describe(Throwable failure) {

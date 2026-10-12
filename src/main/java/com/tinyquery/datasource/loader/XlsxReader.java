@@ -13,7 +13,6 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-
 import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.IOException;
@@ -39,34 +38,31 @@ import java.util.zip.ZipInputStream;
 /**
  * .xlsx 读取器。零依赖：xlsx 本质是一个 ZIP，里面装着若干 XML。
  *
- * <h2>为什么不用 Apache POI</h2>
+ * <p>不用 Apache POI：它会增加 10~15 MB 安装包体积，还会拖进 xmlbeans、
+ * commons-compress 等传递依赖。本项目定位是本地零运维的小工具，把体积翻两番
+ * 去读一个表格文件不划算。</p>
  *
- * <p>POI 会给安装包增加 10~15 MB，还会拖进 xmlbeans、commons-compress 等传递依赖。
- * 本项目的定位是「本地零运维的小工具」，把体积翻两番去读一个表格文件不划算。</p>
- *
- * <h2>能读什么</h2>
+ * <p>读取范围：</p>
  *
  * <ul>
- *   <li>共享字符串表（{@code sharedStrings.xml}）与内联字符串（{@code t="inlineStr"}）——
+ *   <li>共享字符串表（{@code sharedStrings.xml}）与内联字符串（{@code t="inlineStr"}）。
  *       真实文件两种都有：Excel 自己存盘用前者，openpyxl 等库生成的多为后者</li>
- *   <li>数字、布尔、公式的<b>缓存值</b></li>
+ *   <li>数字、布尔、公式的缓存值</li>
  *   <li>日期（按 numFmt 识别，还原成 {@code yyyy-MM-dd}）</li>
- *   <li>跳过的空单元格（不补位会导致整行列错位）</li>
+ *   <li>空单元格按跳过处理（不补位会导致整行列错位）</li>
  *   <li>多工作表</li>
  * </ul>
  *
- * <h2>刻意不读什么</h2>
+ * <p>刻意不做的事：</p>
  *
  * <ul>
- *   <li><b>公式求值</b>。只取 Excel 上次算好存下来的缓存值。若文件是别的程序生成的、
- *       从没被 Excel 打开过，公式单元格可能没有缓存值 —— 那时读出来是空，
- *       而不是算错。宁可空着也不给一个自己算的数</li>
- *   <li>样式、配色、图表、图片、批注、合并单元格的合并关系（合并区域的左上角有值，
- *       其余为空 —— 这与 Excel 的显示一致，不额外填充）</li>
- *   <li>.xls（2003 二进制格式）。那是完全不同的格式，需要 POI 的 HSSF 才能读</li>
+ *   <li>不读公式求值结果，只取 Excel 上次算好存下来的缓存值。若文件是别的程序
+ *       生成的、从没被 Excel 打开过，公式单元格可能没有缓存值，那时读出来是空
+ *       而不是算错：宁可空着也不给一个自己算的数</li>
+ *   <li>不读样式、配色、图表、图片、批注、合并单元格的合并关系（合并区域的左上角
+ *       有值，其余为空 —— 这与 Excel 的显示一致，不额外填充）</li>
+ *   <li>不读 .xls（2003 二进制格式）。那是完全不同的格式，需要 POI 的 HSSF 才能读</li>
  * </ul>
- *
- * <h2>线程安全</h2>
  *
  * <p>非线程安全。每次读取 new 一个，用完即弃。</p>
  */
@@ -93,13 +89,13 @@ public class XlsxReader implements Closeable {
     private static final Pattern CELL_REF = Pattern.compile("^([A-Z]+)(\\d+)$");
 
     /**
-     * 日期格式里出现的字符。<b>只要格式串里含有这些，就当日期处理。</b>
+     * 日期格式里出现的字符。只要格式串里含有这些，就当日期处理。
      *
      * <p>这是个近似判断 —— 真正的 Excel 格式串语法很复杂（有转义、有方括号里的条件）。
-     * 但反过来漏判的代价更小：一个日期被当数字读出来，用户看得出那是错的；
+     * 但漏判的代价更小：一个日期被当数字读出来，用户看得出那是错的；
      * 而把普通数字误判成日期，会得到一个看起来像 1900 年的荒唐值。</p>
      *
-     * <p>所以这里刻意<b>偏保守</b>：只认那些几乎只出现在日期/时间格式里的字符，
+     * <p>因此这里偏保守：只认那些几乎只出现在日期/时间格式里的字符，
      * 不含 {@code m}（月/分）与 {@code s}（秒）单独出现的情形，
      * 因为 {@code 0.00"m"} 这类单位后缀也含 m。</p>
      */
@@ -130,7 +126,7 @@ public class XlsxReader implements Closeable {
     /**
      * 打开一个 xlsx 文件。
      *
-     * <p>只读元信息（工作表清单、共享字符串表、样式表），不解析任何单元格数据 ——
+     * <p>只读元信息（工作表清单、共享字符串表、样式表），不解析任何单元格数据：
      * 大文件里 sheet1.xml 可能几十 MB，光为了列出工作表名不该把它读进来。</p>
      */
     public static XlsxReader open(String path) {
@@ -168,7 +164,7 @@ public class XlsxReader implements Closeable {
             return List.of();
         }
 
-        // 先收集所有行，同时记下最大列号 —— 列名要在看到全部数据后才能定
+        // 先收集所有行，同时记下最大列号：列名要在看到全部数据后才能定
         List<Map<Integer, Object>> rawRows = new ArrayList<>();
         int maxColumn = -1;
 
@@ -178,7 +174,7 @@ public class XlsxReader implements Closeable {
                 int columnIndex = columnIndexOf(cell.getAttribute("r"));
                 if (columnIndex < 0) {
                     // 没有 r 属性的单元格极罕见（部分生成器会省），
-                    // 跳过而不是猜位置 —— 猜错会让整行数据错位
+                    // 跳过而不是猜位置：猜错会让整行数据错位
                     continue;
                 }
                 cells.put(columnIndex, valueOf(cell));
@@ -306,7 +302,7 @@ public class XlsxReader implements Closeable {
             }
         }
 
-        // 整数就用 long，避免前端显示成 1.0 —— 用户会觉得那是浮点错误
+        // 整数就用 long，避免前端显示成 1.0（用户会当成浮点错误）
         if (number.stripTrailingZeros().scale() <= 0) {
             try {
                 return number.longValueExact();
@@ -349,8 +345,8 @@ public class XlsxReader implements Closeable {
         }
         LocalTime time = LocalTime.ofSecondOfDay(secondsOfDay);
 
-        // 恰好是 0 点（如 00:00:00 的日期时间格式）就只给日期，
-        // 少几个字符，也不让用户以为时间有意义
+        // 恰好是 0 点（如 00:00:00 的日期时间格式）就只给日期，避免让用户
+        // 以为那个时间有意义
         if (time.equals(LocalTime.MIDNIGHT)) {
             return date.format(DateTimeFormatter.ISO_LOCAL_DATE);
         }
@@ -360,10 +356,10 @@ public class XlsxReader implements Closeable {
     /**
      * Excel 序列号 → 日期。
      *
-     * <p><b>1900 闰年 bug</b>：Excel 为了兼容 Lotus 1-2-3，认为 1900 年是闰年，
+     * <p>1900 闰年 bug：Excel 为了兼容 Lotus 1-2-3，认为 1900 年是闰年，
      * 于是序列号 60 对应一个不存在的 1900-02-29。所以：
      * 序列号 &lt; 60 时从 1899-12-31 起算，≥ 60 时减掉那一天（等价于从 1899-12-30 起算）。
-     * 这不是我们的 bug，是必须照抄的历史包袱 —— 不照抄就会与 Excel 显示差一天。</p>
+     * 这不是本项目的 bug，是必须照抄的历史包袱：不照抄就会与 Excel 显示差一天。</p>
      */
     private static LocalDate excelSerialToDate(long serial) {
         if (serial < 60) {
@@ -399,8 +395,8 @@ public class XlsxReader implements Closeable {
 
         // 走到了却没有 workbook.xml，说明这压根不是 xlsx：
         // 可能是个普通 ZIP，也可能文件损坏了。
-        // 不报错的话，sheetEntries 会是空的，问题被推迟到 readSheet 才以
-        // 一个莫名其妙的空指针或「工作表不存在」的形式暴露出来
+        // 不在这里报错的话，sheetEntries 会是空的，问题被推迟到 readSheet 才以
+        // 一个空指针或「工作表不存在」的形式暴露出来
         if (!sawWorkbook) {
             throw new DataSourceException(Messages.get("error.notXlsx", path));
         }
@@ -412,7 +408,7 @@ public class XlsxReader implements Closeable {
      * 解析 workbook.xml，拿到「工作表名 → 条目路径」。
      *
      * <p>不能靠猜路径：sheet1.xml 未必是第一张表，而且 sheet 的 r:id 要通过
-     * workbook.xml.rels 才能映射到真实文件。<b>顺序也不能靠文件名</b> ——
+     * workbook.xml.rels 才能映射到真实文件。顺序也不能靠文件名 ——
      * 用户看到的顺序是 workbook.xml 里的顺序。</p>
      */
     private void parseWorkbook(byte[] xml) {
@@ -480,7 +476,7 @@ public class XlsxReader implements Closeable {
         }
         List<String> items = new ArrayList<>();
         for (Element si : children(doc.getDocumentElement(), "si")) {
-            // si 里可能是单个 <t>，也可能是一组 <r><t>（富文本分段）——
+            // si 里可能是单个 <t>，也可能是一组 <r><t>（富文本分段）：
             // 分段时必须拼起来，只取第一个会丢字
             items.add(textOf(si));
         }
@@ -523,7 +519,7 @@ public class XlsxReader implements Closeable {
         }
         String entry = sheetEntries.get(sheetName.trim());
         if (entry == null) {
-            // 把可选的工作表名列出来 —— 用户打错字时最想知道的是「到底有哪些」
+            // 把可选的工作表名列出来：用户打错字时最想知道的是「到底有哪些」
             throw new DataSourceException(Messages.get("error.xlsxSheetNotFound",
                     sheetName, fileName, String.join("、", sheetEntries.keySet())));
         }
@@ -551,7 +547,7 @@ public class XlsxReader implements Closeable {
     /**
      * 解析一段 XML。
      *
-     * <p><b>必须关掉外部实体</b>：默认的 DocumentBuilder 会去解析 DTD 里引用的外部文件，
+     * <p>必须关掉外部实体：默认的 DocumentBuilder 会去解析 DTD 里引用的外部文件，
      * 一个精心构造的 xlsx 能借此读取本机任意文件（XXE）。这里不加载外部 DTD、
      * 不解析外部实体、不开 XInclude。</p>
      */
@@ -611,7 +607,7 @@ public class XlsxReader implements Closeable {
      * 取元素里的全部文本。
      *
      * <p>共享字符串与内联字符串都可能是「富文本」：一个 {@code <si>} 里含多个
-     * {@code <r><t>} 分段（比如「<b>粗</b>体」）。必须拼接全部分段，
+     * {@code <r><t>} 分段（比如加粗与常规文字混排）。必须拼接全部分段，
      * 只取第一个 {@code <t>} 会丢字。</p>
      *
      * <p>注意：{@code <rPh>}（注音，日语假名）里的 {@code <t>} 不该算进来，
@@ -746,8 +742,7 @@ public class XlsxReader implements Closeable {
      *
      * <p>判断办法：去掉引号里的字面量与方括号里的条件段，再看剩下还有没有
      * 日期特征字符。这样 {@code 0.00" 天"} 不会被误判（「天」在引号里），
-     * 而 {@code yyyy/m/d} 会命中。</p>
-     */
+     * 而 {@code yyyy/m/d} 会命中。</p>     */
     static boolean looksLikeDateFormat(String formatCode) {
         if (formatCode == null || formatCode.isEmpty()) {
             return false;

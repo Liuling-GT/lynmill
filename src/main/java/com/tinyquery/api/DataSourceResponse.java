@@ -9,12 +9,12 @@ package com.tinyquery.api;
  */
 public record DataSourceResponse<T>(int code, String message, T data) {
 
-    //成功响应
+    // 成功响应
     public static <T> DataSourceResponse<T> success(T data) {
         return new DataSourceResponse<>(0, "success", data);
     }
 
-    //失败响应
+    // 失败响应
     public static <T> DataSourceResponse<T> failure(String message) {
         return new DataSourceResponse<>(1, message, null);
     }

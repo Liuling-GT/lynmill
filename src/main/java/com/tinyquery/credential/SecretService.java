@@ -15,34 +15,19 @@ import java.nio.charset.StandardCharsets;
 /**
  * Linux 的 Secret Service（libsecret）原生层。
  *
- * <h2>为什么是 libsecret 而不是别的方案</h2>
+ * <p>Linux 没有系统级凭据管理器，提供该能力的是 Secret Service 协议
+ * （由 GNOME Keyring 或 KWallet 实现），走 D-Bus 通信。本实现用 JNA 调
+ * {@code libsecret-1.so.0}：JNA 已是本项目的既有依赖（{@link WinCred}、
+ * {@link MacKeychain} 都用它），零新增依赖，也不必依赖某个 CLI 工具是否安装。
+ * 其它两条路被否决的原因是：{@code dbus-java} 是 LGPL-2 的额外 Java 依赖，
+ * 且一旦全局引入就会被打进 Windows / macOS 的包；调 {@code secret-tool} 命令行
+ * 则需要 {@code libsecret-tools} 包，桌面发行版默认不装，而
+ * {@code libsecret-1-0}（库）几乎必然存在。</p>
  *
- * <p>Linux 没有「系统级凭据管理器」这个东西。实际提供这个能力的是 <b>Secret Service
- * 协议</b>（由 GNOME Keyring 或 KWallet 实现），走 D-Bus 通信。要调它有三条路：</p>
- *
- * <ol>
- *   <li><b>{@code dbus-java}</b> —— 直接说 D-Bus 协议。被否决：它是 LGPL-2 的额外 Java
- *       依赖，而且一旦全局引入就会被打进 Windows / macOS 的包，那两个平台根本用不到。</li>
- *   <li><b>调 {@code secret-tool} 命令行</b> —— 简单，但那个工具属于 {@code libsecret-tools}
- *       包，桌面发行版默认<b>不装</b>；而 {@code libsecret-1-0}（库）几乎必然存在。</li>
- *   <li><b>用 JNA 调 {@code libsecret-1.so.0}</b> —— <b>本实现选的这条</b>。
- *       JNA 已是本项目的既有依赖（{@link WinCred}、{@link MacKeychain} 都用它），
- *       <b>零新增依赖</b>，且不必依赖某个 CLI 工具是否安装。</li>
- * </ol>
- *
- * <h2>可变参数问题（这是选路线的关键障碍）</h2>
- *
- * <p>libsecret 的主 API 是 C 可变参数函数，例如：</p>
- *
- * <pre>
- * gboolean secret_password_store_sync (const SecretSchema *schema, const gchar *collection,
- *                                      const gchar *label, const gchar *password,
- *                                      GCancellable *cancellable, GError **error, ...);
- * </pre>
- *
- * <p>JNA <b>调不了</b>这类函数。所幸 libsecret 同时导出了<b>固定参数</b>的
- * {@code *v_sync} 版本，属性通过 {@code GHashTable} 传入 —— 那就能用 JNA 调了。
- * 实测确认这些符号都存在：</p>
+ * <p>libsecret 的主 API 是 C 可变参数函数，例如
+ * {@code secret_password_store_sync(schema, collection, label, password, cancellable, error, ...)}，
+ * JNA 调不了。所幸 libsecret 同时导出了固定参数的 {@code *v_sync} 版本，
+ * 属性通过 {@code GHashTable} 传入，实测确认这些符号都存在：</p>
  *
  * <pre>
  * secret_password_storev_sync   (schema, attributes, collection, label, password, cancellable, error)
@@ -50,11 +35,10 @@ import java.nio.charset.StandardCharsets;
  * secret_password_clearv_sync   (schema, attributes, cancellable, error)
  * </pre>
  *
- * <h2>SecretSchema 的内存布局（手写偏移，实测校准过）</h2>
- *
- * <p>JNA 的 {@code Structure} 对「32 个内联结构体数组」这种布局支持得很别扭，
- * 所以这里直接用 {@link Memory} 按偏移写。偏移不是猜的 —— 是用 C 程序
- * {@code sizeof} / {@code offsetof} 在真实 ABI 上量出来的：</p>
+ * <p>{@code SecretSchema} 直接用 {@link Memory} 按偏移写，而不是用 JNA 的
+ * {@code Structure}（后者对「32 个内联结构体数组」这种布局支持得很别扭）。
+ * 偏移不是猜的，是用 C 程序 {@code sizeof} / {@code offsetof} 在真实 ABI 上
+ * 量出来的：</p>
  *
  * <pre>
  * SecretSchemaAttribute:   sizeof=16   name@0   type@8
@@ -63,22 +47,18 @@ import java.nio.charset.StandardCharsets;
  * </pre>
  *
  * <p>{@link SecretServiceTest} 里有一组断言把这些数字钉住；若将来换了平台/ABI
- * 导致布局不同，那组测试会先失败，而不是等到运行时莫名其妙地崩。</p>
+ * 导致布局不同，那组测试会先失败，而不是等到运行时崩溃。</p>
  *
- * <h2>与 macOS 实现的关键差异</h2>
- *
- * <p>{@code secret_password_storev_sync} 本身是<b>按 schema + 属性匹配的 upsert</b>：
- * 匹配到现有条目就原地更新，匹配不到才新建。所以 Linux 侧<b>不需要</b>
- * macOS 那种「先查 exists 再决定 modify 还是 add」的编排，也不存在
- * 「先删后建会重置 ACL」的坑。</p>
- *
- * <h2>已知限制：没有钥匙串时怎么办</h2>
+ * <p>{@code secret_password_storev_sync} 本身是按 schema + 属性匹配的 upsert：
+ * 匹配到现有条目就原地更新，匹配不到才新建。所以 Linux 侧不需要 macOS 那种
+ * 「先查 exists 再决定 modify 还是 add」的编排，也不存在「先删后建会重置 ACL」
+ * 的问题。</p>
  *
  * <p>服务器版、精简发行版、纯窗口管理器环境往往没装 keyring，甚至装了但守护进程
  * 没起。这时 {@code *v_sync} 会返回 {@code GError}（连不上 D-Bus），
  * 本类把它翻译成普通错误返回，{@link LinuxCredentialStore} 再翻译成
- * 「读不到密码」，上层照既有的 {@code NEEDS_PASSWORD} 路径让用户手输 ——
- * <b>功能不中断，这是 Linux 上的常态路径而不是异常路径</b>。</p>
+ * 「读不到密码」，上层照既有的 {@code NEEDS_PASSWORD} 路径让用户手输。
+ * 功能不中断，这是 Linux 上的常态路径而不是异常路径。</p>
  */
 final class SecretService implements LinuxKeychainBackend {
 
@@ -150,28 +130,23 @@ final class SecretService implements LinuxKeychainBackend {
      * GLib 里几个现成函数的地址，用作 {@code g_hash_table_new_full} 的函数指针。
      *
      * <p>必须用 {@code g_str_hash} / {@code g_str_equal} 而不是 {@code NULL}：
-     * 后者会让哈希表按<b>指针</b>比较 key，而 libsecret 是按<b>字符串内容</b>
-     * 去查属性名的，用指针比较就永远查不到，症状是「存进去读不出来」。</p>
+     * 后者会让哈希表按指针比较 key，而 libsecret 是按字符串内容去查属性名的，
+     * 用指针比较就永远查不到，症状是「存进去读不出来」。</p>
      *
      * <p>销毁函数用 {@code g_free}，于是表被 unref 时会自动释放我们 {@code g_strdup}
      * 出来的 key 与 value，不必手工逐个 free。</p>
      *
-     * <h2>★ 为什么必须懒加载，不能写成静态初始化</h2>
-     *
-     * <p>静态初始化块的语义是「一碰这个类就加载原生库」。而
-     * {@link CredentialStoreConfig} 在用户显式传
-     * {@code tinyquery.credential.store=linux} 时会构造本类 —— <b>哪怕当前是 Windows</b>。
+     * <p>这几个指针必须懒加载，不能写成静态初始化：静态初始化块的语义是
+     * 「一碰这个类就加载原生库」。而 {@link CredentialStoreConfig} 在用户显式传
+     * {@code tinyquery.credential.store=linux} 时会构造本类，哪怕当前是 Windows。
      * 那一刻抛出的 {@code UnsatisfiedLinkError} 会让构造函数失败，
      * 被配置类的兜底 catch 成 {@link NoOpCredentialStore}，于是
-     * 「显式指定 linux」在 Windows 上悄悄变成了「不支持保存密码」。</p>
-     *
-     * <p><b>实测踩过</b>：Windows 上的
-     * {@code CredentialStoreConfigTest.explicitOverrideWins} 就是这么红起来的，
-     * 而它在 Linux 上完全正常 —— 典型的「只有换平台才暴露」。</p>
-     *
-     * <p>macOS 那边的 {@code Security.INSTANCE} 之所以没这个问题，正是因为
-     * JNA 的 {@code interface X extends Library { X INSTANCE = Native.load(...); }}
-     * 写法天然是懒的（接口字段在首次访问时才初始化）。本类把 JNA 绑定写成这个
+     * 「显式指定 linux」在 Windows 上悄悄变成了「不支持保存密码」。
+     * 实测踩过：Windows 上的 {@code CredentialStoreConfigTest.explicitOverrideWins}
+     * 就是这么红起来的，而它在 Linux 上完全正常。macOS 那边的
+     * {@code Security.INSTANCE} 之所以没这个问题，正是因为 JNA 的
+     * {@code interface X extends Library { X INSTANCE = Native.load(...); }}
+     * 写法天然是懒的（接口字段在首次访问时才初始化）；本类把 JNA 绑定写成这个
      * 形状，这几个函数指针同理。</p>
      */
     private static volatile Pointer gStrHash;
@@ -192,7 +167,7 @@ final class SecretService implements LinuxKeychainBackend {
     /**
      * 只构造一次的 schema。
      *
-     * <p>结构体与它内部引用的两个字符串放在<b>同一块</b> {@link Memory} 里 ——
+     * <p>结构体与它内部引用的两个字符串放在同一块 {@link Memory} 里，
      * 这样只需持有这一个对象就能保证所有原生指针都不悬空。
      * 若把字符串单独分配，它们可能在 GC 后失效，而原生侧仍指着旧地址，
      * 那种崩法极难排查。</p>
@@ -336,7 +311,7 @@ final class SecretService implements LinuxKeychainBackend {
     /**
      * 取出并释放 GError，返回可展示的消息；没有错误时返回 null。
      *
-     * <p>必须释放 —— 否则每次失败都漏一小块原生内存。</p>
+     * <p>必须释放，否则每次失败都漏一小块原生内存。</p>
      */
     private static String takeError(PointerByReference errRef) {
         Pointer err = errRef.getValue();
@@ -360,8 +335,8 @@ final class SecretService implements LinuxKeychainBackend {
     /**
      * 读取结果。
      *
-     * <p>三种情况必须能区分开：<b>读到了</b>、<b>本来就没有</b>、<b>出错</b>。
-     * 把「本来就没有」当成错误，会让从没存过密码的正常用户在日志里看到一片红。</p>
+     * <p>三种情况必须能区分开：读到了、本来就没有、出错。
+     * 把「本来就没有」当成错误，会让从没存过密码的正常用户在日志里看到一片错误。</p>
      */
     record ReadOutcome(boolean found, String password, String error) {
 

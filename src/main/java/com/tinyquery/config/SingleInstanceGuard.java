@@ -17,18 +17,13 @@ import java.nio.file.StandardOpenOption;
  * 单实例守卫：保证同一时间只有一个 TinyQuery 在跑。
  *
  * <p>用户双击第二次时不该起第二个进程 —— 那会变成两个服务、两个浏览器标签、
- * 两份互相看不见的内存数据。正确行为是：<b>打开已在运行那个实例的页面，然后自己退出</b>。</p>
- *
- * <h2>为什么是两个文件</h2>
+ * 两份互相看不见的内存数据。正确行为是打开已在运行那个实例的页面，然后自己退出。</p>
  *
  * <p>URL 没有写在被锁的那个文件里，而是单独一个 {@code tinyquery.url}。原因是
- * Windows 的文件锁是<b>强制锁</b>（{@code LockFileEx}），而 {@link FileChannel#tryLock()}
- * 不带参数时锁的是整个文件。若 URL 与被锁区域同处一个文件，第二个实例
- * <b>根本读不出来</b> —— 它读的每个字节都在对方锁住的范围内。
- * 拆成「一个空文件用来加锁 + 一个明文文件用来传递地址」后，三个平台行为一致，
- * 也不需要任何字节范围技巧。</p>
- *
- * <h2>时序</h2>
+ * Windows 的文件锁是强制锁（{@code LockFileEx}），而 {@link FileChannel#tryLock()}
+ * 不带参数时锁的是整个文件。若 URL 与被锁区域同处一个文件，第二个实例根本读不出来：
+ * 它读的每个字节都在对方锁住的范围内。拆成「一个空文件用来加锁 + 一个明文文件用来
+ * 传递地址」后，三个平台行为一致，也不需要任何字节范围技巧。</p>
  *
  * <pre>
  * main()
@@ -48,7 +43,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
 
     // 读运行地址的重试参数。
     // 第一个实例从「拿到锁」到「写出地址」之间隔着整个 Spring 启动过程（约 1~2 秒），
-    // 用户若在这期间又双击一次，第二个实例会先读到空文件 —— 短暂重试而不是立刻放弃。
+    // 用户若在这期间又双击一次，第二个实例会先读到空文件：短暂重试而不是立刻放弃。
     // 30 × 100ms = 最多等 3 秒
     private static final int READ_ATTEMPTS = 30;
     private static final long READ_INTERVAL_MILLIS = 100;
@@ -134,8 +129,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
      *
      * <p>仅在 {@link #isAcquired()} 为 false 时有意义。读不到时按
      * {@link #READ_ATTEMPTS} × {@link #READ_INTERVAL_MILLIS} 重试，
-     * 以覆盖「第一个实例还没写完地址」的窗口。</p>
-     *
+     * 以覆盖「第一个实例还没写完地址」的窗口。</p>     *
      * @return 访问地址；始终读不到返回 null
      */
     public String readRunningUrl() {
@@ -159,8 +153,8 @@ public final class SingleInstanceGuard implements AutoCloseable {
     /**
      * 释放锁。
      *
-     * <p>正常退出时其实不必显式调用 —— 进程结束后操作系统会自动释放文件锁。
-     * 保留此方法是给测试用的：同一个 JVM 里要连续验证多个用例，必须能主动放手。</p>
+     * <p>正常退出时其实不必显式调用：进程结束后操作系统会自动释放文件锁。
+     * 保留此方法是给测试用的 —— 同一个 JVM 里要连续验证多个用例，必须能主动放手。</p>
      */
     @Override
     public void close() {

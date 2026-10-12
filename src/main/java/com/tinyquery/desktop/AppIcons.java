@@ -17,19 +17,15 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 应用图标（控制窗口的标题栏图标、系统托盘图标）。
  *
- * <h2>为什么从资源读，而不是代码画</h2>
+ * <p>图标从资源读，而不是用代码画：正式设计是 {@code packaging/tinyquery.ico}，
+ * 含 7 个尺寸，这里从 {@code src/main/resources/icons/} 读同源的 PNG。</p>
  *
- * <p>这里原来是「用 Java2D 画一个圆角方块加字母 T」，那是<b>占位图标</b>。
- * 现在有了正式设计（{@code packaging/tinyquery.ico}，7 个尺寸），改成从
- * {@code src/main/resources/icons/} 读同源的 PNG。</p>
+ * <p>不放一份 .ico 直接读，是因为 JDK 的 ImageIO 不认识 .ico 格式，读出来是 null，
+ * 除非自己写解析器或引入第三方库。所以由生成图标的脚本顺手把每个尺寸导出成 PNG ——
+ * 数据块本来就是 PNG，原样抽出即可，与 .ico 像素级一致。</p>
  *
- * <p>之所以不放一份 .ico 直接读：<b>JDK 的 ImageIO 不认识 .ico 格式</b>，
- * 读出来是 null，除非自己写解析器或引入第三方库。所以由生成图标的脚本
- * 顺手把每个尺寸导出成 PNG —— 数据块本来就是 PNG，原样抽出即可，
- * 与 .ico 像素级一致。</p>
- *
- * <p>为什么每个尺寸各存一张、而不是只放 256 再缩：小尺寸下的图标需要
- * <b>简化</b>（16px 时去掉文字、只留加粗的折线），把 256 硬缩到 16 只会糊成一团。
+ * <p>每个尺寸各存一张、而不是只放 256 再缩：小尺寸下的图标需要简化
+ * （16px 时去掉文字、只留加粗的折线），把 256 硬缩到 16 只会糊成一团。
  * 这正是 .ico 支持多尺寸内嵌的原因，PNG 资源沿用同一套策略。</p>
  */
 public final class AppIcons {
@@ -45,7 +41,7 @@ public final class AppIcons {
     /**
      * 资源里实际存在的尺寸，必须与 {@code src/main/resources/icons/} 下的文件一一对应。
      *
-     * <p>升序排列 —— {@link #nearestAvailable(int)} 依赖这个顺序。</p>
+     * <p>升序排列：{@link #nearestAvailable(int)} 依赖这个顺序。</p>
      */
     static final int[] AVAILABLE_SIZES = {16, 24, 32, 48, 64, 128, 256};
 
@@ -158,9 +154,9 @@ public final class AppIcons {
     /**
      * 资源缺失时的兜底图标：一个主色圆角方块。
      *
-     * <p>刻意<b>不抛异常</b>。图标读不到只是不好看，而调用它的地方
-     * （控制窗口的构造函数、托盘安装）一旦抛出去，用户会连退出入口都没有。
-     * 界面能起来、能退出，比图标好看重要得多。</p>
+     * <p>刻意不抛异常。图标读不到只是不好看，而调用它的地方（控制窗口的构造函数、
+     * 托盘安装）一旦抛出去，用户会连退出入口都没有。界面能起来、能退出，
+     * 比图标好看重要得多。</p>
      */
     private static BufferedImage fallback(int size) {
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);

@@ -14,6 +14,6 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("TinyQuery API")
                         .description("轻量级本地查询引擎")
-                        .version("1.0.0"));
+                        .version("1.1.0"));
     }
 }

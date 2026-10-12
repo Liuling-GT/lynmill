@@ -4,7 +4,7 @@ package com.tinyquery.datasource.spec;
  * 数据源异常。
  *
  * <p>{@link #errorKey} 是一个稳定的错误码（对应 {@code Messages} 里的词条键），
- * 与展示文案分开。<b>调用方靠它分支，不要靠 message 内容分支</b> ——
+ * 与展示文案分开。调用方靠它分支，不要靠 message 内容分支 ——
  * message 会随语言变，用中文前缀判断的代码在英文模式下会静默失效。</p>
  *
  * <p>历史包袱：{@code QueryController} 曾经靠

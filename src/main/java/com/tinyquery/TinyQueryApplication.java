@@ -1,13 +1,12 @@
 package com.tinyquery;
 
 import com.tinyquery.i18n.Messages;
-
 import com.tinyquery.i18n.DesktopLocale;
-
 import com.tinyquery.config.BrowserOpener;
 import com.tinyquery.config.PathResolver;
 import com.tinyquery.config.ServerPortHolder;
 import com.tinyquery.config.SingleInstanceGuard;
+import com.tinyquery.desktop.DesktopTheme;
 import com.tinyquery.desktop.StartupFailureDialog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +52,7 @@ public class TinyQueryApplication {
 
     // 日志文件编码。
     //
-    // 不设的话，Logback 的 FileAppender 用**平台默认编码** ——
+    // 不设的话，Logback 的 FileAppender 用平台默认编码 ——
     // 中文 Windows 上是 GBK。程序里写了中文日志（如「凭据存储不可用」），
     // 于是别人用 VS Code（默认按 UTF-8 打开）看到的就是乱码。
     //
@@ -61,7 +60,7 @@ public class TinyQueryApplication {
     // 不带参数启动（也就是用户从 exe 双击的真实情形）日志是 GBK。
     // 所以这里显式定死 UTF-8，不受平台与启动参数影响。
     //
-    // 注意：改成 UTF-8 后，**旧版本写下的历史日志仍是 GBK**。
+    // 注意：改成 UTF-8 后，旧版本写下的历史日志仍是 GBK。
     // 同一个目录里可能两种编码共存，那是升级的正常现象，不影响新日志的读取
     private static final String LOG_CHARSET = "UTF-8";
 
@@ -72,11 +71,16 @@ public class TinyQueryApplication {
         // 启动之前设好它就会沿用我们的值
         System.setProperty("java.awt.headless", "false");
 
-        // 桌面端语言必须在**任何可能弹窗的代码之前**定下来：
+        // 桌面端语言必须在任何可能弹窗的代码之前定下来：
         // 连下面的 configureFileLogging() 都可能失败（数据目录建不出来），
         // 那是启动失败对话框最常出现的场景之一，那时语言得已经确定好了。
         // 本方法内部吞掉所有异常，读不到就用中文，绝不会成为启动失败的原因
         DesktopLocale.apply();
+
+        // 桌面端主题同理：控制窗口上「运行中」那行字的颜色、
+        // 托盘菜单的悬停色都在创建时就取好了，必须在建窗口/装托盘之前定下来。
+        // 同样吞掉所有异常，读不到就用默认主题
+        DesktopTheme.apply();
 
         try {
             configureFileLogging();
@@ -99,7 +103,7 @@ public class TinyQueryApplication {
      * 而且必须落在用户数据目录里：安装目录（{@code C:\Program Files} 之下）
      * 对普通用户只读，工作目录又随启动方式而变。</p>
      *
-     * <p><b>必须在 Spring 启动之前设置。</b>{@code SpringApplication} 会在启动过程中
+     * <p>必须在 Spring 启动之前设置。{@code SpringApplication} 会在启动过程中
      * 初始化日志系统，之后再设就晚了。这里用系统属性而不是新建
      * {@code application.properties}，与端口策略保持同一套做法。</p>
      *

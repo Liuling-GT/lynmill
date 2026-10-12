@@ -11,30 +11,22 @@ import java.util.Locale;
  * <p>通过 {@link MacKeychain} 调 Security.framework，不依赖 jna-platform。
  * 与 {@link WindowsCredentialStore} 是同一个接口的两个实现，上层完全无感。</p>
  *
- * <h2>和 Windows 实现的三处关键差异</h2>
+ * <p>与 Windows 实现有三处关键差异。一是重复保存必须原地改，绝不能先删后建
+ * （见 {@link #write}）：macOS 钥匙串条目带一张 ACL 分区列表，删掉重建会把用户
+ * 点过的「始终允许」一起丢掉，于是每次都弹窗；Windows 那边 {@code CredWriteW}
+ * 本身就是同名原地替换语义，所以没这个问题。二是可用性判断是「懒」的，而且不碰
+ * 钥匙串（见 {@link #isAvailable}）：Windows 会真写一条、读一条、删一条来探测，
+ * 因为 DPAPI 不弹 UI，但 macOS 上读钥匙串可能弹系统授权框，启动时探测就变成
+ * 「每次启动弹一个框」。三是密码按 UTF-8 存，Windows 是 UTF-16LE，这是底层 API
+ * 决定的，对上层不可见。</p>
  *
- * <ol>
- *   <li><b>重复保存必须原地改，绝不能先删后建。</b>见 {@link #write}。
- *       这是 macOS 独有的坑：钥匙串条目带一张 ACL 分区列表，删掉重建会把
- *       用户点过的「始终允许」一起丢掉，于是每次都弹窗。Windows 那边
- *       {@code CredWriteW} 本身就是同名原地替换语义，所以没这个问题。</li>
- *   <li><b>可用性判断是「懒」的，而且不碰钥匙串。</b>见 {@link #isAvailable}。
- *       Windows 会真写一条、读一条、删一条来探测，因为 DPAPI 不弹 UI；
- *       但 macOS 上读钥匙串可能弹系统授权框，启动时探测就变成「每次启动弹一个框」。</li>
- *   <li><b>密码按 UTF-8 存</b>，Windows 是 UTF-16LE。这是底层 API 决定的，
- *       对上层不可见。</li>
- * </ol>
- *
- * <h2>ACL 与代码签名（已知限制，不是缺陷）</h2>
- *
- * <p>钥匙串条目的访问控制绑在「写入它的那个程序」的代码签名身份上。应用未签名、
- * 或每次重新打包后身份变化时，系统会认为「不是同一个程序」从而重新弹窗。
- * 因此升级到新版本后可能要重新授权一次。</p>
- *
- * <p>这不会让功能中断：读不到密码时本实现返回「没有密码」/失败，
- * {@code DataSourceManager} 会照既有的 {@code NEEDS_PASSWORD} 路径让用户手输 ——
- * 也就是说「钥匙串读不到」复用了一条已经存在的分支，<b>不会变成新的一类故障</b>。
- * 正式解决要靠代码签名与公证，而本项目当前没有做（见 README 的「首次打开提示」）。</p>
+ * <p>已知限制：钥匙串条目的访问控制绑在「写入它的那个程序」的代码签名身份上。
+ * 应用未签名、或每次重新打包后身份变化时，系统会认为「不是同一个程序」从而重新
+ * 弹窗，因此升级到新版本后可能要重新授权一次。这不会让功能中断：读不到密码时
+ * 本实现返回「没有密码」/失败，{@code DataSourceManager} 会照既有的
+ * {@code NEEDS_PASSWORD} 路径让用户手输，「钥匙串读不到」复用了一条已经存在的
+ * 分支。正式解决要靠代码签名与公证，而本项目当前没有做（见 README 的
+ * 「首次打开提示」）。</p>
  */
 public class MacCredentialStore implements CredentialStore {
 
@@ -65,10 +57,10 @@ public class MacCredentialStore implements CredentialStore {
     /**
      * 测试用：再接一个显式的平台标志。
      *
-     * <p>为什么值得多开这个构造函数：本类最关键的逻辑是 {@link #write} 里
-     * 「已有条目必须原地改」那条，而它的测试必须能在<b>没有 Mac 的机器上</b>跑
-     * ——Windows 端复核、将来的 CI 都没有 Mac。平台判断如果写死在构造函数里，
-     * 这些测试在 Windows 上就只能整类跳过，等于没测。</p>
+     * <p>本类最关键的逻辑是 {@link #write} 里「已有条目必须原地改」那条，而它的
+     * 测试必须能在没有 Mac 的机器上跑 —— Windows 端复核、将来的 CI 都没有 Mac。
+     * 平台判断如果写死在构造函数里，这些测试在 Windows 上就只能整类跳过，
+     * 等于没测。</p>
      */
     MacCredentialStore(MacKeychainBackend keychain, boolean platformMatches) {
         this.keychain = keychain;
@@ -84,7 +76,7 @@ public class MacCredentialStore implements CredentialStore {
      * 本机是不是 macOS。
      *
      * <p>实测 {@code os.name} 为 {@code "Mac OS X"}。
-     * <b>不能写成 {@code contains("win")}</b> —— {@code "darwin"} 里就含
+     * 不能写成 {@code contains("win")} —— {@code "darwin"} 里就含
      * {@code "win"}，Mac 会被误判成 Windows。</p>
      */
     private static boolean detectMac() {
@@ -97,12 +89,11 @@ public class MacCredentialStore implements CredentialStore {
     /**
      * 当前是否可用。
      *
-     * <p><b>只判断「原生库能否加载」，不访问钥匙串。</b>见类注释差异 ②。</p>
+     * <p>只判断「原生库能否加载」，不访问钥匙串。见类注释关于可用性判断的差异。</p>
      *
-     * <p>还有一点很重要：这里必须<b>乐观地</b>返回 true（只要平台对、框架能加载），
-     * 不能做严格的读写探测。因为 {@code DataSourceManager.fillSecretsFromStore}
-     * 在 {@code isAvailable()} 为 false 时会<b>直接跳过读取</b> —— 那样用户明明
-     * 存过密码也永远补不回来。</p>
+     * <p>这里必须乐观地返回 true（只要平台对、框架能加载），不能做严格的读写探测。
+     * 因为 {@code DataSourceManager.fillSecretsFromStore} 在 {@code isAvailable()}
+     * 为 false 时会直接跳过读取，那样用户明明存过密码也永远补不回来。</p>
      */
     @Override
     public boolean isAvailable() {
@@ -160,10 +151,9 @@ public class MacCredentialStore implements CredentialStore {
             return CredentialResult.fail(unavailableReason());
         }
         try {
-            // ★ 核心：已经存在就【原地改】，不存在才新建。
+            // 核心：已经存在就【原地改】，不存在才新建。
             //   绝不能写成 delete() 再 add()：那会把条目的 ACL 分区列表重置，
-            //   用户点过的「始终允许」立刻失效 —— 表现就是「点了也没用，
-            //   下次还弹」。详见 MacKeychain 的类注释。
+            //   用户点过的「始终允许」立刻失效。详见 MacKeychain 的类注释。
             String err = keychain.exists(key)
                     ? keychain.modify(key, password)
                     : keychain.add(key, username, password);
@@ -197,7 +187,7 @@ public class MacCredentialStore implements CredentialStore {
                 return CredentialResult.notFound();
             }
             // 读失败（例如授权被拒、钥匙串上锁）同样会让上层走 NEEDS_PASSWORD
-            // 让用户手输，功能不中断 —— 这是既有的兜底路径，不是新加的分支
+            // 让用户手输，功能不中断
             return CredentialResult.fail(got.error());
         } catch (Throwable t) {
             log.warn("读取凭据异常：key=" + key, t);
