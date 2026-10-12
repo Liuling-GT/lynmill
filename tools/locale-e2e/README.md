@@ -1,111 +1,204 @@
-# 语言一致性回归（真浏览器）
+# UI preference consistency regression (real browser)
 
-网页与服务端两份语言设置的对齐规则，以及"切语言要重取后端下发的文案"这类行为，
-**依赖三样普通单测给不了的东西**：`localStorage` 的真实状态、真实的启动时序
-（`reconcileLocale` 在挂载之前跑完）、真实的 HTTP 往返与 Vue 响应式刷新。
+The rules aligning the web app's locale **and theme color** with the server's, and behaviors such
+as "switching locale must refetch server-provided strings",
+**depend on three things ordinary unit tests cannot provide**: the real state of `localStorage`,
+the real startup sequence (`reconcileLocale` / `reconcileTheme` run before mount), and real HTTP
+round trips with Vue reactive updates.
 
-用 jsdom mock 掉这些，测的就是 mock 而不是产品 —— 本项目已经踩过一次
-「夹具不能区分实现 → 假绿」的坑（编号 25）。所以这里用**真浏览器 + 真 CDP**。
+Mock those away with jsdom and you are testing the mock, not the product — this project has
+already been burned once by "a fixture that cannot distinguish implementations → false green"
+(issue 25). So this harness uses a **real browser + real CDP**.
 
-## 怎么跑
+## How to run
 
 ```
-mvn package -DskipTests          # 先打包，脚本要跑 jar 里的真实产物
+mvn package -DskipTests          # package first; the script runs the real artifacts inside the jar
 python tools/locale-e2e/run_all.py
 ```
 
-退出码：`0` 全通过 / `1` 有场景失败 / `2` 环境不满足。
+Exit codes: `0` all passed / `1` one or more scenarios failed / `2` environment not satisfied.
 
-全跑一遍约 **1~2 分钟**（每个场景要起一个服务端 + 一个无头浏览器）。
+A full run takes about **2–3 minutes** (each scenario starts a server and a headless browser).
 
-## 什么时候跑
+## When to run
 
-发版前，以及改动以下任一位置之后：
+Before a release, and after changing any of the following:
 
-| 改动位置 | 为什么 |
+| What changed | Why |
 |---|---|
-| `tinyquery-frontend/src/locales/**` | 对齐规则本身 |
-| `tinyquery-frontend/src/App.vue` 里与语言、`types` 相关的逻辑 | 编号 26 那个缺陷就在这 |
-| `tinyquery-frontend/src/main.js` 的启动顺序 | `reconcileLocale` 必须在挂载前 |
-| `PreferencesController` / `LocaleSyncService` / `DesktopLocale` | 服务端那一份语言 |
-| `Messages` 里按 `X-TinyQuery-Locale` 下发的词条 | 类型名、字段说明 |
+| `tinyquery-frontend/src/locales/**` | The alignment rules themselves |
+| `tinyquery-frontend/src/theme/**` | The theme alignment rules themselves |
+| `tinyquery-frontend/src/assets/tokens.css` theme blocks | The colors these scenarios read back from `getComputedStyle` |
+| Locale- and `types`-related logic in `tinyquery-frontend/src/App.vue` | This is where defect 26 lives |
+| The startup order in `tinyquery-frontend/src/main.js` | `reconcileLocale` / `reconcileTheme` must run before mount |
+| `PreferencesController` / `DesktopSyncService` / `DesktopLocale` / `DesktopTheme` | The server-side preference |
+| Entries served by `Messages` based on `X-TinyQuery-Locale` | Type names and field descriptions |
 
-## 五个场景
+## The seven scenarios
 
-| 场景 | 断言 | 防的是什么 |
+| Scenario | Assertion | What it guards against |
 |---|---|---|
-| **s1** | 本地无选择 → 跟随服务端，且**不写** `localStorage` | reconcile 把服务端语言写成了"本地选择"，从此服务端再改语言永远追不上 |
-| **s2** | 本地有选择 → 以本地为准，并推给服务端 | reconcile 反过来用服务端覆盖用户的显式选择 |
-| **s3** | 跨两次启动：服务端改语言后，网页下次打开能跟上 | s1 的**闭环验证**。s1 只证明"第一次没落盘"，s3 证明"所以第二次能跟上" |
-| **s4** | 切语言后，后端下发的类型元数据跟着重取 | 编号 26 的真实缺陷：外壳变了，但类型下拉/字段说明还停在上一种语言 |
-| **s5** | 英文模式下界面上不出现中文 | 新增文案时漏了英文词条 |
+| **s1** | No local choice → follow the server, and **do not** write to `localStorage` | Reconcile writing the server locale in as a "local choice", after which server locale changes can never catch up |
+| **s2** | A local choice exists → the local choice wins, and is pushed to the server | Reconcile instead overwriting the user's explicit choice with the server locale |
+| **s3** | Across two startups: after the server locale changes, the web app catches up on its next open | The **closed-loop check** for s1. s1 only proves "nothing was persisted the first time"; s3 proves "and therefore it catches up the second time" |
+| **s4** | After a locale switch, server-provided type metadata is refetched too | The real defect behind issue 26: the shell changes but the type dropdown and field descriptions stay in the previous locale |
+| **s5** | No Chinese appears in the UI in English mode | Missing English entries when new strings are added |
+| **s6** | Theme follows the same rules as locale (no local choice → server wins and nothing is persisted; local choice → local wins and is pushed), and the computed `--accent` matches | The theme path losing the server's choice at startup, or failing to push a local choice to the desktop shell |
+| **s7** | Clicking through every theme: the computed color equals the color the server publishes on `/api/preferences/themes`, and exactly one option is selected | A picker that advertises one color and renders another |
 
-### s4 是这套东西存在的主要理由
+### s4 is the main reason this harness exists
 
-编号 26 那个缺陷**只在一个方向上暴露**：当初验收只测了"英文模式下没有中文"（通过），
-没测"中文模式下是中文"，于是漏掉。而且它是"半新半旧"的形态 ——
-`documentElement.lang` 已经是 `zh`，但类型下拉还是 `CSV File`。
-**只看外壳语言是测不出来的。**
+Defect 26 **only surfaces in one direction**: acceptance testing only covered "no Chinese in
+English mode" (which passed) and never checked "Chinese in Chinese mode", so it slipped through.
+It also shows up in a "half new, half old" state — `documentElement.lang` is already `zh`, but
+the type dropdown still reads `CSV File`. **Checking only the shell locale cannot detect this.**
 
-## 已验证：注入缺陷会变红
+### s6 caught a real defect on its first run
 
-一套不会红的测试等于没有测试。下面两次注入都实测过：
+The theme module originally had no state for "which theme is currently applied". `reconcileTheme`
+deliberately does **not** write `localStorage` when it adopts the server's theme, so the later
+`syncTheme()` call re-derived the theme from `loadTheme()` — which read the intentionally empty
+`localStorage`, fell back to the default theme, and **erased the theme just adopted from the
+server**. Symptom: on a fresh browser, a server-set theme other than the default never appeared
+until the user clicked it manually.
 
-| 注入的缺陷 | 结果 |
+The locale path never had this bug because `i18n.global.locale.value` *is* state — `syncHtmlLang`
+reads it rather than re-deriving. The fix gives the theme module the same thing (`currentTheme`),
+so "which theme is applied right now" has exactly one source.
+
+## Verified: injected defects turn red
+
+A test suite that cannot turn red is no test suite. Every injection below was verified for real:
+
+| Injected defect | Result |
 |---|---|
-| `App.vue` 的 `watch(locale)` 不再重取 `types`（编号 26 原始缺陷） | **只有 s4 红**，报出「类型下拉与中文词条不一致：缺少=['CSV 文件'…] 多出=['CSV File'…]」 |
-| `reconcileLocale` 改成 `{ persist: true }` | **s1 与 s3 红**（s3 报「第2次仍是中文 —— 说明第1次把语言写成了本地选择」） |
+| `App.vue`'s `watch(locale)` no longer refetches `types` (the original defect 26) | **Only s4 turns red**, reporting "type dropdown inconsistent with Chinese entries: missing=['CSV 文件'…] extra=['CSV File'…]" |
+| `reconcileLocale` changed to `{ persist: true }` | **s1 and s3 turn red** (s3 reports "still Chinese on run 2 — meaning run 1 persisted the locale as a local choice") |
+| `syncTheme()` reverted to deriving from `loadTheme()` (the defect s6 found) | **s6 turns red** on the "no local choice" case |
+| `applyTheme()` no longer sets the `data-theme` attribute | **s6 and s7 turn red** |
+| `reconcileTheme()` persists when adopting the server theme | **s6 turns red** on the "nothing was written" assertion |
+| `setTheme()` no longer pushes to the server | **s6 turns red** on the server-side value |
+| `setTheme()` no longer persists the local choice | **s6 turns red** on `localStorage` |
+| A theme's `--accent` changed in `tokens.css` | **s7 turns red** (computed color ≠ published color) |
+| A theme block renamed so it no longer matches `data-theme` | **s7 turns red** |
+| The server's `/themes` publishes the wrong `accent` | **s7 turns red** on the swatch dots |
+| The theme options rendered in a different order | **s7 turns red** (clicking index *i* selects the wrong theme) |
+| A theme's fill override token name misspelled so the override never applies | **s7 turns red** on "the fill is not lighter than the accent" |
+| The fill override written globally (`:root` instead of `:root[data-theme=…]`) | **s7 turns red** (the other themes' buttons are repainted too) |
+| The rules pinning text colour back to `--accent` deleted | **s7 turns red** (static check; the live probe covers the cascade) |
 
-两次注入都是只让**该红的那几条**红，其余保持绿 —— 说明场景之间没有互相干扰。
+Each injection turned **only the scenarios that should turn red** red, leaving the rest green —
+the scenarios do not interfere with one another.
 
-## 环境变量（都有默认值，换机器/接 CI 时才需要）
+### The two assertions that were not good enough at first
 
-| 变量 | 默认 | 说明 |
+Worth recording, because both looked fine and both were blind:
+
+1. **The expected fill colour was read from the very file under test.** Parsing `tokens.css`
+   kept the expectation in sync automatically — and made the check blind: when the override
+   token was misspelled it disappeared from the file, so the expectation silently fell back to
+   `--accent`, and "the button is `--accent`" passed. The fix is to pin the *intent* instead
+   (`FILL_SHOULD_BE_LIGHTER`: which theme, which direction) and assert the fill is strictly
+   lighter than `--accent`. Colour values can change freely; a broken override cannot pass.
+
+2. **A browser check that could never run.** The two places Element uses the primary token as
+   *text* colour only render on the query/chart pages, and the driver sits on the settings page,
+   so `querySelector` always returned `null` and the check was skipped every single time.
+   It now **builds a probe element** with the same class names, appends it to `body`, and reads
+   the computed colour — which also proves our rule wins the specificity contest against
+   Element's own rule. That was the only real risk in that CSS, and reading the stylesheet
+   text cannot prove it.
+
+## Environment variables (all have defaults; only needed on another machine or in CI)
+
+| Variable | Default | Description |
 |---|---|---|
-| `TINYQUERY_JAVA` | `D:\JDK\jdk-17\bin\java.exe` | JDK 17 的 java |
-| `TINYQUERY_NODE` | `D:\Node.js\node.exe` | Node 18+（用其内置 `WebSocket`，不需要 `npm install`） |
-| `TINYQUERY_BROWSER` | 自动找 Edge/Chrome | 浏览器可执行文件 |
-| `TINYQUERY_ROOT` | 由脚本位置推断 | 项目根目录 |
-| `TINYQUERY_E2E_WORK` | 系统临时目录 | 工作目录（profile、日志、假 HOME） |
+| `TINYQUERY_JAVA` | `D:\JDK\jdk-17\bin\java.exe` | The JDK 17 java |
+| `TINYQUERY_NODE` | `D:\Node.js\node.exe` | Node 18+ (uses its built-in `WebSocket`; no `npm install` needed) |
+| `TINYQUERY_BROWSER` | Auto-detects Edge/Chrome | Browser executable |
+| `TINYQUERY_ROOT` | Inferred from the script location | Project root |
+| `TINYQUERY_E2E_WORK` | System temp directory | Working directory (profile, logs, fake HOME) |
 
-**不需要装任何 Python 包**，只用标准库。
+**No Python packages are required**; only the standard library.
 
-## 两个踩过的坑（都写在代码注释里）
+## Four pitfalls we hit (all documented in code comments)
 
-### 1. 不要用固定端口
+### 1. Do not use fixed ports
 
-一开始场景绑死 18060~18065。结果 18063 被一个**早先会话留下的浏览器标签页**占着，
-那个页面每几秒重放一次 `POST /api/preferences/locale {"locale":"en"}`，
-把新起的服务端语言改掉。症状看起来像"服务端自己把 zh 变成了 en"，排查了很久。
+Scenarios originally hard-coded ports 18060–18065. It turned out 18063 was held by a **browser
+tab left over from an earlier session**, and that page replayed
+`POST /api/preferences/locale {"locale":"en"}` every few seconds, changing the locale of the
+newly started server. The symptom looked like "the server changed zh to en by itself", and took
+a long time to track down.
 
-现在每次运行由 `free_ports()` 动态分配，不会撞上任何遗留页面。
-脚本还带 `assert_locale_settled()`：依赖服务端语言的场景用前先确认它确实停在预期值，
-不满足就明确报错，而不是让后续断言给出误导性的结果。
+Now each run allocates ports dynamically via `free_ports()`, so it never collides with a stray
+page. The script also ships `assert_locale_settled()` / `assert_theme_settled()`: scenarios that
+depend on the server preference confirm it actually settled at the expected value first, and fail
+loudly instead of letting later assertions produce misleading results.
 
-### 2. 收尾要连浏览器的子进程一起杀
+### 2. Teardown must kill browser child processes too
 
-Edge / Chrome 是多进程的，只 `terminate` 主进程的话**子进程会活下来**，
-而里面的页面还在跑 —— 会继续向后端发请求。`Browser.stop()` 现在按 profile 路径
-杀掉整棵进程树（只杀本工具的 profile，不动用户自己的浏览器）。
+Edge / Chrome are multi-process; `terminate`-ing only the main process **leaves child processes
+alive**, and the pages inside them keep running — and keep sending requests to the backend.
+`Browser.stop()` now kills the whole process tree by profile path (only this tool's profile, never
+the user's own browser).
 
-## 不做什么
+### 3. A released port can be handed straight back out
 
-- **不接 CI**：整套的价值就在真浏览器 + 真启动时序，接 CI 要额外配 headless 浏览器与 JDK，收益不抵成本。
-- **不引入 Vitest / jsdom**：`reconcileLocale` 的分支逻辑看着适合单测，
-  但本次证明真实的缺陷（编号 26）恰恰是 jsdom 测不到的"响应式刷新"。
-  与其建一套只能测 mock 的设施，不如把这几条真浏览器的场景做扎实。
-- **不遍历全部面板**：s5 只读首屏。完整遍历要处理每个面板的异步加载，
-  判据会从"翻译是否完整"漂移成"遍历是否做全"，容易变成随机变红的断言。
+Pitfall 2 is not fully solved by teardown alone. A scenario that starts several server+browser
+pairs in a row (s2 starts two, s6 starts four) releases a port before the next pair asks for one,
+and **the OS happily reuses it**. If a renderer from the previous pair is still alive for a few
+hundred milliseconds, its page pushes a theme to *the next pair's* freshly started server — and
+the symptom is "the server theme is inexplicably `bamboo`", which looks exactly like a product
+defect.
 
-## 已知的合法例外
+This was hit for real while adding s6 (same code, sometimes red, sometimes green). `free_ports()`
+now remembers every port it has handed out in this process and never repeats one, which cuts the
+"stray page → new server" path entirely. `_run()` also kills strays before starting each pair.
 
-英文模式下允许出现中文的地方：
+### 4. An interrupted injection run leaves the source tree modified
 
-- 语言选择器上的「中文」按钮 —— 语言的名字在哪种语言下都该显示成它自己的写法
-- **用户数据**：文件路径、表名、列名、数据源名、SQL 里用户自己写的字面量
-- **专有名词**：`MySQL / MariaDB`、`PostgreSQL`、`SQLite`、`CSV`、`Excel`
-  这些是产品名，两种语言下都这么写 —— 它们**本来就该带拉丁字母**
+The injection scripts edit the source under test in place and restore it in a `finally`. A run
+killed mid-flight (timeout, `job_kill`, Ctrl-C) does not always reach that block, so the tree is
+left holding an injected defect — and every later result is measured against broken code.
 
-最后一条踩过：s4 的第一版判据是"含 3 个以上字母即视为英文"，
-于是把 `MySQL / MariaDB` 判成了"没刷新"。**判据错在把专有名词当成了未翻译。**
-现在改成逐项比对中文词条的**预期值**，而不是猜。
+This was hit for real: after killing a run, `theme/index.js` sat at `persist: true`, and the next
+run's anchor self-check reported "anchor not found" for an injection that was perfectly fine. It
+read as a coverage gap when the actual cause was a polluted baseline.
+
+Both scripts now write an `inflight.json` recording the file and its backup, and
+`recover_if_interrupted()` restores it on the next start and says so. If you ever see that warning,
+re-run the anchor self-check before trusting anything.
+
+## What this does not do
+
+- **No CI integration**: the entire value lies in a real browser and real startup timing; wiring it
+  into CI would mean provisioning a headless browser and a JDK, and the payoff does not justify the cost.
+- **No Vitest / jsdom**: the branch logic in `reconcileLocale` looks unit-testable, but the defect
+  actually proven here (issue 26) was precisely a "reactive update" that jsdom cannot reach. Rather
+  than build infrastructure that can only test mocks, make these real-browser scenarios solid.
+  (The theme module's `currentTheme` defect is the same story: it only appears when
+  `reconcileTheme` and `syncTheme` run in their real startup order.)
+- **No full panel sweep**: s5 only reads the first screen. A full sweep would have to handle each
+  panel's async loading, and the criterion would drift from "is the translation complete" to "did the
+  sweep cover everything", easily becoming a flaky assertion.
+- **No pixel comparison**: s7 asserts computed CSS values and element geometry, not screenshots.
+  Screenshot diffing would need a reference image per theme and would go red on any font or
+  antialiasing change.
+
+## Known legitimate exceptions
+
+Places where Chinese is allowed in English mode:
+
+- The 「中文」 button in the locale selector — a language's name should always be written in that
+  language, whatever the current locale
+- **User data**: file paths, table names, column names, data source names, and literals users write
+  themselves in SQL
+- **Proper nouns**: `MySQL / MariaDB`, `PostgreSQL`, `SQLite`, `CSV`, `Excel` are product names
+  written this way in both locales — they **should contain Latin letters by design**
+
+We tripped over the last one: s4's first criterion was "3 or more letters counts as English", which
+flagged `MySQL / MariaDB` as "not refreshed". **The criterion was wrong because it treated proper
+nouns as untranslated text.** It now compares against the **expected values** of the Chinese entries,
+item by item, instead of guessing.

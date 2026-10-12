@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""一条命令跑完语言一致性回归。
+"""一条命令跑完界面偏好（语言 + 主题）的一致性回归。
 
     python tools/locale-e2e/run_all.py
 
@@ -7,10 +7,13 @@
 
 【什么时候跑】发版前、以及改动以下任一位置之后：
   · tinyquery-frontend/src/locales/**
+  · tinyquery-frontend/src/theme/**
+  · tinyquery-frontend/src/assets/tokens.css 的主题块
   · tinyquery-frontend/src/App.vue 里与语言、types 相关的逻辑
   · tinyquery-frontend/src/main.js 的启动顺序
-  · 后端 /api/preferences/locale、以及任何按 X-TinyQuery-Locale 下发文案的接口
-  · 后端 Messages / DesktopLocale
+  · 后端 /api/preferences/locale、/api/preferences/theme、以及任何按
+    X-TinyQuery-Locale 下发文案的接口
+  · 后端 Messages / DesktopLocale / DesktopTheme
 
 【为什么要手动跑而不是接 CI】真浏览器 + 真实启动时序是这套检查的全部价值所在。
 接 CI 需要额外的 headless 浏览器与 JDK，收益不抵成本（见待办编号 50 的取舍）。
@@ -36,6 +39,8 @@ SCENARIOS = [
     ("s3", scenarios.s3_server_change_propagates),
     ("s4", scenarios.s4_switching_refetches_server_metadata),
     ("s5", scenarios.s5_no_chinese_in_english_mode),
+    ("s6", scenarios.s6_theme_reconcile),
+    ("s7", scenarios.s7_theme_switch_matches_server_contract),
 ]
 
 BAR = "=" * 78

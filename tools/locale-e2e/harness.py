@@ -51,14 +51,29 @@ BROWSER_CANDIDATES = [
     "/usr/bin/chromium",
 ]
 
-JAR = ROOT / "target" / "tinyquery-1.0.0.jar"
+JAR = ROOT / "target" / "tinyquery-1.1.0.jar"
 
 # 工作目录。默认放系统临时目录，退出时清理
 WORK = Path(os.environ.get("TINYQUERY_E2E_WORK", Path(os.environ.get("TEMP", "/tmp")) / "tq-locale-e2e"))
 
 
+# 本次进程已经发出去过的端口。
+#
+# 【为什么必须记住】绑 0 拿到的端口在 socket 关掉后会被操作系统很快重新分配 ——
+# 一个场景内部连续起好几对服务端+浏览器时（s2 两对、s6 四对），
+# 上一对的端口很容易被下一对拿到。而 Browser.stop() 只能杀掉主进程，
+# Edge/Chrome 的 renderer 子进程可能还活着几百毫秒，里面的页面会继续往后端
+# 发请求（包括会改状态的 pushTheme）—— 于是"上一对把主题推成 bamboo"
+# 会打到"下一对刚起来的服务端"上，表现为"服务端主题莫名其妙是 bamboo"。
+#
+# 这不是理论：编号 51 加 s6 时实测撞到过（同一份代码时红时绿）。
+# 记住发过的端口、不再重复使用，就切断了"残留页面 → 新服务端"这条路 ——
+# 比事后去猜哪一次是干扰便宜得多。
+_USED_PORTS = set()
+
+
 def free_port():
-    """要一个当前空闲的端口。
+    """要一个当前空闲、且本次进程内没用过的端口。
 
     <p>【为什么不用固定端口】本项目一直用 180xx 段，但**固定端口会被残留页面污染**：
     实测 18063 被一个早先会话留下的浏览器标签页占着，那个页面每几秒重放一次
@@ -67,30 +82,29 @@ def free_port():
 
     <p>动态分配 + 每次运行都不同，就不会撞上任何遗留页面。</p>
 
-    <p>绑 0 让操作系统分配，随即释放 —— 拿到的端口在本次运行中实际上不会被别人抢占。
-    真正的占用检测交给 {@link #wait_up}：起不来就是起不来，会明确报错。</p>
+    <p>绑 0 让操作系统分配，随即释放。真正的占用检测交给 {@link AppServer#wait_up}：
+    起不来就是起不来，会明确报错。</p>
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    for _ in range(64):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        if port not in _USED_PORTS:
+            _USED_PORTS.add(port)
+            return port
+    raise HarnessError("连着 64 次都拿到已用过的端口，端口空间可能被占满了")
 
 
 def free_ports(n):
-    """一次要 n 个互不相同的端口。
+    """一次要 n 个互不相同的端口，且都不用本次进程已经发出去过的。
 
     <p>一次要完再释放，避免"释放一个、要下一个"时拿到刚释放的同一个端口。</p>
     """
-    socks = []
     ports = []
-    try:
-        for _ in range(n):
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind(("127.0.0.1", 0))
-            socks.append(s)
-            ports.append(s.getsockname()[1])
-    finally:
-        for s in socks:
-            s.close()
+    while len(ports) < n:
+        p = free_port()
+        if p not in ports:
+            ports.append(p)
     return ports
 
 
@@ -125,11 +139,13 @@ CDP_DRIVER = r"""
 //   5. 读回结果
 //
 // 参数（argv）：cdpPort appPort action seed
-//   action: "load"     只加载并读结果
-//           "seed"     加载后用 seed 写 localStorage，reload 再读
-//           "switch"   加载后切到 seed 指定的语言，等刷新完成再读
-//           "evaluate" 在**当前页面**上求 seed 里的 JS 表达式（不导航）。
-//                      给一次性探查用，例如量计算样式；不属于固定场景
+//   action: "load"        只加载并读结果
+//           "seed"        加载后用 seed 写 localStorage，reload 再读
+//           "switch"      加载后切到 seed 指定的语言，等刷新完成再读
+//           "seed-theme"  同 "seed"，但写的是主题键
+//           "switch-theme"加载后点设置页的主题按钮切到 seed 指定的主题
+//           "evaluate"    在**当前页面**上求 seed 里的 JS 表达式（不导航）。
+//                         给一次性探查用，例如量计算样式；不属于固定场景
 const http = require('http');
 
 const CDP_PORT = parseInt(process.argv[2], 10);
@@ -167,6 +183,76 @@ const READ_EXPR = `JSON.stringify({
                     .map(e => e.textContent.trim()),
   datasourceGroups: Array.from(document.querySelectorAll('.ds-group-title, .group-title'))
                     .map(e => e.textContent.trim()),
+
+  // ---------- 主题 ----------
+  // 主题的观测窗口比语言更直接：颜色是浏览器算出来的，
+  // 抄不了近路 —— 断言的是 getComputedStyle 的结果，不是源码里写了什么
+  themeAttr: document.documentElement.getAttribute('data-theme'),
+  themeStored: localStorage.getItem('tinyquery.theme'),
+  accent: getComputedStyle(document.documentElement)
+            .getPropertyValue('--accent').trim(),
+  accentDeep: getComputedStyle(document.documentElement)
+            .getPropertyValue('--accent-deep').trim(),
+  pageBg: getComputedStyle(document.documentElement)
+            .getPropertyValue('--page').trim(),
+  // 设置页的主题按钮：文字、色点颜色、选中态
+  themeOptions: Array.from(document.querySelectorAll('.theme-option')).map(o => ({
+    label: (o.querySelector('.theme-name') || {}).textContent || '',
+    dot: (() => { const d = o.querySelector('.theme-dot');
+                  return d ? getComputedStyle(d).backgroundColor : null; })(),
+    active: o.classList.contains('is-active'),
+    title: o.getAttribute('title') || '',
+  })),
+  // 主按钮的真实渲染色。它与 --accent 是两回事：令牌可能被别的规则盖掉
+  primaryButtonBg: (() => {
+    const b = document.querySelector('.el-button--primary');
+    return b ? getComputedStyle(b).backgroundColor : null;
+  })(),
+  // 无类型的默认按钮（测试连接 / 重置 / 导出 / 刷新）的底色。
+  // 用来卡住"实心填充的覆盖写得不对"：默认按钮是白底，不该被染绿
+  defaultButtonBg: (() => {
+    const b = document.querySelector('.el-button:not(.el-button--primary)');
+    return b ? getComputedStyle(b).backgroundColor : null;
+  })(),
+  // 语言切换里选中那一个（el-radio-button）的底色。
+  // 它与主按钮是同一个令牌（--el-color-primary）的两个出口 ——
+  // 只覆盖 .el-button--primary 的话，主按钮变浅了而这里还是深的，一屏两种绿。
+  // 用户就是拿这一处的观感提的反馈，所以单独盯一条
+  radioButtonBg: (() => {
+    const r = document.querySelector(
+      '.el-radio-button__original-radio:checked + .el-radio-button__inner');
+    return r ? getComputedStyle(r).backgroundColor : null;
+  })(),
+  // Element 把 --el-color-primary 当**文字色**用的那两处。
+  // 把实心填充放浅会连累它们，而"填充放浅"的本意不包括文字 ——
+  // tokens.css 把这两条钉回了 --accent。
+  //
+  // 【为什么现造探针元素，而不是 querySelector 找现成的】这两处只在有查询结果 /
+  // 有图表时才渲染，而驱动多数时候停在设置页 —— 直接找会永远返回 null，
+  // 检查永远不触发（看着有覆盖其实一次都没跑过，踩过）。
+  // 现造一个带同样类名的元素插进 body，既证明规则在、值解析成 --accent，
+  // 也证明了权重压得住 Element 自带的那条 —— 光看 CSS 文本证明不了这个
+  accentTextColor: (() => {
+    const tabs = document.createElement('span');
+    tabs.className = 'el-tabs__item is-active';
+    document.body.appendChild(tabs);
+    const tabColor = getComputedStyle(tabs).color;
+    tabs.remove();
+
+    const wrap = document.createElement('div');
+    const box = document.createElement('span');
+    box.className = 'el-checkbox__input is-checked';
+    const lab = document.createElement('span');
+    lab.className = 'el-checkbox__label';
+    lab.textContent = 'probe';
+    wrap.appendChild(box);
+    wrap.appendChild(lab);
+    document.body.appendChild(wrap);
+    const checkboxColor = getComputedStyle(lab).color;
+    wrap.remove();
+
+    return { tab: tabColor, checkbox: checkboxColor };
+  })(),
 })`;
 
 (async () => {
@@ -203,6 +289,48 @@ const READ_EXPR = `JSON.stringify({
     console.log('SEED ' + JSON.stringify(w));
     await send('Page.reload', { ignoreCache: true });
     await sleep(4000);
+  }
+
+  // 与 seed 同构，只是换成主题键。
+  // 【为什么不做成 seed 的第二个参数】语言场景已经跑通并且是绿的，
+  // 改它的签名等于让 5 条既有场景重新冒一次风险；多一个 action 更便宜
+  if (ACTION === 'seed-theme') {
+    const w = SEED === '__CLEAR__'
+      ? await evalJs("localStorage.removeItem('tinyquery.theme'); String(localStorage.getItem('tinyquery.theme'))")
+      : await evalJs(`localStorage.setItem('tinyquery.theme', ${JSON.stringify(SEED)}); localStorage.getItem('tinyquery.theme')`);
+    console.log('SEED ' + JSON.stringify(w));
+    await send('Page.reload', { ignoreCache: true });
+    await sleep(4000);
+  }
+
+  // 点设置页的主题按钮。与 switch 一样走真实点击 ——
+  // 要验证的正是"点了之后"的连带效果（属性、持久化、计算色）
+  if (ACTION === 'switch-theme') {
+    await evalJs(`
+      (() => {
+        const items = Array.from(document.querySelectorAll('.nav-item, .el-menu-item'));
+        const t = items.find(e => /设置|Settings/.test(e.textContent));
+        if (t) t.click();
+        return !!t;
+      })()
+    `);
+    await sleep(1200);
+    const clicked = await evalJs(`
+      (() => {
+        const opts = Array.from(document.querySelectorAll('.theme-option'));
+        if (!opts.length) return 'NO_OPTIONS';
+        const want = ${JSON.stringify(SEED)};
+        // 按服务端公布的清单顺序点，而不是按标签文字 ——
+        // 标签随语言变，按文字找会在英文模式下全部落空
+        const ORDER = ['violet', 'indigo', 'bamboo', 'coffee'];
+        const idx = ORDER.indexOf(want);
+        if (idx < 0 || !opts[idx]) return 'NO_SUCH_THEME:' + want;
+        opts[idx].click();
+        return 'CLICKED:' + ((opts[idx].querySelector('.theme-name') || {}).textContent || '');
+      })()
+    `);
+    console.log('SWITCH ' + clicked);
+    await sleep(1200);
   }
 
   if (ACTION === 'switch') {
@@ -308,27 +436,33 @@ def _kill_by_profile(profile_dir):
 class AppServer:
     """一个跑在指定端口上的 TinyQuery 实例，带独立的 TINYQUERY_HOME。
 
-    独立 HOME 是为了让 `locale.txt`（服务端语言）可控 —— 场景要靠它
-    分别构造"服务端是中文/英文"两种起点。
+    独立 HOME 是为了让 `locale.txt` / `theme.txt`（服务端的界面偏好）可控 ——
+    场景要靠它们分别构造"服务端是中文/英文"、"服务端是紫罗兰/咖啡色"两种起点。
     """
 
-    def __init__(self, port, locale=None, tag="srv"):
+    def __init__(self, port, locale=None, theme=None, tag="srv"):
         self.port = port
         self.home = WORK / ("home-%s-%d" % (tag, port))
         shutil.rmtree(self.home, ignore_errors=True)
         self.home.mkdir(parents=True, exist_ok=True)
         if locale:
             (self.home / "locale.txt").write_text(locale, encoding="utf-8")
+        if theme:
+            (self.home / "theme.txt").write_text(theme, encoding="utf-8")
 
         env = dict(os.environ)
         env["TINYQUERY_HOME"] = str(self.home)
         # 本机若设了 JAVA_TOOL_OPTIONS，会在每次 java 启动时打印干扰信息，
         # 甚至在部分环境让进程挂住。这里显式清掉
         env["JAVA_TOOL_OPTIONS"] = ""
-        # 环境变量 TINYQUERY_LOCALE 的优先级【高于】locale.txt（见 DesktopLocale.resolve），
-        # 本机若设了它，场景通过 locale.txt 指定的语言就会被无视。
-        # 移除它，保证"服务端语言"只由 locale.txt 决定
+        # 环境变量 TINYQUERY_LOCALE / TINYQUERY_THEME 的优先级【高于】对应的
+        # 文本文件（见 DesktopLocale.resolve / DesktopTheme.resolve），
+        # 本机若设了它们，场景通过文件指定的偏好就会被无视。
+        # 移除它们，保证"服务端偏好"只由文件决定。
+        # 【踩过】编号 51 之前只 pop 了 LOCALE —— 那时还没有 THEME 这个变量，
+        # 加了主题之后不 pop 就是一个静默的泄漏口
         env.pop("TINYQUERY_LOCALE", None)
+        env.pop("TINYQUERY_THEME", None)
 
         self.proc = subprocess.Popen(
             [JAVA, "-Dfile.encoding=UTF-8", "-jar", str(JAR),
@@ -388,6 +522,48 @@ class AppServer:
             headers={"Content-Type": "application/json",
                      "X-TinyQuery-Token": self._token()})
         urllib.request.urlopen(req, timeout=10).read()
+
+    def assert_theme_settled(self, expected):
+        """确认服务端主题确实停在 {@code expected}。
+
+        <p>与 {@link #assert_locale_settled} 同一个理由：残留的浏览器进程会
+        向后端重放切主题请求，让"刚起来时是紫色、稍后变成咖啡色色"看起来像
+        服务端自己变了。任何依赖服务端主题的场景，使用前都要先确认。</p>
+        """
+        for _ in range(10):
+            actual = self.server_theme()
+            if actual == expected:
+                time.sleep(0.6)
+                if self.server_theme() == expected:
+                    return
+            time.sleep(0.5)
+        raise HarnessError(
+            "服务端主题不是预期的 %r（当前 %r）。"
+            "常见原因：有残留的浏览器进程在向后端重放切主题请求 —— "
+            "先把 msedge/chrome 都关掉再跑。" % (expected, self.server_theme()))
+
+    def server_theme(self):
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/api/preferences/theme" % self.port,
+            headers={"X-TinyQuery-Token": self._token()})
+        body = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+        return body["data"]["theme"]
+
+    def set_server_theme(self, theme):
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/api/preferences/theme" % self.port,
+            data=json.dumps({"theme": theme}).encode("utf-8"),
+            headers={"Content-Type": "application/json",
+                     "X-TinyQuery-Token": self._token()})
+        urllib.request.urlopen(req, timeout=10).read()
+
+    def supported_themes(self):
+        """服务端认得的主题清单（value + accent），顺序即展示顺序。"""
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/api/preferences/themes" % self.port,
+            headers={"X-TinyQuery-Token": self._token()})
+        body = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+        return body["data"]
 
     def stop(self):
         self.proc.terminate()
