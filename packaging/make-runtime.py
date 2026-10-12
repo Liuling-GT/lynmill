@@ -111,17 +111,14 @@ MODULES = [
 # 所以这个坑在开发时完全看不见，只在换平台打包时才炸。
 # 实测：在 Ubuntu 22.04 的 OpenJDK 17 上打 Linux 包时暴露。
 PLATFORM_MODULES = {
+    # jdk.crypto.mscapi 是 Windows 原生加密 API，**只有 Windows 的 JDK 里有**。
+    # 因此这里只有 "nt" 一项 —— macOS / Linux 都不加。
     "nt": ["jdk.crypto.mscapi"],
-    "darwin": ["jdk.crypto.mscapi"],
-    "posix": [],
 }
-# os.name 在 Linux/macOS 上都是 "posix"，用 sys.platform 区分这两者。
-# jdk.crypto.mscapi 在 macOS 的 OpenJDK 里也不存在，所以按平台名显式列。
-if sys.platform == "darwin":
-    _plat = "darwin"
-else:
-    _plat = os.name
-MODULES += PLATFORM_MODULES.get(_plat, [])
+# os.name 在 Windows 上是 "nt"，在 Linux/macOS 上都是 "posix"。
+# 也就是说：除了 Windows，其余平台一个平台专属模块都不加。
+# 不用 sys.platform 区分 darwin 与 linux，因为这两者要加的模块集相同（都为空）。
+MODULES += PLATFORM_MODULES.get(os.name, [])
 
 # 语言数据只保留中英 —— jdk.localedata 默认含全部语言，是个大头
 LOCALES = "zh,en"
@@ -267,12 +264,20 @@ def main():
     # 也就是「打包成功、图标却没了」，很容易漏掉。
     # 实测：在 Ubuntu 上打 Linux 包时，因为这里写死了 .ico，打出的是默认图标：
     #     The specified icon ".../tinyquery.ico" is not a PNG file and will not be used.
+    # 图标要区分三平台，所以这里另用一个能分开 darwin 与 linux 的判据
+    # （os.name 上这两者都是 "posix"，分不开）。
+    if os.name == "nt":
+        _iconplat = "nt"
+    elif sys.platform == "darwin":
+        _iconplat = "darwin"
+    else:
+        _iconplat = "posix"
     ICON_BY_PLATFORM = {
         "nt": "tinyquery.ico",
         "darwin": "tinyquery.icns",
         "posix": "tinyquery-512.png",
     }
-    icon = root / "packaging" / ICON_BY_PLATFORM.get(_plat, "tinyquery-512.png")
+    icon = root / "packaging" / ICON_BY_PLATFORM.get(_iconplat, "tinyquery-512.png")
     if not icon.exists():
         # 换一个可能的位置找（PNG 素材放在 resources 下）
         alt = root / "src" / "main" / "resources" / "icons" / icon.name
