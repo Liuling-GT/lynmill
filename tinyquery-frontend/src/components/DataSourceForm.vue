@@ -441,21 +441,42 @@ const handleSubmit = async () => {
 /* ==================== 主题化：把 Element 的红绿收进紫色体系 ==================== */
 
 /*
- * 必填星号 / 校验红框 / 错误文字 / 错误提示框，全都取自 Element 的「危险色」变量族。
+ * 必填星号 / 校验红框 / 错误文字，全都取自 Element 的「危险色」变量族。
  *
  * 这里覆盖变量而不是逐个写选择器，是因为选择器要跟 Element 内部规则比优先级，
  * 而 :deep() 只是给目标加了个祖先属性选择器（优先级 +1），
  * 往往正好跟 Element 打平 —— 打平就由加载顺序决定胜负，
  * 而 element-plus 的样式在 main.js 里是后加载的，于是覆盖会静默失效。
  * 变量不存在优先级之争：定义在这个元素上，整棵子树都跟着走。
+ *
+ * 【这是有意为之，不是漏改或复制粘贴错误】2026-10-11 复核过：7 个值
+ * （danger 与 danger-dark-2 加上 light-3/5/7/8/9）与 primary 的浅色阶逐字节相同。
+ * 当时考虑过改回红色，用户决定维持现状 —— 表单校验反馈属于「表单内的状态」，
+ * 与主色同一套色是刻意的观感选择。
+ *
+ * 【要知道代价】全项目只有这里覆盖了 danger，所以：
+ *   · 本组件内的校验反馈 = 主色
+ *   · 其它地方的「危险」= Element 默认红 #f56c6c
+ *     （DataSourcePanel 的删除按钮、查询报错 el-alert、ElMessage.error 提示）
+ *   · --el-color-error 是【独立变量】，本项目从未覆盖，所以查询报错始终是红的
+ * 也就是说同一屏上会同时出现主色的校验错误与红色的删除按钮。
+ * 这是有意的区分（可恢复的输入问题 vs 破坏性操作），不要为了「统一」把它们改齐 ——
+ * 真要改，先回来读这段。
+ *
+ * 【2026-10-12 改为引用 primary 变量】原来是 5 个写死的紫色阶
+ * （#a78bfa / #c4b5fd / #ddd6fe / #ede9fe / #f5f3ff）。那在只有一套主题时没问题，
+ * 加多主题后就坏了：--el-color-danger 跟着 --accent 走（绿色主题下变绿），
+ * 而浅色阶还是紫的 —— 一个绿色主题里混着紫色的校验边框。
+ * 改成引用 --el-color-primary-light-N，它们本来就是同一批值，
+ * 且每套主题各自覆盖过。观感与颜色数量都不变，只是不再写死
  */
 .ds-form {
   --el-color-danger: var(--accent);
-  --el-color-danger-light-3: #a78bfa;
-  --el-color-danger-light-5: #c4b5fd;
-  --el-color-danger-light-7: #ddd6fe;
-  --el-color-danger-light-8: #ede9fe;
-  --el-color-danger-light-9: #f5f3ff;
+  --el-color-danger-light-3: var(--el-color-primary-light-3);
+  --el-color-danger-light-5: var(--el-color-primary-light-5);
+  --el-color-danger-light-7: var(--el-color-primary-light-7);
+  --el-color-danger-light-8: var(--el-color-primary-light-8);
+  --el-color-danger-light-9: var(--el-color-primary-light-9);
   --el-color-danger-dark-2: var(--accent-deep);
 }
 

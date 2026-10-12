@@ -25,7 +25,7 @@ export default {
   // ==================== App shell ====================
   app: {
     title: 'TinyQuery',
-    subtitle: 'Local Query Engine · V1.0.0',
+    subtitle: 'Local Query Engine · V1.1.0',
     nav: {
       query: 'Query',
       datasource: 'Data Source',
@@ -52,6 +52,15 @@ export default {
       hint: 'Takes effect immediately and persists across restarts',
       zh: '中文',
       en: 'English',
+    },
+    // Theme names are plain colour names, not character names from any work
+    theme: {
+      label: 'Theme Color',
+      hint: 'Takes effect immediately and applies to the tray and control window too',
+      violet: 'Violet',
+      indigo: 'Indigo',
+      bamboo: 'Bamboo',
+      coffee: 'Coffee',
     },
     // Build identity. Version and git hash are identifiers, untranslated in both locales
     about: {
@@ -177,14 +186,15 @@ export default {
   },
 
   // ==================== Palette names ====================
+  // Keys match the ids in ChartPanel.vue's PRESET_MAIN_COLORS.
+  // The six cards run light to dark: Sky → Mist Blue → Clove → Deep Purple → Graphite → Charcoal
   palette: {
-    indigo: 'Indigo',
-    azure: 'Mist Blue',
-    lime: 'Lime',
-    gold: 'Gold',
-    graphite: 'Graphite',
     sky: 'Sky',
+    azure: 'Mist Blue',
     clove: 'Clove',
+    royal: 'Deep Purple',
+    graphite: 'Graphite',
+    ink: 'Charcoal',
   },
 
   // ==================== API layer ====================

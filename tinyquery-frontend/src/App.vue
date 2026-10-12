@@ -208,12 +208,12 @@
       正常情况下上面已经调用 window.close() 把标签页关掉了，用户看不到这一层；
       这一层只在「关不掉」时出现。
 
-      按 MDN 对 Window.close() 的规则，窗口是网页自己创建的、或者**没有被导航过**
+      按 MDN 对 Window.close() 的规则，窗口是网页自己创建的、或者没有被导航过
       （history 长度仍为 1）时，浏览器才允许脚本关闭它。本页是应用用系统命令
       从外部打开的标签页，属于后者：
         · 自动打开 → 全新标签页，history 长度为 1 → 关得掉，看不到这一层
         · 用户手动在浏览器里输过地址、或这个标签页里本来就有别的页面
-          → history 长度大于 1 → 被拒，而且**拒绝时不报错**
+          → history 长度大于 1 → 被拒，而且拒绝时不报错
     -->
     <div v-if="appExited" class="exited-mask">
       <div class="exited-card">
@@ -408,7 +408,7 @@ const rawJson = computed(() => {
 const appExited = ref(false)
 
 // window.close() 被浏览器拒绝时置为 true，用来显示「请按 Ctrl+W」的提示。
-// 什么时候会被拒：标签页**被导航过**（history 长度大于 1）时。
+// 什么时候会被拒：标签页被导航过（history 长度大于 1）时。
 // 从自动打开进来的全新标签页 history 长度为 1，不会被拒 —— 所以这个提示平时看不到，
 // 它是给「用户自己在浏览器里输地址进来」这种兜底场景准备的
 const closeHintVisible = ref(false)

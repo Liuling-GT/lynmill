@@ -23,7 +23,7 @@ export default {
   // ==================== 应用外壳 ====================
   app: {
     title: 'TinyQuery',
-    subtitle: '本地查询引擎 · V1.0.0',
+    subtitle: '本地查询引擎 · V1.1.0',
     nav: {
       query: '查询',
       datasource: '数据源',
@@ -50,6 +50,15 @@ export default {
       hint: '切换后立即生效，下次启动保持该设置',
       zh: '中文',
       en: 'English',
+    },
+    // 主题名一律用普通色名，不用作品里的角色名 —— 用户看的是「这是什么颜色」
+    theme: {
+      label: '主题色',
+      hint: '切换后立即生效，桌面托盘与控制窗口一并跟随',
+      violet: '紫罗兰',
+      indigo: '靛蓝',
+      bamboo: '竹青',
+      coffee: '咖啡色',
     },
     // 构建标识。版本号与 git 哈希是标识符，两种语言都不翻译
     about: {
@@ -175,14 +184,15 @@ export default {
   },
 
   // ==================== 调色板名称 ====================
+  // 键名与 ChartPanel.vue 里 PRESET_MAIN_COLORS 的 id 一一对应。
+  // 六个色卡按明度由浅到深排：天青 → 雾蓝 → 丁香 → 深紫 → 石墨 → 炭黑
   palette: {
-    indigo: '靛蓝',
-    azure: '雾蓝',
-    lime: '青柠',
-    gold: '金黄',
-    graphite: '石墨',
     sky: '天青',
+    azure: '雾蓝',
     clove: '丁香',
+    royal: '深紫',
+    graphite: '石墨',
+    ink: '炭黑',
   },
 
   // ==================== API 层通用错误 ====================

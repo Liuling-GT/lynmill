@@ -1,6 +1,5 @@
 import { createApp } from 'vue'
 import App from './App.vue'
-
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 
@@ -8,9 +7,9 @@ import 'element-plus/dist/index.css'
 // 它靠"同优先级、后加载者胜"来覆盖 --el-* 变量，提前加载会被 Element 的默认值盖回去
 import './assets/tokens.css'
 import './assets/main.css'
-
 import { loadToken } from './api/token'
 import { i18n, syncHtmlLang, reconcileLocale } from './locales'
+import { syncTheme, reconcileTheme } from './theme'
 
 /*
  * Element Plus 自带文案（分页的「条/页」、确认框按钮、取色器的「确定/清空」）
@@ -25,6 +24,11 @@ async function bootstrap() {
   // 失败不阻断 —— 内部已 catch，最坏情况就是保持本地判断
   await reconcileLocale()
 
+  // 主题同理：先与服务端对齐，再挂载。
+  // 必须在 mount 之前 —— data-theme 决定的是 CSS 变量，
+  // 晚一步就会先按默认主题画一帧，整屏颜色闪一下
+  await reconcileTheme()
+
   const app = createApp(App)
   app.use(i18n)
   app.use(ElementPlus)
@@ -33,6 +37,9 @@ async function bootstrap() {
   // 用 syncHtmlLang 而不是 setLocale —— 后者会写 localStorage，
   // 会把 reconcileLocale 刚确定的「本地有没有选择」这个状态覆盖掉
   syncHtmlLang()
+
+  // 主题同理：用 syncTheme 而不是 setTheme
+  syncTheme()
 
   app.mount('#app')
 }

@@ -20,13 +20,18 @@ body {
    * 第一层：页面底纹 —— 水晶的"光源"。
    *
    * 毛玻璃糊的就是这一层。底色若是纯色，backdrop-filter 看不出任何效果，
-   * 所以必须先有这层极淡的紫晕铺满全页。
+   * 所以必须先有这层极淡的色晕铺满全页。
    * background-attachment: fixed 让光晕不随内容滚动，像固定在远处的光源
+   *
+   * 三团光晕走 --glow-1/2/3 令牌（tokens.css）——
+   * 原来是把紫调 rgba 写死在这里，换主题时这层雾不会跟着变，
+   * 于是蓝色主题顶着一层紫雾。rgba() 不接受 var() 当分量，
+   * 所以整条 rgba() 放在令牌里。
    */
   background:
-    radial-gradient(880px 620px at 10% -8%, rgba(139, 92, 246, 0.12), transparent 62%),
-    radial-gradient(720px 520px at 92% 4%, rgba(196, 181, 253, 0.15), transparent 58%),
-    radial-gradient(760px 680px at 46% 108%, rgba(124, 58, 237, 0.08), transparent 62%),
+    radial-gradient(880px 620px at 10% -8%, var(--glow-1), transparent 62%),
+    radial-gradient(720px 520px at 92% 4%, var(--glow-2), transparent 58%),
+    radial-gradient(760px 680px at 46% 108%, var(--glow-3), transparent 62%),
     var(--page);
   background-attachment: fixed;
 }

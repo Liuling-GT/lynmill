@@ -33,7 +33,14 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('datasource.column.action')" width="150">
+          <!-- 操作列宽 170 不是随手定的（下面的数字都是真浏览器实测的）：
+               单元格可用宽度 = 170 − 1（边框）− 2×8（.cell 内边距）= 153px，
+               而英文下「Refresh + 12px 间距 + Delete」需要 137px。
+               原来写 150（可用 133px）差 4px 放不下，两个按钮就折成两行，
+               行高从 33px 变成 57px —— 中文只要 108px 所以看不出问题，
+               是英文模式独有的错版。留 16px 余量是为了将来文案再长一点也不会折。
+               改小前请先量。 -->
+          <el-table-column :label="t('datasource.column.action')" width="170">
             <template #default="{ row }">
               <!-- 重新加载：数据文件或数据库内容变化后同步内存快照 -->
               <el-button

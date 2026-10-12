@@ -49,8 +49,8 @@ export function saveLocale(locale) {
 /**
  * 判断本地是否已有明确选择。
  *
- * <p>用来区分「用户选过」和「只是回落到默认值」—— 这个区别决定了
- * 启动时该以谁为准（见 {@link reconcileLocale}）。</p>
+ * 用来区分「用户选过」和「只是回落到默认值」—— 这个区别决定了
+ * 启动时该以谁为准（见 reconcileLocale）。
  */
 export function hasStoredLocale() {
   try {
@@ -64,25 +64,18 @@ export function hasStoredLocale() {
 /**
  * 启动时对齐「网页」与「服务端」两份语言设置。
  *
- * <h2>为什么需要对齐</h2>
+ * 网页的语言存在 localStorage，服务端那一份存在 locale.txt（供托盘菜单等
+ * 桌面外壳读取）。多数时候两者一致，但会分叉：
  *
- * <p>网页的语言存在 localStorage，服务端那一份存在 locale.txt（供托盘菜单等
- * 桌面外壳读取）。多数时候两者一致，但会分叉：</p>
+ * · 换了浏览器、换了机器、清了站点数据 → 本地是空的，回落到中文，
+ *   而服务端可能记着英文。此时界面显示中文、托盘显示英文，一个程序两套语言。
+ * · 本地有明确选择 → 用户就是想要这个，应当以本地为准推给服务端。
  *
- * <ul>
- *   <li>换了浏览器、换了机器、清了站点数据 → 本地是空的，回落到中文，
- *       而服务端可能记着英文。此时界面显示中文、托盘显示英文，
- *       一个程序两套语言。</li>
- *   <li>本地有明确选择 → 用户就是想要这个，应当以本地为准推给服务端。</li>
- * </ul>
+ * 所以规则是：本地有选择则以本地为准；本地没有则以服务端为准。
+ * 前者是用户的显式意愿，后者只是「没得选」时的兜底。
  *
- * <p>所以规则是：<b>本地有选择则以本地为准；本地没有则以服务端为准。</b>
- * 前者是用户的显式意愿，后者只是"没得选"时的兜底。</p>
- *
- * <h2>失败不阻断启动</h2>
- *
- * <p>后端没起来、或接口出错时，保持本地判断即可 —— 语言不该成为
- * 打不开页面的理由。这也是把整段包在 try 里的原因。</p>
+ * 失败不阻断启动：后端没起来、或接口出错时，保持本地判断即可 ——
+ * 语言不该成为打不开页面的理由。这也是把整段包在 try 里的原因。
  */
 export async function reconcileLocale() {
   try {
@@ -101,8 +94,8 @@ export async function reconcileLocale() {
     }
 
     // 本地是空的（换机器 / 清过站点数据）：采纳服务端的选择，
-    // 但**不写 localStorage** —— 保持"本地没有选择"这个状态，
-    // 否则下次服务端改了语言，这里会因为"本地有选择"而反过来覆盖它
+    // 但不写 localStorage —— 保持「本地没有选择」这个状态，
+    // 否则下次服务端改了语言，这里会因为「本地有选择」而反过来覆盖它
     applyLocale(serverLocale, { persist: false })
 
   } catch {
@@ -124,10 +117,10 @@ export const i18n = createI18n({
 })
 
 /**
- * 应用语言但不做持久化。供"以服务端为准"与"仅同步 <html lang>"的场景使用。
+ * 应用语言但不做持久化。供「以服务端为准」与「仅同步 <html lang>」的场景使用。
  *
- * <p>不写 localStorage 是有意的：见 {@link reconcileLocale} —— 保持
- * 「本地没有选择」这个状态，下次才会继续以服务端为准。</p>
+ * 不写 localStorage 是有意的：见 reconcileLocale —— 保持「本地没有选择」
+ * 这个状态，下次才会继续以服务端为准。
  */
 function applyLocale(locale, { persist }) {
   if (!SUPPORTED_LOCALES.some((item) => item.value === locale)) {
@@ -142,11 +135,11 @@ function applyLocale(locale, { persist }) {
 }
 
 /**
- * 只把当前语言同步到 {@code <html lang>}，不写 localStorage。
+ * 只把当前语言同步到 <html lang>，不写 localStorage。
  *
- * <p>启动时用它而不是 {@link setLocale}：后者会持久化，会把
- * 「本地没有选择」这个状态抹掉（曾经踩过 —— reconcile 刚采纳服务端语言，
- * 紧接着这一步就把它写成了本地选择，于是下次服务端改语言不再生效）。</p>
+ * 启动时用它而不是 setLocale：后者会持久化，会把「本地没有选择」这个状态抹掉
+ * （曾经踩过 —— reconcile 刚采纳服务端语言，紧接着这一步就把它写成了本地选择，
+ * 于是下次服务端改语言不再生效）。
  */
 export function syncHtmlLang() {
   applyLocale(i18n.global.locale.value, { persist: false })

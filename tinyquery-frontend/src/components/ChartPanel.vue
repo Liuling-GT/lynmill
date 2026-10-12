@@ -278,17 +278,30 @@ const SECTOR_POPUP_WIDTH = 230
  * 突出显示模式下，未被点亮的柱子用的灰。
  *
  * 不用纯灰 #999 —— 那和坐标轴、数据标签的灰会糊在一起。
- * 取带一点紫调的中性灰，与整体主题同源，同时明显比文字灰亮，
- * 一眼能看出「这是被压下去的柱子」而不是「没画出来的柱子」
+ * 比文字灰（{@link MUTED_COLOR} #909399）明显亮一档，
+ * 一眼能看出「这是被压下去的柱子」而不是「没画出来的柱子」。
+ *
+ * 【2026-10-12 去掉紫调】原来是 #c9c5d2（S≈13% 的紫灰），
+ * 理由写的是「与整体主题同源」。只有一套紫色主题时成立，
+ * 四套主题下不成立 —— 绿色主题的页面上压着一排紫灰柱子。
+ * 改成无彩色 #c6c6cd，四套主题下都只是「比文字灰亮一点的灰」。
+ * 这是图表画布内的颜色，ECharts 读不到 CSS 变量，只能写死；
+ * 写死的代价就是不能带任何色相
  */
-const MUTED_BAR_COLOR = '#c9c5d2'
+const MUTED_BAR_COLOR = '#c6c6cd'
 
 /**
  * 取色器的快捷色板。取色面板底部的预设格，点一下就选中，不用手输色值。
  *
- * 按色相（HSL 的 H）升序排列，色相环上从橙黄一路扫到紫：
- *   16° 橙红 → 51° 金黄 ×2 → 75° 青柠 → 190° 天青 → 211° 雾蓝
- *   → 240° 石墨 → 261° 丁香 → 272° 深紫
+ * 排布刻意不是按色相，而是先色相扫一遍、末尾按明度收拢：
+ *
+ *   前四色（暖）  16° 橙红 → 51° 金黄 ×2 → 75° 青柠
+ *   中两色（冷）  190° 天青 → 211° 雾蓝
+ *   末四色（暗）  261° 丁香 → 272° 深紫 → 240° 石墨 → 无彩色 炭黑
+ *
+ * 最后四个从浅到深（73% → 46% → 32% → 13%）一路降下来。
+ * 原来石墨夹在雾蓝与丁香之间（77% → 32% → 73% → 46% → 13%），
+ * 明度来回跳两次，一排格子看着是乱的 —— 挪到倒数第二位之后就顺了。
  *
  * 两个已知瑕疵，都是刻意的：
  *   - #f9d308 与 #ffd700 色相只差 0.5°，排完正好挨着，几乎分不出
@@ -296,7 +309,7 @@ const MUTED_BAR_COLOR = '#c9c5d2'
  */
 const PRESET_COLORS = [
   '#ff4500', '#f9d308', '#ffd700', '#bfff00', '#00d4ff',
-  '#89c2ff', '#49495a', '#b19cd9', '#7b2cbf', '#222222',
+  '#89c2ff', '#b19cd9', '#7b2cbf', '#49495a', '#222222',
 ]
 
 // 色相环上的黄金角。相邻两色相隔 137.5°，
@@ -403,21 +416,29 @@ const derivePalette = (primary) => {
 }
 
 /**
- * 六套预设，按色相升序排 —— 色卡那一排看过去就是一道渐变，好找。
+ * 六套预设，取自 {@link PRESET_COLORS} 的后六个 —— 两处是同一批颜色，
+ * 改快捷色板时这里跟着走，不必两边各维护一份。
+ *
+ * 顺序按明度从浅到深：天青 → 雾蓝 → 丁香 → 深紫 → 石墨 → 炭黑。
+ * 色卡那一排看过去就是一道由浅入深的渐变，好找。
  *
  * 只存主色，整套 10 色由 derivePalette 现场派生：手排 60 个色值既难维护，
  * 改一个主色还得重排其余九个。
  *
  * 放在 derivePalette 之后是必需的 —— 下面这行 map 在模块求值时就执行，
  * 排到前面会落进暂时性死区
+ *
+ * id 与 labelKey 的后缀刻意保持一致（sky ↔ palette.sky）。原先 id 与词条名
+ * 是错位的（id 'azure' 配 'palette.sky'、id 'mist' 配 'palette.azure'），
+ * 读代码时要在两个文件之间来回对，很容易改错一边 —— 顺手理顺
  */
 const PRESET_MAIN_COLORS = [
-  { id: 'gold', labelKey: 'palette.gold', color: '#ffd700' },
-  { id: 'lime', labelKey: 'palette.lime', color: '#bfff00' },
-  { id: 'azure', labelKey: 'palette.sky', color: '#00d4ff' },
-  { id: 'mist', labelKey: 'palette.azure', color: '#89c2ff' },
+  { id: 'sky', labelKey: 'palette.sky', color: '#00d4ff' },
+  { id: 'azure', labelKey: 'palette.azure', color: '#89c2ff' },
+  { id: 'clove', labelKey: 'palette.clove', color: '#b19cd9' },
+  { id: 'royal', labelKey: 'palette.royal', color: '#7b2cbf' },
   { id: 'graphite', labelKey: 'palette.graphite', color: '#49495a' },
-  { id: 'lilac', labelKey: 'palette.clove', color: '#b19cd9' },
+  { id: 'ink', labelKey: 'palette.ink', color: '#222222' },
 ]
 
 // label 在模板里取，这里只带出 id / color 与词条键 ——
@@ -577,7 +598,7 @@ const pieSectorColors = computed(() => {
  *               │
  *               └─► watch C  重绘（条件：chartData 有值）
  *
- * 而 watch A 重置 sectorColors 之后，本 computed 会**再算一次**，
+ * 而 watch A 重置 sectorColors 之后，本 computed 会再算一次，
  * 于是 watch C 可能第二次触发。所以「点一次配色跑 2~3 次 renderChart」
  * 是这个结构的必然结果，不是谁写错了。
  *
@@ -1283,7 +1304,7 @@ watch([paletteIds, customColors], () => {
  * 渲染 watch ③／③：这几个开关只影响渲染，不影响数据，不必重新请求 ——
  * 直接重绘，避免白跑一趟后端。
  *
- * 依赖里的 colorKey 是**有意**放进去的：它让「扇区颜色变了」也能重绘。
+ * 依赖里的 colorKey 是有意放进去的：它让「扇区颜色变了」也能重绘。
  * 但要注意 colorKey 里还包含 paletteIds 与 customColors，
  * 而那两样已经被 watch ② 盯上了 —— 所以改配色时这个 watch 也会跟着触发，
  * 与 watch ② 形成一次重复渲染。这正是 colorKey 注释里说的「2~3 次」。

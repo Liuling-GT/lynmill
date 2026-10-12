@@ -2,11 +2,30 @@
  * 设计令牌：全站颜色与尺度的唯一来源。
  *
  * 分三层：
- *   1. 原始色阶 —— 中性灰 + 遐蝶紫，字面色值只在这里出现
+ *   1. 原始色阶 —— 中性灰 + 强调色，字面色值只在这里出现
  *   2. 语义别名 —— 按用途命名，组件只用这一层
  *   3. Element Plus 变量覆盖 —— 让 el-* 组件跟随同一套主题
  *
  * 组件里不要再写死色值。换主题只改本文件。
+ *
+ * ==================== 主题机制 ====================
+ *
+ * 默认主题（紫罗兰）写在 :root 里，其余主题用
+ * :root[data-theme="xxx"] 覆盖同一批变量。切换时只改 <html data-theme>，
+ * 整站跟着走 —— 组件的样式不用动，它们只认变量名。
+ *
+ * 【每个主题必须定义全部 40 个令牌】不是风格问题，是正确性问题：
+ * CSS 变量是继承的，漏掉一个不会报错，会静默落回默认主题的值 ——
+ * 于是蓝色主题里混进一块紫。ThemeTokensTest 逐个断言这 40 个，
+ * 加主题时照着它补齐。
+ *
+ * 【为什么是整套手写字面值，而不是让浅色阶从 --accent 派生】
+ * 曾打算用 Element Plus 的构建期公式（light-N = mix(white, primary, N/10)）
+ * 现算，实测发现行不通：默认主题现在跑的 5 个浅色阶是 Tailwind 的
+ * violet-400/300/200/100/50，与 EP 公式的结果差 4~11（例如 light-3
+ * 实际 #a78bfa，公式算出 #ae8df9）。照公式派生会【静默改掉现有观感】。
+ * 所以默认主题的强调色族逐字节沿用现状；新主题的浅色阶另算，
+ * 但同样以字面值写死，不做运行期推导。
  */
 
 :root {
@@ -27,7 +46,7 @@
   --page: #efeaf6;
 
   /* ==================== 2. 主色 ==================== */
-  /* 遐蝶紫：冷调、带灰，不是饱和的紫红 */
+  /* 紫罗兰：冷调、带灰，不是饱和的紫红 */
   --accent: #8b5cf6;
   --accent-deep: #7c3aed;
   --accent-soft: #ede9fe;
@@ -103,6 +122,17 @@
      另：--shadow-ring 是内阴影勾边，浅色格子压在白卡片上容易糊，靠它划出边界 */
   --shadow-float: 0 2px 12px rgba(0, 0, 0, 0.12);
   --shadow-ring: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+
+  /*
+   * 页面底纹的三团光晕（main.css 用）。
+   *
+   * 提成令牌是因为它们原来是写死在 main.css 里的紫调 rgba ——
+   * 只换 --accent 的话，蓝色主题会顶着一层紫雾。
+   * 整条 rgba() 放进令牌是因为 rgba() 不接受 var() 当分量。
+   */
+  --glow-1: rgba(139, 92, 246, 0.12);
+  --glow-2: rgba(196, 181, 253, 0.15);
+  --glow-3: rgba(124, 58, 237, 0.08);
 
   /* ==================== 4. 尺度 ==================== */
   --r-sm: 6px;
@@ -182,8 +212,199 @@
   --el-box-shadow: 0 6px 22px rgba(36, 26, 51, 0.09);
 }
 
+/* ==========================================================================
+ * 主题：靛蓝（Indigo）
+ *
+ * 与默认主题同一族的冷调，只换色相 —— 换过去最不突兀。
+ * 中性色的紫调换成蓝调。
+ *
+ * 【2026-10-12 背景加深】你的反馈是「背景颜色太淡了，可以稍微深一点」。
+ * 原来 --page 是 #eaeaf6（亮度 0.8299），其实与默认紫色的 #efeaf6（0.8385）
+ * 几乎一样深 —— 觉得淡，是因为紫色那套中性色带紫调、观感更「实」，
+ * 蓝色偏灰。这里把整族中性色加深约 11%（#eaeaf6 → #dedeee）。
+ *
+ * 【为什么不止改 --page】下面这 11 个中性色原本都比 page 深，正是它们让
+ * 分隔线、悬停填充、滚动条在页面上看得见。page 一加深而它们不动，就会反过来
+ * 比页面还浅 —— 分隔线变成亮线、悬停填充变成亮块，整块界面「翻过来」。
+ * 所以凡是原本比 page 深的，都按同一系数加深；原本比 page 浅的
+ * （--surface / --el-fill-color* 浅档 / --accent-soft）一律不动 ——
+ * 它们是「浮起来」的那一层，page 加深后与它们的反差反而更清楚。
+ *
+ * 加深后层次从浅到深连续：
+ *   卡片 .958 > 填充 .892 > 页面 .740 > 侧栏 .681 > 滚动条 .587 > 侧栏描边 .539
+ * ========================================================================== */
+:root[data-theme='indigo'] {
+  --ink: #242433;
+  --ink-2: #4f4f64;
+  --ink-3: #848494;
+  --ink-4: #a2a2b3;
+  --line: #d4d4e5;
+  --line-soft: #dedeec;
+  --surface: #fafafd;
+  --page: #dedeee;
+  --accent: #6366f1;
+  --accent-deep: #4f46e5;
+  --accent-soft: #e0e7ff;
+  --accent-glow: rgba(99, 102, 241, 0.22);
+  --accent-bright: #a5b4fc;
+  --plum: #1a1a33;
+  --scrim: rgba(26, 26, 51, 0.45);
+  --shadow-plum: 0 6px 18px rgba(26, 26, 51, 0.2);
+  --scrollbar-thumb: #c8c8db;
+  --scrollbar-thumb-hover: #b2b2c9;
+  --sidebar-bg: #d6d6e5;
+  --sidebar-line: #c0c0d8;
+  --glass-bg-strong: rgba(250, 250, 253, 0.9);
+  --shadow-crystal:
+    inset 0 1px 0 var(--glass-edge),
+    0 1px 2px rgba(26, 26, 51, 0.03),
+    0 10px 28px rgba(26, 26, 51, 0.05);
+  --glow-1: rgba(99, 102, 241, 0.12);
+  --glow-2: rgba(165, 180, 252, 0.15);
+  --glow-3: rgba(79, 70, 229, 0.08);
+  --el-color-primary-light-3: #818cf8;
+  --el-color-primary-light-5: #a5b4fc;
+  --el-color-primary-light-7: #c7d2fe;
+  --el-color-primary-light-8: #e0e7ff;
+  --el-color-primary-light-9: #eef2ff;
+  --el-border-color-dark: #cecedf;
+  --el-border-color-darker: #c2c2d6;
+  --el-fill-color: #f2f2f8;
+  --el-fill-color-light: #f5f5fa;
+  --el-fill-color-lighter: #f9f9fc;
+  --el-fill-color-extra-light: #fbfbfd;
+  --el-fill-color-dark: #ddddeb;
+  --el-fill-color-darker: #d4d4e5;
+  --el-box-shadow-light: 0 2px 10px rgba(26, 26, 51, 0.06);
+  --el-box-shadow: 0 6px 22px rgba(26, 26, 51, 0.09);
+}
+
+/* ==========================================================================
+ * 主题：竹青（Bamboo）
+ *
+ * 色相 156°，青绿那一带；名字取竹的青。
+ *
+ * 中性色是【深空蓝调】（H≈190-195），不是把默认主题的紫调旋转过来：
+ * 那套紫调灰是照着「带一点紫」调出来的，旋转到绿只会得到一堆发脏的灰绿。
+ *
+ * 【2026-10-12 按钮底色放浅】原来是 #078d58（相对亮度 0.198，与默认主题的
+ * 紫色同一档）。你的反馈是「按钮的颜色太深了，放浅一点」，改为 #08965e ——
+ * 色相 156° 不变，整族亮度上移 14.5%。
+ *
+ * 代价要说清楚：--accent 既是按钮底色（压白字）又是白底上的文字色，两个方向
+ * 算出来是同一个比值，所以「放浅」与「白字清楚」直接冲突。放浅后白字对比度
+ * 从 4.23:1 降到 3.79:1，低于本项目原先自定的 4.0 门槛 —— 这是**有意的取舍**，
+ * 不是回归。4.0 本身就是折中值（WCAG AA 对正文要求 4.5:1，本来就够不着），
+ * 所以把门槛一并降到 3.5，并在测试里逐套列出实测值，免得后来者以为是漏改。
+ *
+ * 亮青 #7dff9e 只出现在 --accent-bright、品牌渐变、浅色阶里 ——
+ * 那些地方不承载文字，所以可以很亮。
+ * ========================================================================== */
+:root[data-theme='bamboo'] {
+  --ink: #16262b;
+  --ink-2: #42565c;
+  --ink-3: #7a8d93;
+  --ink-4: #9dafb4;
+  --line: #d8e6e5;
+  --line-soft: #e6f1ef;
+  --surface: #fafdfc;
+  --page: #e8f4f1;
+  --accent: #08965e;
+  --accent-deep: #047246;
+  --accent-soft: #cce9df;
+  --accent-glow: rgba(8, 150, 94, 0.22);
+  --accent-bright: #7dff9e;
+  --plum: #0e1f22;
+  --scrim: rgba(14, 31, 34, 0.45);
+  --shadow-plum: 0 6px 18px rgba(14, 31, 34, 0.2);
+  --scrollbar-thumb: #cfe0dd;
+  --scrollbar-thumb-hover: #b6cdc9;
+  --sidebar-bg: #dcece9;
+  --sidebar-line: #c2dcd8;
+  --glass-bg-strong: rgba(250, 253, 252, 0.9);
+  --shadow-crystal:
+    inset 0 1px 0 var(--glass-edge),
+    0 1px 2px rgba(14, 31, 34, 0.03),
+    0 10px 28px rgba(14, 31, 34, 0.05);
+  --glow-1: rgba(8, 150, 94, 0.12);
+  --glow-2: rgba(125, 255, 158, 0.16);
+  --glow-3: rgba(4, 114, 70, 0.08);
+  --el-color-primary: #09a466;
+  --el-color-primary-light-3: #51af8a;
+  --el-color-primary-light-5: #83c6ac;
+  --el-color-primary-light-7: #b5ddcd;
+  --el-color-primary-light-8: #cce9df;
+  --el-color-primary-light-9: #e6f4ee;
+  --el-border-color-dark: #d6e4e3;
+  --el-border-color-darker: #c9dbd9;
+  --el-fill-color: #f0f7f6;
+  --el-fill-color-light: #f4faf9;
+  --el-fill-color-lighter: #f8fcfb;
+  --el-fill-color-extra-light: #fbfdfd;
+  --el-fill-color-dark: #e6f0ee;
+  --el-fill-color-darker: #d8e6e5;
+  --el-box-shadow-light: 0 2px 10px rgba(14, 31, 34, 0.06);
+  --el-box-shadow: 0 6px 22px rgba(14, 31, 34, 0.09);
+}
+
+/* ==========================================================================
+ * 主题：咖啡（Coffee）
+ *
+ * 暖色，与其余三套的冷调反差最大 —— 需要「一眼看出换了主题」时用它。
+ *
+ * 【2026-10-12 改名】原来叫「琥珀（Amber）」。色值一个没动 ——
+ * 你说「琥珀色没有问题，不过我感觉叫咖啡色更合适一点」。
+ * 亮琥珀 #fcd34d 仍然只做 --accent-bright；--accent 是 #b06b05
+ * （色相 36°，相对亮度 0.198，与默认主题同档可读性）。
+ * ========================================================================== */
+:root[data-theme='coffee'] {
+  --ink: #2e2418;
+  --ink-2: #5c4f3e;
+  --ink-3: #8d8071;
+  --ink-4: #b0a496;
+  --line: #e8e0d2;
+  --line-soft: #f1ebe0;
+  --surface: #fdfcfa;
+  --page: #f7f2e8;
+  --accent: #b06b05;
+  --accent-deep: #8a5203;
+  --accent-soft: #f0e2cc;
+  --accent-glow: rgba(176, 107, 5, 0.22);
+  --accent-bright: #fcd34d;
+  --plum: #2a1d0e;
+  --scrim: rgba(42, 29, 14, 0.45);
+  --shadow-plum: 0 6px 18px rgba(42, 29, 14, 0.2);
+  --scrollbar-thumb: #e0d6c6;
+  --scrollbar-thumb-hover: #cdc0aa;
+  --sidebar-bg: #efe8db;
+  --sidebar-line: #ddd2be;
+  --glass-bg-strong: rgba(253, 252, 250, 0.9);
+  --shadow-crystal:
+    inset 0 1px 0 var(--glass-edge),
+    0 1px 2px rgba(42, 29, 14, 0.03),
+    0 10px 28px rgba(42, 29, 14, 0.05);
+  --glow-1: rgba(176, 107, 5, 0.12);
+  --glow-2: rgba(252, 211, 77, 0.18);
+  --glow-3: rgba(152, 92, 1, 0.08);
+  --el-color-primary-light-3: #c89750;
+  --el-color-primary-light-5: #d8b582;
+  --el-color-primary-light-7: #e7d3b4;
+  --el-color-primary-light-8: #f0e2cc;
+  --el-color-primary-light-9: #f7f0e6;
+  --el-border-color-dark: #e6ded0;
+  --el-border-color-darker: #dcd2c2;
+  --el-fill-color: #f8f4ec;
+  --el-fill-color-light: #faf7f1;
+  --el-fill-color-lighter: #fcfaf6;
+  --el-fill-color-extra-light: #fdfcfa;
+  --el-fill-color-dark: #f0eade;
+  --el-fill-color-darker: #e8e0d2;
+  --el-box-shadow-light: 0 2px 10px rgba(42, 29, 14, 0.06);
+  --el-box-shadow: 0 6px 22px rgba(42, 29, 14, 0.09);
+}
+
 /*
- * 紫色提示条：与「连接测试通过」同色（浅紫底 + 紫字 + 淡紫图标）。
+ * 提示条：与「连接测试通过」同色（浅底 + 强调色字 + 淡色图标）。
  *
  * 用于报错下方的补充提示，例如列名只差大小写时那句「您可能想要访问 "Salary"」。
  * 写在全局而不是某个组件的 scoped 里，是因为 App.vue（查询报错）与
@@ -192,10 +413,14 @@
  * 这里用 .el-alert 复合选择器把权重顶到 (0,2,0)/(0,3,0)，
  * 稳压 Element 自己的单类规则 —— 用变量做不到，变量只能整族换色，
  * 没法只改底色不改字色
+ *
+ * 底边与图标原来写死 #ddd6fe / #a78bfa（violet-200/400），
+ * 换成 light-7 / light-3 —— 它们本来就正是这两个色阶，只是没走令牌，
+ * 于是换主题时这两处不会跟着变
  */
 .el-alert.hint-alert.is-light {
   background-color: var(--accent-soft);
-  border: 1px solid #ddd6fe;
+  border: 1px solid var(--el-color-primary-light-7);
 }
 
 .el-alert.hint-alert.is-light .el-alert__title,
@@ -204,5 +429,37 @@
 }
 
 .el-alert.hint-alert.is-light .el-alert__icon {
-  color: #a78bfa;
+  color: var(--el-color-primary-light-3);
+}
+
+/*
+ * 竹青：把「实心填充」的绿单独放浅一档。
+ *
+ * 【为什么要拆成两个令牌】--accent 一个值在本项目里干两件相反的事：
+ *   · 实心填充的底色 —— 主按钮、语言切换选中态、勾选框、开关、分页当前页。
+ *     这些压的是白字或白勾，底色越浅越显得轻，用户的诉求是「太深了」。
+ *   · 白底上的**小字**色 —— 表单校验红字、提示条文字、问号悬停。
+ *     这些越浅越看不清，是反方向的要求。
+ * 前几轮已经把 --accent 整体放浅过一次（#078d58 → #08965e），再想浅就只能拆开。
+ * 所以这里只把 Element 的 --el-color-primary（所有实心填充的来源）指向 #09a466，
+ * 而 --accent 仍是 #08965e，继续供上面那批小字使用。
+ *
+ * 【为什么覆盖的是 --el-color-primary 而不是逐个组件】Element 的实心填充
+ * （按钮、radio-button、checkbox、switch、pagination、progress…）都从它派生。
+ * 逐个组件写一遍的话，以后每加一个组件都要记得补一条 —— 迟早漏。
+ * 覆盖这一个变量，新组件自动跟着走。
+ *
+ * 【下面两条为什么必须补上】Element 里有少数几处把 --el-color-primary 当
+ * **文字色**用，它们会跟着变浅，而这正是要避免的：
+ *   · .el-tabs__item.is-active        —— 表格 / JSON 标签页的选中标题
+ *   · .el-checkbox__input.is-checked + .el-checkbox__label —— 勾上后的那行小字
+ * 两条都钉回 --accent。这是拆分的代价：Element 没把「填充」和「文字」分成两个
+ * 变量，只能把用错的那几处点名改回来。
+ *
+ * 【权限】:root[data-theme='bamboo'] 是 (0,2,0)，Element 自己的 :root 是 (0,1,0)，
+ * 稳压，与加载顺序无关。
+ */
+:root[data-theme='bamboo'] .el-tabs__item.is-active,
+:root[data-theme='bamboo'] .el-checkbox__input.is-checked + .el-checkbox__label {
+  color: var(--accent);
 }
