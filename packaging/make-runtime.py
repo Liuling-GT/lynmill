@@ -168,7 +168,7 @@ def rmtree_retry(p, tries=20, wait=2.5):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--jar", default=None)
-    ap.add_argument("--version", default="1.0.0")
+    ap.add_argument("--version", default="1.1.0")
     ap.add_argument("--out", default=None, help="输出根目录")
     ap.add_argument("--keep-runtime", action="store_true",
                     help="保留中间产物 runtime（默认保留，便于排查）")

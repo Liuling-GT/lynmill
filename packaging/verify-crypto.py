@@ -191,14 +191,14 @@ print()
 print("-" * 74)
 # 关键：探针没跑出结果时必须判失败。
 # 【踩过】第一版只看 fail 变量，而探针因为 "Module jdk.compiler not in boot Layer"
-# 根本没启动，fail 保持 0，于是脚本打出「✅ 全部通过」——
+# 根本没启动，fail 保持 0，于是脚本打出「全部通过」——
 # 一次彻头彻尾的假绿。**没有输出 != 没有失败**。
 if not saw_result:
-    print("  ❌ 探针没有产出结果（编译/启动就失败了）—— 见上面的输出")
+    print("     探针没有产出结果（编译/启动就失败了）—— 见上面的输出")
     print("     注意：这本身就是失败，不能当成「跳过」")
     sys.exit(1)
 if fail == 0:
-    print("  ✅ 全部通过 —— 加密栈、字符集、本地化数据都齐全")
+    print("     全部通过 —— 加密栈、字符集、本地化数据都齐全")
 else:
-    print("  ❌ 有 %d 项失败 —— runtime 裁掉了必需的模块" % fail)
+    print("     有 %d 项失败 —— runtime 裁掉了必需的模块" % fail)
 sys.exit(0 if fail == 0 else 1)

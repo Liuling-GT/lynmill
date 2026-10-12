@@ -74,7 +74,7 @@ cd "$2" || exit 1
 rm -rf ft && mkdir -p ft/DEBIAN ft/usr/share/doc/tq
 cat > ft/DEBIAN/control <<'CTL'
 Package: tinyquery
-Version: 1.0.0
+Version: 1.1.0
 Architecture: amd64
 Maintainer: Liuling <x@y.com>
 Depends: libx11-6, libasound2
@@ -129,18 +129,18 @@ out="$(bash "$tmp/run.sh" "$tmp/snippet.sh" "$tmp" 2>&1)"
 
 case "$out" in
     *RESULT=PASS*)
-        echo "  ✅ 通过：$(printf '%s' "$out" | grep -o 'Recommends=.*')"
+        echo "  通过：$(printf '%s' "$out" | grep -o 'Recommends=.*')"
         echo "     已确认：写入成功、含中文字体、Depends 未被改动、包内容完整、可重复执行"
         exit 0
         ;;
     *RESULT=FAIL*)
-        echo "  ❌ 失败：$(printf '%s' "$out" | grep -o 'RESULT=FAIL.*')" >&2
+        echo "  失败：$(printf '%s' "$out" | grep -o 'RESULT=FAIL.*')" >&2
         echo "     这说明 package-linux.sh 里给 deb 补中文字体依赖的修复已经失效。" >&2
         echo "     用户装完 deb 后，托盘菜单的中文会显示成方块。" >&2
         exit 1
         ;;
     *)
-        echo "  ❌ 自检本身出错，没有拿到结果：" >&2
+        echo "  自检本身出错，没有拿到结果：" >&2
         printf '%s\n' "$out" | sed 's/^/     /' >&2
         exit 1
         ;;

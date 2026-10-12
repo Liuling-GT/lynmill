@@ -10,7 +10,7 @@
 #   bash packaging/package.sh
 #
 # 前置条件：
-#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.0.0.jar
+#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.1.0.jar
 #   2. 已装 JDK 17 —— jpackage 从 JDK 14 起随 JDK 一起提供，无需单独安装
 #   3. packaging/tinyquery.icns 存在（用 iconutil 从 iconset 生成）
 #
@@ -41,8 +41,8 @@ done
 
 # ---------- 0. 应用标识 ----------
 # 这些值必须与 pom.xml 的 <version> 保持一致。jpackage 的 --app-version
-# 只接受「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝，所以版本号已统一为 1.0.0。
-appVersion='1.0.0'
+# 只接受「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝，所以版本号已统一为 1.1.0。
+appVersion='1.1.0'
 # --vendor 会写进包的发布者字段。不写就是「未知」。
 vendor='Liuling'
 # macOS 的 bundle id。一旦发出去就改不动了（改了等于换了一个应用，
@@ -79,6 +79,14 @@ fi
 rm -rf "$in"
 mkdir -p "$in"
 cp "$jar" "$in/"
+
+# ---------- 2.5 随包附带许可证与第三方声明 ----------
+# MIT 要求「许可声明随软件一起分发」，所以这两份必须进发布包，不能只在仓库里。
+# 它们会落在 app/ 下（与 jar 同级），随后打进 .app / .dmg。
+cp "$root/LICENSE" "$in/"
+if [ -f "$root/packaging/THIRD-PARTY.md" ]; then
+    cp "$root/packaging/THIRD-PARTY.md" "$in/"
+fi
 
 # ---------- 3. jpackage 不覆盖已存在的输出 ----------
 # 输出已存在时它会直接报错退出，而不是覆盖，所以必须先删。
@@ -158,7 +166,7 @@ jpackage \
 #      整个 TinyQuery.app 从磁盘上消失，jpackage-out 里只剩 .dmg
 # 加上 --force --deep --sign -（ad-hoc，不需要开发者证书）之后就正常了。
 #
-# ⚠️ 这【不是】正式签名：ad-hoc 没有开发者身份、不能公证，
+#    这不是正式签名：ad-hoc 没有开发者身份、不能公证，
 #    用户拿到 dmg 仍然会被 Gatekeeper 拦（右键 → 打开 可绕过）。
 #    它只是让应用在本机跑得起来，从而让「双击验证」做得成。
 #    另外 ad-hoc 签名每次重建都会变（CDHash 不同），这正是

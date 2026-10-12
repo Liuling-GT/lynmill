@@ -1,4 +1,4 @@
-﻿# ---------- 参数 ----------
+# ---------- 参数 ----------
 # -FullRuntime：逃生口。出问题时一条命令回到"带整个 JRE"的旧行为。
 #
 # 为什么要留这个：精简 runtime 是靠一份**手工维护的模块清单**（见 make-runtime.py）。
@@ -17,7 +17,7 @@ param(
 <#
   TinyQuery Windows 打包脚本 —— 用 jpackage 生成免安装的 app-image。
 
-  ⚠️ 本文件必须以「UTF-8 带 BOM」保存，不要去掉 BOM。
+  本文件必须以「UTF-8 带 BOM」保存，不要去掉 BOM。
 
   为什么：Windows PowerShell 5.1（系统自带的那个）读取 .ps1 时，
   **没有 BOM 就按系统 ANSI 代码页解码**（简体中文 Windows 上是 GBK）。
@@ -39,7 +39,7 @@ param(
       powershell -File packaging\package.ps1 -FullRuntime   # 完整 JRE（逃生口）
 
   前置条件：
-      1. 已执行 mvn clean package，target\ 下有 tinyquery-1.0.0.jar
+      1. 已执行 mvn clean package，target\ 下有 tinyquery-1.1.0.jar
       2. 已装 JDK 17 —— jpackage 从 JDK 14 起随 JDK 一起提供，无需单独安装
       3. 装了 python（精简 runtime 用）。没有就用 -FullRuntime 跳过
 #>
@@ -48,8 +48,8 @@ $ErrorActionPreference = 'Stop'
 
 # ---------- 0. 应用标识 ----------
 # 这些值必须与 pom.xml 的 <version> 保持一致。jpackage 的 --app-version
-# 只接受「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝，所以版本号已统一为 1.0.0。
-$appVersion = '1.0.0'
+# 只接受「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝，所以版本号已统一为 1.1.0。
+$appVersion = '1.1.0'
 # --vendor 会写进 exe 属性的「发布者」/「公司」字段。不写就是「未知」。
 $vendor     = 'Liuling'
 # macOS 的 bundle id。Windows 上被忽略，但一旦发出去就改不动了
@@ -82,6 +82,18 @@ if (-not (Test-Path $icon)) {
 if (Test-Path $in) { Remove-Item $in -Recurse -Force }
 New-Item -ItemType Directory -Path $in | Out-Null
 Copy-Item $jar $in
+
+# ---------- 2.5 随包附带许可证与第三方声明 ----------
+# MIT 要求「许可声明随软件一起分发」，所以这两份必须进发布包，不能只在仓库里。
+# 它们会落在 app\ 下（与 jar 同级），随发布包一起发出。
+$lic = Join-Path $root 'LICENSE'
+if (Test-Path $lic) {
+    Copy-Item $lic $in
+} else {
+    throw "找不到 LICENSE（MIT 要求随包分发）—— 路径 $lic"
+}
+$third = Join-Path $root 'packaging\THIRD-PARTY.md'
+if (Test-Path $third) { Copy-Item $third $in }
 
 # ---------- 3. 清旧输出 ----------
 # 放在第 4.5 步生成 runtime 之后（见那边注释）：jpackage 不覆盖已存在的

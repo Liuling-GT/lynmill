@@ -14,8 +14,31 @@
 
     <groupId>com.Liuling</groupId>
     <artifactId>tinyquery</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>jar</packaging>
+
+    <name>TinyQuery</name>
+    <description>本地零运维的多数据源 SQL 查询引擎：把 CSV / Excel、MySQL、PostgreSQL、SQLite 加载进列式存储，直接用 SQL 查询</description>
+
+    <!-- 作者是个人的学习项目，不是公司产品。
+         这里不写 <url> —— 目前没有远端仓库；等有仓库地址了再补。 -->
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <id>Liuling</id>
+            <name>Liuling</name>
+            <roles>
+                <role>author</role>
+                <role>maintainer</role>
+            </roles>
+        </developer>
+    </developers>
 
     <properties>
         <java.version>17</java.version>

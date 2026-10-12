@@ -61,9 +61,9 @@ print("  PowerShell 脚本编码检查")
 print("=" * 74)
 print()
 for rel, why in ok:
-    print("  ✅ %-42s %s" % (rel, why))
+    print("  %-42s %s" % (rel, why))
 for rel, why in bad:
-    print("  ❌ %-42s %s" % (rel, why))
+    print("  %-42s %s" % (rel, why))
 print()
 
 if bad:

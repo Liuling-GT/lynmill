@@ -9,16 +9,16 @@
 #   bash packaging/package-linux.sh --deb --rpm
 #
 # 前置条件：
-#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.0.0.jar
+#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.1.0.jar
 #   2. 已装 JDK 17（jpackage 从 JDK 14 起随 JDK 提供）
 #   3. 打 deb 需 dpkg-deb 与 fakeroot；打 rpm 需 rpmbuild
 #   4. 系统必须装了中文字体（见下面「中文字体」一节）
 #
 # 产物（都在 jpackage-out/ 下）：
 #   TinyQuery/                                 app-image 目录，解压即用
-#   TinyQuery-1.0.0-linux-x86_64.tar.gz        可直接分发的压缩包
-#   TinyQuery-1.0.0-1.x86_64.deb               仅在传了 --deb 时
-#   TinyQuery-1.0.0-1.x86_64.rpm               仅在传了 --rpm 时
+#   TinyQuery-1.1.0-linux-x86_64.tar.gz        可直接分发的压缩包
+#   TinyQuery-1.1.0-1.x86_64.deb               仅在传了 --deb 时
+#   TinyQuery-1.1.0-1.x86_64.rpm               仅在传了 --rpm 时
 #
 # ---------- 为什么默认只出 tar.gz，不出 deb/rpm ----------
 # Linux 桌面环境碎片化严重：.deb 只能在 Debian/Ubuntu 系装，.rpm 只能在
@@ -62,7 +62,7 @@ root="$(cd "$scriptDir/.." && pwd)"
 
 # 必须与 pom.xml 的 <version> 一致。jpackage 的 --app-version 只接受
 # 「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝。
-appVersion='1.0.0'
+appVersion='1.1.0'
 # --vendor 会写进 deb/rpm 的维护者字段与 .desktop 里
 vendor='Liuling'
 # 桌面环境里显示的菜单名与图标名。全小写、无空格是 Linux 的惯例
@@ -73,8 +73,9 @@ packageName='tinyquery'
 # 「Liuling <Liuling <noreply@example.com>>」这种畸形值（实测踩过，dpkg-deb -f 能看到）。
 # 正式分发前应换成真实联系方式，example.com 只是占位。
 debMaintainer='noreply@example.com'
-# rpm 的 License 字段。本项目未附许可证文件时，这个字段只是占位。
-rpmLicense='Apache-2.0'
+# rpm 的 License 字段。必须与仓库根的 LICENSE 一致（MIT）。
+# SPDX 标识符，rpm 认这个写法；下文 jpackage 调用处的注释有更多说明。
+rpmLicense='MIT'
 
 jar="$root/target/tinyquery-$appVersion.jar"
 icon="$root/src/main/resources/icons/tinyquery-512.png"
@@ -138,6 +139,15 @@ fi
 rm -rf "$in"
 mkdir -p "$in"
 cp "$jar" "$in"
+
+# ---------- 2.5 随包附带许可证与第三方声明 ----------
+# MIT 要求「许可声明随软件一起分发」，所以这两份必须进发布包，不能只在仓库里。
+# 它们会落在 app/ 下（与 jar 同级），随 app-image / deb / rpm 一起发出。
+# THIRD-PARTY.md 不是法律必需，但与 LICENSE 放一起最容易被找到。
+cp "$root/LICENSE" "$in"
+if [ -f "$root/packaging/THIRD-PARTY.md" ]; then
+    cp "$root/packaging/THIRD-PARTY.md" "$in"
+fi
 
 # ---------- 3. jpackage 不覆盖已存在的输出目录 ----------
 # 输出目录已存在时它会直接报错退出，而不是覆盖，所以必须先删。
@@ -302,14 +312,14 @@ addFontRecommends_deb() {
 addFontRecommends_rpm() {
     local rpm="$1"
     command -v rpm >/dev/null 2>&1 || {
-        echo "  ⚠️ 找不到 rpm 命令，跳过 $rpm 的字体提示" >&2
+        echo "  找不到 rpm 命令，跳过 $rpm 的字体提示" >&2
         return 0
     }
     # 记录当前 Requires，供汇报时对比（确认我们没动过依赖）
     local req
     req="$(rpm -qpR "$rpm" 2>/dev/null | wc -l)"
     echo "  rpm 依赖项 $req 条（未改动）"
-    echo "  ⚠️ rpm 格式无法追加 Recommends（需 rpmrebuild，非默认仓库）。"
+    echo "  rpm 格式无法追加 Recommends（需 rpmrebuild，非默认仓库）。"
     echo "     该包未声明中文字体：缺字体的机器上托盘菜单会显示方块。"
     echo "     请在发布说明里写明「建议安装 $fontPackagesHuman」。"
 }
@@ -335,7 +345,7 @@ if [ "$wantDeb" = 1 ]; then
     jpackage --type deb "${commonArgs[@]}" "${packageArgs[@]}" \
         --linux-deb-maintainer "$debMaintainer"
     # 【踩过的坑，很隐蔽】文件名按 --linux-package-name 来，也就是**小写**的
-    # tinyquery_1.0.0-1_amd64.deb（下划线）。原来这里写的是 TinyQuery-1.0.0-1.*.deb
+    # tinyquery_1.1.0-1_amd64.deb（下划线）。原来这里写的是 TinyQuery-1.1.0-1.*.deb
     # （大写 T、连字符），glob 一个都匹配不上 —— for 循环体一次都没执行，
     # Recommends 静默地没加上，而且外面看不出任何异常。
     # 教训：glob 匹配不到【不报错】，必须显式断言至少处理了一个文件。
@@ -361,7 +371,7 @@ if [ "$wantRpm" = 1 ]; then
         addFontRecommends_rpm "$f"
     done
     if [ "$found" -eq 0 ]; then
-        echo "  ⚠️ 没找到刚打出的 rpm（预期 $packageName-$appVersion-1.*.rpm）" >&2
+        echo "  没找到刚打出的 rpm（预期 $packageName-$appVersion-1.*.rpm）" >&2
     fi
 fi
 
@@ -394,8 +404,8 @@ echo "产物："
 printf '  %-56s %8s\n' "${app#$root/}" "$(du -sh "$app" | cut -f1)"
 printf '  %-56s %8s\n' "${tarball#$root/}" "$(du -h "$tarball" | cut -f1)"
 # 【踩过的坑】glob 的大小写/分隔符必须与 --linux-package-name 一致：
-# deb 是 tinyquery_1.0.0-1_amd64.deb（小写下划线），rpm 是 tinyquery-1.0.0-1.x86_64.rpm。
-# 原来写成 TinyQuery-1.0.0-1.*.deb，一个都匹配不到 —— 产物明明打出来了，
+# deb 是 tinyquery_1.1.0-1_amd64.deb（小写下划线），rpm 是 tinyquery-1.1.0-1.x86_64.rpm。
+# 原来写成 TinyQuery-1.1.0-1.*.deb，一个都匹配不到 —— 产物明明打出来了，
 # 汇报里却不显示（同时也导致 Recommends 没被加上，见上面第 7 节）
 for f in "$dest"/"$packageName"_"$appVersion"-1_*.deb "$dest"/"$packageName"-"$appVersion"-1.*.rpm; do
     [ -f "$f" ] && printf '  %-56s %8s\n' "${f#$root/}" "$(du -h "$f" | cut -f1)"
@@ -407,7 +417,7 @@ echo "  tar.gz 解压后直接运行 TinyQuery/bin/TinyQuery（tar 会保留可�
 if [ "$wantDeb" = 1 ] || [ "$wantRpm" = 1 ]; then
     echo "  deb/rpm 安装后可从应用菜单启动（--linux-shortcut 会生成 .desktop）"
 fi
-echo "  ⚠️ 目标机器若无中文字体，托盘菜单中文会显示成方块"
+echo "     目标机器若无中文字体，托盘菜单中文会显示成方块"
 echo "     建议安装：$fontPackagesHuman"
 if [ "$wantDeb" = 1 ]; then
     echo "     （deb 已带 Recommends，用 apt 安装时通常会自动装上）"
