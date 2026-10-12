@@ -13,14 +13,10 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * {@link LocaleFilter} 的语言解析。
  *
- * <h2>这里守的是什么</h2>
- *
- * <p>核心是一条容易写错、且错了很难发现的规则：<b>没带语言头时，
- * 应当用程序设置的语言，而不是硬编码回中文。</b></p>
- *
- * <p>写错的后果很隐蔽：用户在网页上把语言切成英文、托盘菜单也跟着变了，
- * 但任何不带 {@code X-TinyQuery-Locale} 的请求（curl 调试、Swagger、
- * 第三方脚本）仍然返回中文 —— 同一个程序两套语言。</p>
+ * <p>核心是一条容易写错、且错了很难发现的规则：没带语言头时，应当用程序设置的
+ * 语言，而不是硬编码回中文。写错的后果很隐蔽：用户在网页上把语言切成英文、
+ * 托盘菜单也跟着变了，但任何不带 {@code X-TinyQuery-Locale} 的请求
+ * （curl 调试、Swagger、第三方脚本）仍然返回中文 —— 同一个程序两套语言。</p>
  */
 @DisplayName("LocaleFilter 请求语言解析")
 class LocaleFilterTest {
@@ -78,7 +74,7 @@ class LocaleFilterTest {
         assertEquals(Messages.ZH, localeSeenByChain(req));
     }
 
-    // ==================== 没带头的请求（本轮修的那条）====================
+    // ==================== 没带头的请求 ====================
 
     @Test
     @DisplayName("没带语言头时跟随程序设置 —— 不是硬编码回中文")
@@ -135,7 +131,7 @@ class LocaleFilterTest {
         en.addHeader(Messages.LOCALE_HEADER, "en");
         filter.doFilter(en, new MockHttpServletResponse(), new MockFilterChain());
 
-        // 关键：无头请求看到的是【程序设置】的中文，而不是上一个请求留下的英文。
+        // 关键：无头请求看到的是程序设置的中文，而不是上一个请求留下的英文。
         // 这说明「没带头」确实被当成了「没表态」，而不是「表态要中文」——
         // 两种实现都能让这条通过，但如果实现是 setCurrent(normalize(null))，
         // 就会把程序设置那份盖住，下面这条断言会失败

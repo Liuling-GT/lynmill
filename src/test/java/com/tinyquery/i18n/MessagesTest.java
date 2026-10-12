@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 后端文案表与语言切换的测试。
  *
- * <p>重点是两类容易出错的地方：<b>词条漏配</b>（英文缺条目会静默回落中文，
- * 只有测试能发现）和 <b>ThreadLocal 泄漏</b>（Tomcat 复用线程，
+ * <p>重点是两类容易出错的地方：词条漏配（英文缺条目会静默回落中文，
+ * 只有测试能发现）和 ThreadLocal 泄漏（Tomcat 复用线程，
  * 不清理会把语言带给下一个请求，表现为「偶尔弹一句英文」）。</p>
  */
 class MessagesTest {

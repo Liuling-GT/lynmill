@@ -41,7 +41,7 @@ class QueryEngineTest {
 
     // ==================== 测试数据与辅助 ====================
 
-    //构造一行：row("name", "u1", "salary", 1000)
+    // 构造一行：row("name", "u1", "salary", 1000)
     private static Map<String, Object> row(Object... pairs) {
         Map<String, Object> map = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) {
@@ -50,7 +50,7 @@ class QueryEngineTest {
         return map;
     }
 
-    //按列清单批量建表
+    // 按列清单批量建表
     private static ColumnStore store(String[] columns, Object[][] rows) {
         ColumnStore store = new ColumnStore();
         for (Object[] r : rows) {
@@ -63,7 +63,7 @@ class QueryEngineTest {
         return store;
     }
 
-    //生成 n 行测试数据。salary 用固定公式打乱，避免输入有序时掩盖排序缺陷
+    // 生成 n 行测试数据。salary 用固定公式打乱，避免输入有序时掩盖排序缺陷
     private static ColumnStore salaryStore(int n) {
         Object[][] rows = new Object[n][2];
         for (int i = 0; i < n; i++) {
@@ -72,13 +72,13 @@ class QueryEngineTest {
         return store(new String[]{"name", "salary"}, rows);
     }
 
-    //执行分页查询
+    // 执行分页查询
     private QueryResult page(ColumnStore store, String sql, int page, int pageSize) {
         QueryStatement stmt = parser.parse(sql);
         return new QueryEngine(store).executePage(stmt, page, pageSize);
     }
 
-    //执行并只取结果行
+    // 执行并只取结果行
     private List<String[]> rows(ColumnStore store, String sql) {
         return page(store, sql, 1, 1000).rows();
     }
@@ -679,8 +679,8 @@ class QueryEngineTest {
     // 图表聚合的分组键来自界面下拉框，不是 SQL 的 GROUP BY，
     // 整条链路约 340 行，此前只有两条 bucketed() 布尔断言
 
-    //部门 -> 工资的表，用于分组类断言。
-    //各组之和刻意取成互不相同，避免同值时的稳定顺序掩盖真正的排序缺陷
+    // 部门 -> 工资的表，用于分组类断言。
+    // 各组之和刻意取成互不相同，避免同值时的稳定顺序掩盖真正的排序缺陷
     private static ColumnStore deptSalaryStore() {
         return store(new String[]{"dept", "salary"}, new Object[][]{
                 {"A", 100}, {"A", 200},

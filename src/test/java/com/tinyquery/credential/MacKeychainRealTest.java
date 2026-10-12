@@ -10,7 +10,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * macOS 钥匙串的<b>真机</b>测试：真的会往当前用户的登录钥匙串里写条目。
+ * macOS 钥匙串的真机测试：真的会往当前用户的登录钥匙串里写条目。
  *
  * <p>所有 key 都带随机后缀，且每个测试都在 {@code finally} 里删掉自己写的东西 ——
  * 不能污染用户真实的钥匙串。</p>
@@ -88,7 +88,7 @@ class MacKeychainRealTest {
         String k = key();
         try {
             assertTrue(store.write(k, "root", "第1次").success());
-            // ★ 这两次是本项的关键：如果实现是「先删后建」，
+            // 这两次是本项的关键：如果实现是「先删后建」，
             //   第 2、3 次会重置条目的 ACL，真实使用中就会弹授权框
             assertTrue(store.write(k, "root", "第2次").success(), "重复保存必须覆盖而不是报错");
             assertTrue(store.write(k, "root", "第3次").success());

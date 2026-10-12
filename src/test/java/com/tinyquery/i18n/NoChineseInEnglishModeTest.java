@@ -25,19 +25,19 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 「英文模式下不许出现中文」的端到端守门测试。
  *
- * <p>为什么需要这个类：<b>上一轮真的漏了 4 条</b>，而且是靠人眼在界面上发现的。
+ * <p>为什么需要这个类：上一轮真的漏了 4 条，而且是靠人眼在界面上发现的。
  * 原来的自查脚本只匹配 {@code throw new XxxException("中文")} 这一种形态，
  * 于是这两类写法从它眼皮底下溜了过去 ——</p>
  *
  * <ul>
- *   <li><b>中文当参数传</b>：{@code requireIdentifier(database, "数据库名")}。
+ *   <li>中文当参数传：{@code requireIdentifier(database, "数据库名")}。
  *       它在中文下看着完全正常，只有切到英文才暴露。</li>
- *   <li><b>拼接串</b>：{@code "error:" + col + "。聚合结果…"}，
+ *   <li>拼接串：{@code "error:" + col + "。聚合结果…"}，
  *       不以引号开头，正则锚不上。</li>
  * </ul>
  *
  * <p>所以本类不检查「代码里有没有中文字面量」（那种检查会被注释淹没、
- * 也拦不住拼接），而是<b>真的去调一遍</b>那些会产生用户可见文案的入口，
+ * 也拦不住拼接），而是真的去调一遍那些会产生用户可见文案的入口，
  * 断言英文模式下拿到的字符串里没有 CJK 字符。这样无论用什么写法实现，
  * 只要结果是中文就会被抓住。</p>
  *
@@ -300,12 +300,12 @@ class NoChineseInEnglishModeTest {
      *
      * <p>必须走真实的 {@code QueryEngine} 聚合路径 —— 上一版这几条只断言了
      * {@code Messages.get("chart.seriesCount")} 等于 "Count"，看起来很对，
-     * 但把 {@code seriesName()} 里的调用改回写死 {@code "计数"} 之后测试**照样绿**：
+     * 但把 {@code seriesName()} 里的调用改回写死 {@code "计数"} 之后测试照样绿：
      * 词表还在，只是没人用它了。这就是典型的「因为错误原因而通过」。
-     * 断言必须落在<b>真正产出给前端的那个对象</b>上。</p>
+     * 断言必须落在真正产出给前端的那个对象上。</p>
      *
      * <p>维度值刻意用 ASCII（"RD" / 空串）：类别名里混着用户数据，
-     * 而<b>数据不该被翻译</b>。若用中文当数据，断言就会把「数据里的中文」
+     * 而数据不该被翻译。若用中文当数据，断言就会把「数据里的中文」
      * 误判成「漏翻」——这个假警报当场就出现过一次。</p>
      */
     private static com.tinyquery.executor.ColumnStore storeWithBlankDimension() {
@@ -385,7 +385,7 @@ class NoChineseInEnglishModeTest {
         assertNoChinese("CSV 编码说明", text);
 
         // 中文版特意举了「寮犱笁」这个例子（UTF-8 的中文被按 GBK 读的结果），
-        // 英文版**刻意不放**。原因：ASCII 英文在 GBK 下解码是无损的，
+        // 英文版刻意不放。原因：ASCII 英文在 GBK 下解码是无损的，
         // 英文用户几乎不会遇到那类乱码；把一串中文天书塞进英文文案只会更费解。
         // 两边文案因此不是逐字对应，这是有意的。
         assertTrue(text.contains("GBK"), text);
@@ -404,7 +404,7 @@ class NoChineseInEnglishModeTest {
 
     // ==================== 五、桌面端（托盘 / 控制窗口 / 启动失败对话框）====================
     //
-    // 注意：这里只查**词表本身**。真正「界面代码有没有用上词表」的守门在
+    // 注意：这里只查词表本身。真正「界面代码有没有用上词表」的守门在
     // com.tinyquery.desktop.DesktopEnglishModeTest 里 ——
     // TrayIconInstaller / ControlWindow / StartupFailureDialog 的取值方法是包可见的，
     // 只有 desktop 包里的测试够得着。两边分工：

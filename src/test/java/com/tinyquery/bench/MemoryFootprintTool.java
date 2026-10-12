@@ -17,30 +17,22 @@ import java.util.Map;
 /**
  * 实测「加载一份数据占多少常驻内存」。
  *
- * <h2>为什么需要它</h2>
- *
  * <p>{@code DataSourceManager} 把整张表放进内存（{@code ColumnStore} 用
- * {@code Map<String, List<Object>>}），<b>没有上限、没有淘汰</b>。
- * 这是一条真实的产品约束：用户加载一个 500 MB 的 CSV 就会吃掉几百 MB 堆。
- * 但"会吃多少"从来没人量过 —— 凭感觉说"大概几倍文件大小"没有意义。</p>
+ * {@code Map<String, List<Object>>}），没有上限、没有淘汰。这是一条真实的产品
+ * 约束：用户加载一个 500 MB 的 CSV 就会吃掉几百 MB 堆。但「会吃多少」从来没人
+ * 量过 —— 凭感觉说「大概几倍文件大小」没有意义。</p>
  *
- * <h2>测量方法：为什么用 retained heap 而不是文件大小反推</h2>
- *
- * <p>文件大小推不出内存占用。差在几处：</p>
- * <ul>
- *   <li>CSV 是文本，进内存后数字可能变成 {@code Integer}/{@code Long}/{@code Double} 对象</li>
- *   <li>每列一个 {@code ArrayList}，元素是<b>装箱对象</b>（{@code Object}），
- *       一个 {@code Integer} 至少 16 字节，而不是 4 字节</li>
- *   <li>{@code LinkedHashMap} / 列表扩容的冗余容量</li>
- * </ul>
+ * <p>测量方法用 retained heap 而不是文件大小反推，因为文件大小推不出内存占用。
+ * 差在几处：CSV 是文本，进内存后数字可能变成 {@code Integer}/{@code Long}/
+ * {@code Double} 对象；每列一个 {@code ArrayList}，元素是装箱对象
+ * （{@code Object}），一个 {@code Integer} 至少 16 字节，而不是 4 字节；
+ * 还有 {@code LinkedHashMap} / 列表扩容的冗余容量。</p>
  *
  * <p>所以直接测：加载前后各触发一次 GC，读 {@code MemoryMXBean} 的堆使用量，
- * 差值就是<b>真实留在堆里的量</b>。多次测量取最小值 —— GC 之后仍被引用的部分
+ * 差值就是真实留在堆里的量。多次测量取最小值 —— GC 之后仍被引用的部分
  * 才是稳定值，偶尔的浮动噪声只会让数字偏大。</p>
  *
- * <h2>口径</h2>
- *
- * <p>测的是<b>加载完成的瞬间</b>的常驻量，不含查询过程产生的临时对象。
+ * <p>口径：测的是加载完成的瞬间的常驻量，不含查询过程产生的临时对象。
  * 查询的临时开销与查询复杂度有关，是另一件事（见 README 性能表）。</p>
  */
 public class MemoryFootprintTool {

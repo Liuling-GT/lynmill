@@ -111,13 +111,13 @@ class BrowserOpenerTest {
     /**
      * 一个 POSIX shell 的路径。
      *
-     * <p><b>为什么不用 {@code /bin/true} 与 {@code /bin/false}：</b>
-     * macOS 上这两个文件<b>不在 {@code /bin} 里，而在 {@code /usr/bin}</b>。
-     * 用错路径的后果不只是「测试变红」，更麻烦的是它会制造<b>假绿</b> ——
+     * <p>为什么不用 {@code /bin/true} 与 {@code /bin/false}：
+     * macOS 上这两个文件不在 {@code /bin} 里，而在 {@code /usr/bin}。
+     * 用错路径的后果不只是「测试变红」，更麻烦的是它会制造假绿 ——
      * 命令在 {@code ProcessBuilder.start()} 就抛 {@code IOException}，
      * 被 {@code runAndCheck} 的 catch 分支兜成 false，于是
-     * {@code assertFalse(...)} 照样通过，但它<b>根本没验到「退出码非 0 必须判失败」</b>。
-     * 也就是说：在 macOS 上，这条规则一度是<b>没人看着的</b>。</p>
+     * {@code assertFalse(...)} 照样通过，但它根本没验到「退出码非 0 必须判失败」。
+     * 也就是说：在 macOS 上，这条规则一度是没人看着的。</p>
      *
      * <p>{@code sh} 是 POSIX 规定必须存在的；把退出码写成 {@code exit N}
      * 还能让「这个夹具想验什么」一眼可见，不再依赖任何系统工具的摆放位置。</p>
@@ -150,9 +150,9 @@ class BrowserOpenerTest {
     /**
      * 夹具自检：先确认这个命令真的按预期退出，再去验产品行为。
      *
-     * <p><b>这是本次修复的关键，比换路径更重要。</b>光把 {@code /bin/true}
+     * <p>这是本次修复的关键，比换路径更重要。光把 {@code /bin/true}
      * 换成能用的命令，只能让测试在当下变绿；加上这道自检，才能保证
-     * <b>「夹具本身没坏」</b>—— 万一哪天夹具又变成启动不了，这里会先失败，
+     * 「夹具本身没坏」—— 万一哪天夹具又变成启动不了，这里会先失败，
      * 而不是让 {@code assertFalse} 悄悄通过、把「没测到」伪装成「测过了」。</p>
      *
      * <p>这类「断言因为错误的原因而通过」的缺陷，比一个普通的红灯危险得多：

@@ -94,7 +94,7 @@ class BuildInfoTest {
         void readsResolvedValues() {
             // 测试跑在 target/classes 上，那里是 antrun 生成的文件 ——
             // 如果生成逻辑坏了（比如又写回占位符），这条会红
-            assertEquals("1.0.0", BuildInfo.version(),
+            assertEquals("1.1.0", BuildInfo.version(),
                     "版本号应当来自 pom 的 project.version");
             assertFalse(BuildInfo.version().startsWith("@"),
                     "占位符没被替换 —— 检查 pom 里 generate-build-info 的执行");

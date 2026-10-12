@@ -14,20 +14,17 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 桌面端「英文模式下不得出现中文」的守门。
  *
- * <h2>为什么单独一个类，而不是并进 NoChineseInEnglishModeTest</h2>
- *
- * <p>桌面端的文案取值方法（{@code TrayIconInstaller.menuLabelOpen()}、
+ * <p>单独一个类而不是并进 {@code NoChineseInEnglishModeTest}：桌面端的文案
+ * 取值方法（{@code TrayIconInstaller.menuLabelOpen()}、
  * {@code ControlWindow.runningText()}、{@code StartupFailureDialog.buildMessage()}）
- * 都是<b>包可见</b>的 —— 只有 {@code com.tinyquery.desktop} 包里的测试够得着。
- * 放在 i18n 包里会直接编译不过（试过，报「不是公开的，无法从外部程序包中对其进行访问」）。</p>
+ * 都是包可见的，只有 {@code com.tinyquery.desktop} 包里的测试够得着。
+ * 放在 i18n 包里会直接编译不过（报「不是公开的，无法从外部程序包中对其进行访问」）。</p>
  *
- * <h2>为什么非要调这些方法，而不是查词表</h2>
- *
- * <p>查词表只能证明「词表里有英文」，证明不了「界面用了词表」。
- * 实测过一次教训：把 {@code ControlWindow} 里的
- * {@code Messages.get("desktop.window.running")} 换回硬编码 {@code "● 运行中"}，
- * 只查词表的守门<b>照样全绿</b> —— 词表是对的，只是没人用它。
- * 所以这里一律驱动真实取值方法，断言它们产出的字符串。</p>
+ * <p>这里一律驱动真实取值方法并断言它们产出的字符串，不查词表：
+ * 查词表只能证明词表里有英文，证明不了界面用了词表。实测把
+ * {@code ControlWindow} 里的 {@code Messages.get("desktop.window.running")}
+ * 换回硬编码 {@code "● 运行中"}，只查词表的守门照样全绿 —— 词表是对的，
+ * 只是没人用它。</p>
  */
 @DisplayName("桌面端英文模式守门")
 class DesktopEnglishModeTest {

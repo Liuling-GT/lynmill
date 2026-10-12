@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>这是全项目最关键的一条链路：SQL 进来、结果出去。之前它是零测试的。
  *
- * <p><b>走 MockMvc 而不是直接调方法</b>：这条链上有请求体反序列化
+ * <p>走 MockMvc 而不是直接调方法：这条链上有请求体反序列化
  * （{@code page}/{@code pageSize} 缺省、类型转换）、有导出接口直接写
  * {@code HttpServletResponse}（那是方法体里测不到的），这些都得走框架才成立。
  *

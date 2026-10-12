@@ -77,7 +77,7 @@ class StartupFailureDialogTest {
     void exceptionMessageIsNotTranslated() {
         Messages.setDesktopLocale(Messages.EN);
 
-        // 这是本功能的一条边界：界面文案翻译，但**异常自带的 message 不翻**。
+        // 这是本功能的一条边界：界面文案翻译，但异常自带的 message 不翻。
         // 翻了会让用户拿到的报错与日志里那条对不上，反而更难排查
         String message = StartupFailureDialog.buildMessage(
                 Messages.get("desktop.failure.headline"),

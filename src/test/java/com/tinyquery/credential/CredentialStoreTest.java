@@ -207,7 +207,7 @@ class CredentialStoreTest {
      * 凭据管理器真的不可用时跳过测试。
      *
      * <p>不能写成断言失败：在某些被策略禁用的环境里（企业机器、无登录会话），
-     * 不可用是<b>正确行为</b>而不是缺陷。</p>
+     * 不可用是正确行为而不是缺陷。</p>
      */
     private static void assumeWindowsStoreAvailable(CredentialStore store) {
         org.junit.jupiter.api.Assumptions.assumeTrue(store.isAvailable(),

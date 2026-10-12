@@ -12,6 +12,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
 import java.awt.Rectangle;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,19 +24,22 @@ class TrayIconInstallerTest {
     private static final String ANY_URL = "http://localhost:8080";
 
     /**
-     * 语言是全局状态（{@code Messages.desktopLocale}），测完必须还原，
-     * 否则后面跑的测试会拿到上一个用例留下的语言。
+     * 语言与主题都是全局状态（{@code Messages.desktopLocale} / {@code DesktopTheme}），
+     * 测完必须还原，否则后面跑的测试会拿到上一个用例留下的值。
      */
     private String savedLocale;
+    private String savedTheme;
 
     @BeforeEach
     void rememberLocale() {
         savedLocale = Messages.desktopLocale();
+        savedTheme = DesktopTheme.current();
     }
 
     @AfterEach
     void restoreLocale() {
         Messages.setDesktopLocale(savedLocale);
+        DesktopTheme.switchTo(savedTheme);
     }
 
     // ==================== 字体 ====================
@@ -211,7 +215,7 @@ class TrayIconInstallerTest {
 
         // 屏幕上除菜单外的每一点，都应恰好被 1 条接住层覆盖。
         // 「恰好 1 条」同时排除了两种情况：漏掉某块区域（点不到）、以及两条重叠
-        //（重叠区会收到两次事件，虽然当前实现幂等，但说明切分算错了）
+        // （重叠区会收到两次事件，虽然当前实现幂等，但说明切分算错了）
         for (int x = screen.x; x < screen.x + screen.width; x += 11) {
             for (int y = screen.y; y < screen.y + screen.height; y += 11) {
                 if (menu.contains(x, y)) {
@@ -264,7 +268,114 @@ class TrayIconInstallerTest {
         }
     }
 
+    // ==================== 主题跟随 ====================
+    //
+    // 托盘菜单是黑底白字，只有悬停高亮能体现主题。下面这几条真的画一遍
+    // 再读像素 —— 只断言 CenteredMenuItemUI.hover() 等于某个颜色是不够的：
+    // 那测的是取值函数，测不出 paintMenuItem 有没有真的用它。
+
+    @Test
+    @DisplayName("菜单项的悬停底色就是当前主题的托盘悬停色 —— 真画一遍读像素")
+    void hoverBackgroundComesFromTheme() {
+        for (String theme : DesktopTheme.supported()) {
+            DesktopTheme.switchTo(theme);
+
+            Color painted = paintMenuItem(true);
+            Color expected = DesktopTheme.trayHover();
+
+            assertEquals(expected, painted,
+                    "[" + theme + "] 悬停底色画出来是 " + painted
+                            + "，而当前主题的托盘悬停色是 " + expected
+                            + " —— 菜单项没有真的用主题色");
+        }
+    }
+
+    @Test
+    @DisplayName("不悬停时仍是纯黑 —— 主题不该把菜单底色也染了")
+    void idleBackgroundStaysBlack() {
+        // 主题只该改悬停色。要是顺手把底色也换成强调色调暗，
+        // 菜单在四套主题下会整体变色，与"菜单始终保持黑底"的设计相悖
+        for (String theme : DesktopTheme.supported()) {
+            DesktopTheme.switchTo(theme);
+            assertEquals(Color.BLACK, paintMenuItem(false),
+                    "[" + theme + "] 不悬停时底色不是纯黑了");
+        }
+    }
+
+    @Test
+    @DisplayName("四套主题画出来的悬停底色两两不同 —— 否则换了主题看不出来")
+    void hoverBackgroundDiffersPerTheme() {
+        List<Color> painted = new ArrayList<>();
+        for (String theme : DesktopTheme.supported()) {
+            DesktopTheme.switchTo(theme);
+            painted.add(paintMenuItem(true));
+        }
+
+        assertEquals(painted.size(), new java.util.HashSet<>(painted).size(),
+                "有主题画出了相同的悬停底色，用户看不出主题换过：" + painted);
+    }
+
+    @Test
+    @DisplayName("悬停底色上压白字仍然清楚 —— 对比度不低于 4.5:1")
+    void hoverBackgroundKeepsWhiteTextReadable() {
+        // 托盘菜单的文字是白的。悬停色要是太亮，白字就糊了。
+        // 4.5:1 是 WCAG AA 对正文的要求；这里按它卡，不按"看着还行"
+        for (String theme : DesktopTheme.supported()) {
+            DesktopTheme.switchTo(theme);
+            Color bg = paintMenuItem(true);
+
+            double ratio = contrast(bg, Color.WHITE);
+            assertTrue(ratio >= 4.5,
+                    "[" + theme + "] 悬停底色 " + bg + " 上的白字对比度只有 "
+                            + String.format("%.2f", ratio) + ":1，低于 4.5:1");
+        }
+    }
+
     // ==================== 工具 ====================
+
+    /** 把菜单项画进一张离屏图，返回角落那个像素的颜色（即底色）。 */
+    private static Color paintMenuItem(boolean armed) {
+        JPopupMenu menu = TrayIconInstaller.buildMenu(ANY_URL, () -> { }, () -> { });
+        JMenuItem item = null;
+        for (Component component : menu.getComponents()) {
+            if (component instanceof JMenuItem candidate) {
+                item = candidate;
+                break;
+            }
+        }
+        assertNotNull(item, "菜单里没有菜单项，本用例的前提不成立");
+
+        item.setSize(160, 28);
+        item.getModel().setArmed(armed);
+
+        BufferedImage image = new BufferedImage(160, 28, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = image.createGraphics();
+        try {
+            item.paint(g);
+        } finally {
+            g.dispose();
+        }
+        // 取 (1,1)：fillRect 铺满整块，文字在中间，角落一定是底色
+        return new Color(image.getRGB(1, 1));
+    }
+
+    /** WCAG 相对亮度对比度。 */
+    private static double contrast(Color a, Color b) {
+        double la = luminance(a);
+        double lb = luminance(b);
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+    }
+
+    private static double luminance(Color c) {
+        return 0.2126 * channel(c.getRed())
+                + 0.7152 * channel(c.getGreen())
+                + 0.0722 * channel(c.getBlue());
+    }
+
+    private static double channel(int value) {
+        double v = value / 255.0;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    }
 
     private static List<String> menuItemLabels(JPopupMenu menu) {
         List<String> labels = new ArrayList<>();

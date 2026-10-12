@@ -232,7 +232,7 @@ public final class XlsxFixture {
         return "<c r=\"" + ref + "\" t=\"b\"><v>" + (value ? "1" : "0") + "</v></c>";
     }
 
-    /** 公式单元格。<b>只有缓存值</b>，没有公式本身 —— Excel 存盘就是这样 */
+    /** 公式单元格。只有缓存值，没有公式本身 —— Excel 存盘就是这样 */
     public static String formulaCell(String ref, String cachedValue) {
         return "<c r=\"" + ref + "\"><f>SUM(A1:A2)</f><v>" + cachedValue + "</v></c>";
     }

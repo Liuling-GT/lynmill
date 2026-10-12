@@ -38,14 +38,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * API 层的真实覆盖：两个数据源相关 Controller + 全局异常处理。
  *
- * <p><b>为什么这里必须走 MockMvc 而不是直接调方法</b>：
+ * <p>为什么这里必须走 MockMvc 而不是直接调方法：
  * 这一层的逻辑大半不在方法体里，而在框架装配上 —— 路由、请求体反序列化、
  * 异常到响应的映射、以及令牌过滤器有没有真的拦在前面。
  * 直接调 {@code controller.list()} 这些一个都测不到。
  * （对比：{@code PreferencesControllerTest} 就选择直接调，因为那边没有这些。
  *  取舍看这一层到底有什么可测。）
  *
- * <p><b>令牌</b>：{@link TokenFilter} 拦下所有 {@code /api/**} 请求，
+ * <p>令牌：{@link TokenFilter} 拦下所有 {@code /api/**} 请求，
  * 不带 {@code X-TinyQuery-Token} 一律 401。所以每个用例都要带上真实令牌 ——
  * 用 {@link SecurityToken#value()} 而不是造假值，这样连过滤器一起走通了。
  */
@@ -100,7 +100,7 @@ class DataSourceApiTest {
     /**
      * 带令牌的请求头，供各用例复用。
      *
-     * <p><b>还要显式带 Host</b>：{@link TokenFilter} 的第一道关是 Host 校验
+     * <p>还要显式带 Host：{@link TokenFilter} 的第一道关是 Host 校验
      * （防 DNS rebinding），MockMvc 默认发的 Host 过不了那一关，会直接 403 ——
      * 而且它挡在令牌校验之前，所以「只带令牌」的写法会得到一个 403 而不是 200，
      * 排查时容易误以为是令牌不对。
@@ -301,7 +301,7 @@ class DataSourceApiTest {
     /**
      * 一个带敏感字段、且总是加载成功的假数据源。
      *
-     * <p><b>为什么要造它</b>：脱敏只对 loader 用 {@code FieldSpec.secret}
+     * <p>为什么要造它：脱敏只对 loader 用 {@code FieldSpec.secret}
      * 声明过的字段生效。真实项目里只有 MySQL / PostgreSQL 声明了 {@code password}，
      * 而这两个源没有服务器、注册会失败 —— 于是列表是空的，
      * 「密码没泄露」这种断言在空列表上照样成立，是个假绿（对照实验实测确认）。

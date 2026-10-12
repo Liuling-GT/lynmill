@@ -10,11 +10,11 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 平台选择逻辑的测试。
  *
- * <p>这里验的核心不是「选得对不对」，而是<b>「任何情况下都恰好只有一个
- * CredentialStore Bean」</b>。原来的写法是每个实现各挂一个
+ * <p>这里验的核心不是「选得对不对」，而是「任何情况下都恰好只有一个
+ * CredentialStore Bean」。原来的写法是每个实现各挂一个
  * {@code @ConditionalOnProperty(matchIfMissing = true)}，属性缺省时会在 macOS 上
  * 同时创建 Windows 和 macOS 两个实现，而 {@code DataSourceManager} 是按类型注入
- * 单个的 → 抛 {@code NoUniqueBeanDefinitionException} → <b>程序直接起不来</b>。</p>
+ * 单个的 → 抛 {@code NoUniqueBeanDefinitionException} → 程序直接起不来。</p>
  *
  * <p>这类错误在编译期完全看不出来，只有真的启动一次才知道，所以要有测试盯住。</p>
  */

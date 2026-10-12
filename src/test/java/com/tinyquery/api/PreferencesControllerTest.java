@@ -1,6 +1,7 @@
 package com.tinyquery.api;
 
 import com.tinyquery.config.PathResolver;
+import com.tinyquery.desktop.DesktopTheme;
 import com.tinyquery.i18n.DesktopLocale;
 import com.tinyquery.i18n.Messages;
 import org.junit.jupiter.api.AfterEach;
@@ -17,30 +18,40 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 语言同步接口。
+ * 语言与主题的同步接口。
  *
  * <p>这些用例直接调 controller 方法而不是走 {@code MockMvc}：
  * 本接口的逻辑全在「切换 → 落盘 → 通知桌面端」这条链上，
  * 没有参数校验、没有状态码分支，起一个 HTTP 栈只是把测试变慢。
  * 序列化与路由由 Spring 负责，那是框架的事，不是这里要测的。</p>
+ *
+ * <p>语言与主题放在同一个类里，是因为它们共用
+ * {@code DesktopSyncService} 这一条通知链 —— 最该防的缺陷正是
+ * 「切一个顺手把另一个也动了」，拆成两个类反而测不到这一点。</p>
  */
-@DisplayName("PreferencesController 语言同步")
+@DisplayName("PreferencesController 语言与主题同步")
 class PreferencesControllerTest {
 
     private String savedLocale;
+    private String savedTheme;
 
     @BeforeEach
     void rememberState() {
         savedLocale = Messages.desktopLocale();
+        savedTheme = DesktopTheme.current();
     }
 
     @AfterEach
-    void restoreState() {
+    void restoreState() throws IOException {
         Messages.setDesktopLocale(savedLocale);
+        // 主题也要还原，并清掉用例写出来的 theme.txt ——
+        // 只还原内存的话，下一个用例的 apply() 会读到上一个用例留下的文件
+        DesktopTheme.switchTo(savedTheme);
+        Files.deleteIfExists(PathResolver.getDataDir().resolve(DesktopTheme.FILE_NAME));
     }
 
     private static PreferencesController controller() {
-        return new PreferencesController(new com.tinyquery.desktop.LocaleSyncService());
+        return new PreferencesController(new com.tinyquery.desktop.DesktopSyncService());
     }
 
     // ==================== 读写 ====================
@@ -206,5 +217,109 @@ class PreferencesControllerTest {
 
         c.setLocale(new PreferencesController.LocaleRequest("en"));
         assertTrue(DesktopLocale.version() > before, "语言变了却没自增版本号，桌面端不会刷新");
+    }
+
+    // ==================== 主题 ====================
+
+    @Test
+    @DisplayName("切主题后，读取接口返回新主题")
+    void setThenGetTheme() {
+        PreferencesController c = controller();
+
+        c.setTheme(new PreferencesController.ThemeRequest("bamboo"));
+
+        assertEquals("bamboo", DesktopTheme.current());
+        assertEquals("bamboo", c.getTheme().data().get("theme"));
+    }
+
+    @Test
+    @DisplayName("主题响应体里回传的是实际生效的值，不是请求值")
+    void themeResponseEchoesAppliedNotRequested() {
+        // 与语言同理：前端拿回执更新本地状态，回传请求值会在
+        // 「请求了认不出的值」时让前后端不一致
+        PreferencesController c = controller();
+
+        var response = c.setTheme(new PreferencesController.ThemeRequest("chartreuse"));
+
+        assertEquals(DesktopTheme.DEFAULT, response.data().get("theme"),
+                "认不出的主题应当回落默认，并把回落后的值回传");
+    }
+
+    @Test
+    @DisplayName("主题请求体为 null、或 theme 为 null 时回落默认主题，不报错")
+    void nullThemeFallsBackToDefault() {
+        PreferencesController c = controller();
+
+        assertDoesNotThrow(() -> c.setTheme(null));
+        assertEquals(DesktopTheme.DEFAULT, DesktopTheme.current());
+
+        assertDoesNotThrow(() -> c.setTheme(new PreferencesController.ThemeRequest(null)));
+        assertEquals(DesktopTheme.DEFAULT, DesktopTheme.current());
+    }
+
+    @Test
+    @DisplayName("支持的主题列表非空、默认主题在前、每项都带强调色")
+    void themeListIsStable() {
+        var list = controller().listThemes().data();
+
+        assertEquals(4, list.size());
+        assertEquals(DesktopTheme.DEFAULT, list.get(0).get("value"),
+                "默认主题不在第一位，设置页会把默认主题排在中间");
+        // 顺序必须与 DesktopTheme.supported() 一致 —— 设置页按它排色卡
+        assertEquals(DesktopTheme.supported(),
+                list.stream().map(m -> m.get("value")).toList());
+
+        for (var item : list) {
+            String accent = item.get("accent");
+            assertNotNull(accent, item.get("value") + " 没有 accent");
+            assertTrue(accent.matches("#[0-9a-f]{6}"),
+                    item.get("value") + " 的 accent 不是 #rrggbb 形式：" + accent);
+        }
+    }
+
+    @Test
+    @DisplayName("主题列表里的强调色与 DesktopTheme 取到的一致")
+    void themeListAccentsMatchDesktopTheme() {
+        // 列表里的 accent 是给设置页画色点用的。它要是和实际生效的颜色不同，
+        // 用户会看到「色点是绿的、切过去是蓝的」
+        for (var item : controller().listThemes().data()) {
+            String expected = String.format("#%06x",
+                    DesktopTheme.accentOf(item.get("value")).getRGB() & 0xFFFFFF);
+            assertEquals(expected, item.get("accent"),
+                    item.get("value") + " 的 accent 与实际强调色不一致");
+        }
+    }
+
+    @Test
+    @DisplayName("切主题会把主题真的写进 theme.txt —— 走真实实现")
+    void themeSwitchPersistsToFile() throws IOException {
+        Path file = PathResolver.getDataDir().resolve(DesktopTheme.FILE_NAME);
+        Files.deleteIfExists(file);
+
+        controller().setTheme(new PreferencesController.ThemeRequest("coffee"));
+
+        assertTrue(Files.isRegularFile(file),
+                "setTheme 没有写 theme.txt，重启后主题会丢失：" + file);
+        assertEquals("coffee", Files.readString(file, StandardCharsets.UTF_8).trim());
+    }
+
+    @Test
+    @DisplayName("语言与主题互不干扰 —— 切一个不该动另一个")
+    void localeAndThemeAreIndependent() throws IOException {
+        // 两者共用 DesktopSyncService，很容易写成「切语言顺手把主题也重置了」。
+        // 那条路走错的话，用户在设置页切语言会发现颜色也变了
+        PreferencesController c = controller();
+        c.setTheme(new PreferencesController.ThemeRequest("indigo"));
+        long themeVersion = DesktopTheme.version();
+
+        c.setLocale(new PreferencesController.LocaleRequest("en"));
+
+        assertEquals("indigo", DesktopTheme.current(), "切语言把主题也改掉了");
+        assertEquals(themeVersion, DesktopTheme.version(), "切语言推进了主题版本号");
+        assertEquals(Messages.EN, Messages.desktopLocale());
+
+        // 反过来：切主题不该动语言
+        c.setTheme(new PreferencesController.ThemeRequest("coffee"));
+        assertEquals(Messages.EN, Messages.desktopLocale(), "切主题把语言也改掉了");
     }
 }

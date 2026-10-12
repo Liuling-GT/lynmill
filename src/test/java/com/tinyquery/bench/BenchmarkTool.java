@@ -24,11 +24,11 @@ import java.util.Map;
  * <p>所以把测量做成可重跑的：{@code mvn test -Dtest=BenchmarkTool}，
  * 输出直接可以粘进 README。
  *
- * <p><b>测量口径</b>（重要，写进 README 时必须一起说明）：
+ * <p>测量口径（重要，写进 README 时必须一起说明）：
  * <ul>
- *   <li><b>加载</b>：读 CSV + 建列式存储，只做一次</li>
- *   <li><b>解析</b>：{@code parse} 的耗时，不含执行</li>
- *   <li><b>执行</b>：{@code executePage} 的耗时，含过滤 + 投影 + 分页</li>
+ *   <li>加载：读 CSV + 建列式存储，只做一次</li>
+ *   <li>解析：{@code parse} 的耗时，不含执行</li>
+ *   <li>执行：{@code executePage} 的耗时，含过滤 + 投影 + 分页</li>
  * </ul>
  * 把三段分开报，是因为它们的量级差好几个数量级，混在一起看不出瓶颈在哪。
  *

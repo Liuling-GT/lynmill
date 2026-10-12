@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 启动恢复行为。
  *
- * <p>这组测试的重心只有一句话：<b>坏数据源不能让程序起不来。</b>
+ * <p>这组测试的重心只有一句话：坏数据源不能让程序起不来。
  * 因此每个用例都在「故意搞坏一个东西」，然后要求程序照常工作。</p>
  */
 @DisplayName("DataSourceBootstrap 启动恢复")

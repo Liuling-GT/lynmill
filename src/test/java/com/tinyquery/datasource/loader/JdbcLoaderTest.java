@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * {@link JdbcLoader} 基类的真实覆盖。
  *
- * <p><b>为什么用真的 SQLite 而不是 mock 掉 JDBC</b>：
+ * <p>为什么用真的 SQLite 而不是 mock 掉 JDBC：
  * 这个基类的坑几乎全在「真实驱动的实际行为」上 —— 类型映射、NULL 怎么返回、
  * 列标签取的是别名还是原名、资源有没有关掉。把 Connection 换成 mock，
  * 这些全部测不到，测的只是「我们以为驱动会怎么表现」。
@@ -245,7 +245,7 @@ class JdbcLoaderTest {
     @Test
     @DisplayName("查询失败被包装成 DataSourceException，且保留 SQLException 作为 cause")
     void sqlExceptionIsWrapped() {
-        // 注意夹具：这里必须用一个**存在**的库 + **不存在**的表。
+        // 注意夹具：这里必须用一个存在的库 + 不存在的表。
         // 库文件不存在的话，SQLiteLoader.validateExtra 会先把请求拦下，
         // 根本走不到 JDBC 这一层 —— 那样就测不到错误包装了。
         DataSourceConfig c = config(db.toString(), "no_such_table");
@@ -299,7 +299,7 @@ class JdbcLoaderTest {
      * 诚实记录一条测试的边界。
      *
      * <p>{@code load()} 里用的是 {@code getColumnLabel}，而这条在 SQLite 上
-     * <b>测不出区别</b>：实测（写探针直接问驱动）SQLite 的
+     * 测不出区别：实测（写探针直接问驱动）SQLite 的
      * {@code getColumnName} 对别名也返回别名（{@code SELECT id AS 主键} 时
      * 两个 API 都返回「主键」）。也就是说，把它改成 {@code getColumnName}，
      * 上面那条用例照样绿 —— 对照实验已经确认了这一点。

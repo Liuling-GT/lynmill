@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 查询计时。
  *
  * <p>这个类存在的理由就是「{@code currentTimeMillis} 测不准毫秒级耗时」，
- * 所以测试也要盯着这一点：<b>能不能测出比墙上时间粒度更细的时间</b>，
+ * 所以测试也要盯着这一点：能不能测出比墙上时间粒度更细的时间，
  * 而不只是"能返回一个数"。</p>
  */
 @DisplayName("查询计时：用 nanoTime，能测出墙上时间看不到的亚毫秒区间")

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>所以这里把文档里每一句"我们认为会怎样"变成可执行的断言。改动导致行为变化时，
  * 这里会红，于是修改的人必须同时更新 NOTES.md —— 要么改结论，要么改文档。
  *
- * <p><b>维护约定</b>：如果某条限制被实现了，不要删掉这里的测试，
+ * <p>维护约定：如果某条限制被实现了，不要删掉这里的测试，
  * 而是把它从"会抛异常"改成"能正常解析"，并同步删掉 NOTES.md 的条目。
  * 反过来，如果新增了限制，先在这里加断言，再去写文档。
  */
@@ -33,12 +33,29 @@ class DocumentedLimitationsTest {
     // ==================== 一、已知限制（有意为之） ====================
 
     @Test
-    @DisplayName("限制 1.1：group by 不支持")
+    @DisplayName("限制 1.1：group by 不支持，且它并不是被专门拦下的")
     void groupByNotSupported() {
-        // 解析环节就得拦下来。若哪天放行到执行期才报错，
-        // NOTES 里"当前是一套整体聚合的执行模型"这句话就不再准确了
+        // 【夹具修正 2026-10-11】这条原来用的是
+        //     assertThrows(RuntimeException.class,
+        //             () -> parser.parse("select 城市, count(*) from t group by 城市"));
+        // 注释写着「解析环节就得拦下来」。但那条 SQL 之所以抛，是因为
+        // 「普通列与聚合混写」规则 —— 跟 group by 无关：把 group by 去掉，
+        // 报错一字不差。所以这个夹具测的是混写规则，group by 一次都没被测到。
+        //
+        // 换成纯 group by 之后才看清真相：它在解析期根本不被拦，
+        // 而是被整段当成表名，直到执行层才报「数据源不存在」。
+        // （README 与 NOTES 2.4 当时都错说成"有专门文案"，已同步更正。）
+        var stmt = parser.parse("select count(*) from t group by 城市");
+
+        assertEquals("t group by 城市", stmt.tableName(),
+                "group by 被整段当成了表名 —— 它没有专门处理，也没有专门报错");
+
+        // 对照：混写才是真正被解析期专门拦下的那一条。
+        // 保留它，是为了让上面那句"与 group by 无关"可被验证 ——
+        // 同一句话去掉 group by 后照样抛，说明拦的是混写。
         assertThrows(RuntimeException.class,
-                () -> parser.parse("select 城市, count(*) from t group by 城市"));
+                () -> parser.parse("select 城市, count(*) from t"),
+                "普通列与聚合混写应当在解析期被拦下");
     }
 
     @Test
@@ -77,7 +94,7 @@ class DocumentedLimitationsTest {
     @DisplayName("限制 1.3：标识符不能加引号 —— 解析器会把它连引号一起当成表名")
     void quotedIdentifiersNotSupported() {
         // 注意这里断言的是「解析出来的表名带着引号」而不是「抛异常」。
-        // 解析器其实**不报错**，它把 `t` 连引号一起当成表名，
+        // 解析器其实不报错，它把 `t` 连引号一起当成表名，
         // 于是"数据源不存在：`t`" 这个误导性错误推迟到执行层才出现。
         // 这个区分很重要：以为解析器会拦，就会去找解析器的错，方向全错
         assertAll(
@@ -118,7 +135,7 @@ class DocumentedLimitationsTest {
     @DisplayName("缺陷 2.2：名字里含 from 会被当成表名的一部分")
     void nameContainingFromBreaksTableName() {
         // 这是缺陷不是限制 —— 名字里出现 from 完全合法。
-        // 实测的真相：解析器**不报错**，它按第一个 " from " 切分，
+        // 实测的真相：解析器不报错，它按第一个 " from " 切分，
         // 于是表名变成了一堆垃圾，报错推迟到查数据源时。
         //
         // 下面三条都是【实测出来的】，不是推想的：
@@ -163,9 +180,22 @@ class DocumentedLimitationsTest {
                 () -> assertEquals("t join t2 on t.姓名 = t2.姓名",
                         parser.parse("select * from t join t2 on t.姓名 = t2.姓名").tableName(),
                         "join 整段被当成了表名"),
-                () -> assertThrows(RuntimeException.class,
-                        () -> parser.parse("select 城市, count(*) from t group by 城市"),
-                        "group by 已能在解析期被拦下（这是后来补的）"));
+                // 【2026-10-11 更正】这条以前写的是
+                //     assertThrows(RuntimeException.class,
+                //             () -> parser.parse("select 城市, count(*) from t group by 城市"))
+                // 并注释「group by 已能在解析期被拦下（这是后来补的）」。两处都错：
+                //
+                //   1. 那条 SQL 之所以抛，是因为「普通列与聚合混写」规则 ——
+                //      与 group by 毫无关系。把 group by 去掉后它照样抛，
+                //      两条报错一字不差（实测确认）。夹具测的是那条规则。
+                //   2. group by 从来没有被专门处理过，主代码里搜不到任何相关逻辑。
+                //
+                // 夹具选错，就把「group by 会被整段吞进表名」这个真相盖住了 ——
+                // 而 README 与 NOTES 当时都声称它有专门文案。
+                // 现在换成不带普通列的纯 group by，它才真正测到 group by 本身。
+                () -> assertEquals("t group by 城市",
+                        parser.parse("select count(*) from t group by 城市").tableName(),
+                        "group by 仍被整段当成表名（它没有专门处理，也没有专门报错）"));
     }
 
     // ==================== 已实现、文档不得倒退 ====================

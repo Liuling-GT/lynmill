@@ -13,15 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 把 NOTES.md「限制 1.6：没有 application.properties，配置写在启动类里」钉住。
  *
- * <p><b>为什么要专门立一个类</b>：NOTES.md 第四节承诺「上面每一条都有对应的测试」。
+ * <p>为什么要专门立一个类：NOTES.md 第四节承诺「上面每一条都有对应的测试」。
  * 1.6 这条讲的是启动配置，不属于解析器，放不进 {@code DocumentedLimitationsTest}。</p>
  *
- * <p><b>它防的是什么</b>：将来有人看到没有 {@code application.properties}，
+ * <p>它防的是什么：将来有人看到没有 {@code application.properties}，
  * 以为是漏了，顺手补一个空的，或者把 {@code server.port} 这类
- * <b>运行时才能算出来</b>的值写死进去。那会让「端口被占用时自动回退」
+ * 运行时才能算出来的值写死进去。那会让「端口被占用时自动回退」
  * 这类能力静默失效 —— 而且不会有任何测试因此变红。</p>
  *
- * <p>所以这条限制值得一个断言：<b>静态配置文件里不该出现运行时才能决定的值。</b></p>
+ * <p>所以这条限制值得一个断言：静态配置文件里不该出现运行时才能决定的值。</p>
  */
 class StartupConfigurationTest {
 
@@ -61,7 +61,7 @@ class StartupConfigurationTest {
     @Test
     @DisplayName("限制 1.6：那些运行时才能算的值，启动类确实在用 System.setProperty 设置")
     void runtimeValuesAreSetFromCode() throws Exception {
-        // 反向确认：这些值不是"没人管"，而是**由代码设置**。
+        // 反向确认：这些值不是"没人管"，而是由代码设置。
         // 只断言"文件里没有"是不够的 —— 那样把设置代码删掉也照样绿
         String source = Files.readString(
                 Path.of("src/main/java/com/tinyquery/TinyQueryApplication.java"));

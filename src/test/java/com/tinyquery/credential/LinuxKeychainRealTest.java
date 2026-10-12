@@ -16,24 +16,16 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * 在真实 Linux 上跑 {@link LinuxCredentialStore}，真的写进系统钥匙串。
  *
- * <h2>什么时候会跳过</h2>
+ * <p>只有在本机确实有可用的 Secret Service 时才执行。以下情况都会跳过而不是失败：
+ * 非 Linux（{@code @EnabledOnOs}）；没有 libsecret（未安装桌面组件的最小化系统）；
+ * 有 libsecret 但没有 keyring 守护进程 / 没有 D-Bus 会话（WSL、服务器、纯 WM 环境）；
+ * keyring 存在但被锁住，且当前会话无法解锁。</p>
  *
- * <p>只有在<b>本机确实有可用的 Secret Service</b> 时才执行。以下情况都会跳过而不是失败：</p>
- * <ul>
- *   <li>非 Linux（{@code @EnabledOnOs}）</li>
- *   <li>没有 libsecret（未安装桌面组件的最小化系统）</li>
- *   <li>有 libsecret 但没有 keyring 守护进程 / 没有 D-Bus 会话（WSL、服务器、纯 WM 环境）</li>
- *   <li>keyring 存在但被锁住，且当前会话无法解锁</li>
- * </ul>
+ * <p>后三种在 Linux 上是常态而不是异常，所以跳过是正确行为 —— 硬要它失败，
+ * 只会让这些环境上的构建永远红。真正该由 {@link LinuxCredentialStoreTest}
+ * 保证的是「退化行为正确」，那个测试不依赖任何原生环境。</p>
  *
- * <p><b>后三种在 Linux 上是常态而不是异常</b>，所以跳过是正确行为 ——
- * 硬要它失败，只会让这些环境上的构建永远红。真正该由
- * {@link LinuxCredentialStoreTest} 保证的是「退化行为正确」，
- * 那个测试不依赖任何原生环境。</p>
- *
- * <h2>测试数据</h2>
- *
- * <p>用固定的 key 前缀，每个用例结束后删除，避免在用户的钥匙串里留垃圾
+ * <p>测试数据用固定的 key 前缀，每个用例结束后删除，避免在用户的钥匙串里留垃圾
  * （上一轮 macOS 那边就因为留了 e2etest 条目需要手工清理）。</p>
  */
 @EnabledOnOs(OS.LINUX)

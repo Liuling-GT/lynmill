@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * macOS 实现的逻辑测试。
  *
- * <p>本类<b>全部用假的原生层</b>，一行原生调用都不发生，因此在 Windows / Linux 上
+ * <p>本类全部用假的原生层，一行原生调用都不发生，因此在 Windows / Linux 上
  * 也会照常运行 —— 这正是 {@link MacKeychainBackend} 这层接缝的目的。
  * 尤其是「更新已有条目必须原地改」那条：它一旦破功，症状是「用户点了『始终允许』
  * 还是每次都弹窗」，在没有 Mac 的 CI 上根本发现不了。</p>
@@ -26,7 +26,7 @@ class MacCredentialStoreTest {
     /**
      * 假的原生层：记录「按什么顺序调了哪些动作」，并维护一张内存表。
      *
-     * <p>记的是动作序列而不是最终状态 —— 因为坑 ① 的本质就是<b>动作序列</b>错了：
+     * <p>记的是动作序列而不是最终状态 —— 因为坑 ① 的本质就是动作序列错了：
      * 先删后建和原地改的最终状态一模一样，只有调用序列能把它们区分开。</p>
      */
     static class FakeBackend implements MacKeychainBackend {

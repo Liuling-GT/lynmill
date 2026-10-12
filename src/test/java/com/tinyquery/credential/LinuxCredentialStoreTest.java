@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * {@link LinuxCredentialStore} 的逻辑测试。
  *
- * <p><b>全部用假的原生层驱动，因此不需要 Linux、更不需要 D-Bus 会话</b> ——
+ * <p>全部用假的原生层驱动，因此不需要 Linux、更不需要 D-Bus 会话 ——
  * 在 Windows 上复核、在将来的 CI 里都能跑。这正是当初把原生调用抽成
  * {@link LinuxKeychainBackend} 接缝的目的。</p>
  */
@@ -282,7 +282,7 @@ class LinuxCredentialStoreTest {
         assertEquals(1, backend.calls.stream().filter("loadable"::equals).count());
     }
 
-    // ==================== ★ 回归：原生库必须懒加载 ====================
+    // ==================== 回归：原生库必须懒加载 ====================
 
     @Test
     @DisplayName("★ 生产构造函数在非 Linux 上也不能抛 —— 原生库是懒加载的")
