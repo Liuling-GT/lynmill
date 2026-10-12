@@ -1,73 +1,80 @@
 # TinyQuery
 
-**本地零运维的多数据源 SQL 查询引擎。** 把 CSV / Excel 表格、MySQL、PostgreSQL、SQLite 拖进来，直接用 SQL 查，不需要装数据库、不需要写代码。
+**English** | [中文](README.zh-CN.md)
 
-单个可执行程序，自带运行时，免安装 JDK。数据不出本机。
+**A local, zero-ops SQL query engine for multiple data sources.** Drag in CSV / Excel files, MySQL, PostgreSQL, or SQLite, and query them with SQL — no database to install, no code to write.
 
----
-
-## 目录
-
-- [这是什么](#这是什么)
-- [功能特性](#功能特性)
-- [支持的数据源](#支持的数据源)
-- [下载与运行](#下载与运行)
-- [⚠️ 首次打开提示（程序未签名）](#-首次打开提示程序未签名)
-- [快速上手](#快速上手)
-- [SQL 支持范围与限制](#sql-支持范围与限制)
-- [数据存放位置](#数据存放位置)
-- [安全说明](#安全说明)
-- [从源码构建](#从源码构建)
-- [已知问题](#已知问题)
-- [第三方依赖与许可](#第三方依赖与许可)
+A single executable with a bundled runtime, so no JDK installation is required. Your data never leaves your machine.
 
 ---
 
-## 这是什么
+## Table of Contents
 
-平时想查一个 CSV 文件，要么用 Excel 打开（几十万行就卡死），要么为了跑一句 SQL 去装 MySQL 再导数据。TinyQuery 想做的是把这件事缩短到"双击 → 拖文件 → 写 SQL"。
-
-它的做法是把数据加载进内存里的**列式存储**，用**向量化**方式执行查询。所以对扫描类查询（`count(*)`、条件过滤、聚合）比逐行处理快得多。
-
-**适合**：百万行以内、单机、临时或反复分析同一批数据。
-**不适合**：TB 级数据、多用户并发、需要事务写入的场景 —— 那些应该用 ClickHouse / DuckDB / 真正的数据库。
-
----
-
-## 功能特性
-
-- **多种数据源统一成 SQL 表**：CSV、Excel、MySQL/MariaDB、PostgreSQL、SQLite 注册后都能用同一套 SQL 查，甚至可以在结果之上继续分析
-- **列式存储 + 向量化执行**：扫描与聚合快，适合宽表与大批量过滤
-- **结果分页**：默认每页 50 行，大结果集不会一次塞满浏览器
-- **图表**：查询结果可以直接画成折线/柱状/饼图，聚合在服务端算
-- **导出 CSV**：带 UTF-8 BOM，Excel 打开中文列名不乱码；导出范围与界面一致，`limit` / `offset` 同样生效
-- **数据源持久化**：注册过的数据源写在 `datasources.json` 里，重开程序自动恢复
-- **密码可选保存**：勾选后存进**系统凭据管理器**（Windows 凭据管理器 / macOS 钥匙串 / Linux Secret Service），不写进配置文件
-- **中文友好**：CSV 自动探测编码（UTF-8 / GBK）、剥离 BOM、支持中文路径与中文文件名
-- **日志固定 UTF-8**：日志文件按 UTF-8 写，中文不会因系统区域设置不同而乱码
-- **只监听本机**：绑定 `127.0.0.1`，并带一次性访问令牌，局域网内其它机器访问不到
+- [What Is This](#what-is-this)
+- [Features](#features)
+- [Supported Data Sources](#supported-data-sources)
+- [Download and Run](#download-and-run)
+- [⚠️ First Launch Prompt (Unsigned Application)](#-first-launch-prompt-unsigned-application)
+- [Quick Start](#quick-start)
+- [SQL Support and Limitations](#sql-support-and-limitations)
+- [Where Data Is Stored](#where-data-is-stored)
+- [Security](#security)
+- [Build from Source](#build-from-source)
+- [Known Issues](#known-issues)
+- [Third-Party Dependencies and Licenses](#third-party-dependencies-and-licenses)
+- [About This Project](#about-this-project)
+  - [How It Was Built](#how-it-was-built)
+  - [Disclaimer](#disclaimer)
+  - [Feedback and Contributions](#feedback-and-contributions)
+  - [License](#license)
 
 ---
 
-## 支持的数据源
+## What Is This
 
-| 类型 | 需要填 | 说明 |
+Say you want to query a CSV file. You either open it in Excel (which dies at a few hundred thousand rows) or install MySQL and import the data just to run one SQL statement. TinyQuery aims to shorten that to "double-click → drop in a file → write SQL."
+
+It does this by loading data into an in-memory **columnar store** and executing queries in a **vectorized** fashion. That makes scan-heavy queries (`count(*)`, filtering, aggregation) far faster than row-by-row processing.
+
+**Good for**: up to a few million rows, single machine, ad-hoc or repeated analysis of the same dataset.
+**Not for**: terabyte-scale data, multi-user concurrency, or workloads that need transactional writes — use ClickHouse / DuckDB / a real database for those.
+
+---
+
+## Features
+
+- **Many data sources, one SQL interface**: CSV, Excel, MySQL/MariaDB, PostgreSQL, and SQLite all become queryable through the same SQL once registered — you can even analyze the results further
+- **Columnar storage + vectorized execution**: fast scans and aggregations, well suited to wide tables and large-scale filtering
+- **Paginated results**: 50 rows per page by default, so large result sets don't flood the browser
+- **Charts**: render query results directly as line/bar/pie charts, with aggregation computed server-side
+- **CSV export**: includes a UTF-8 BOM so Chinese column names open correctly in Excel; the exported range matches the UI, and `limit` / `offset` apply as well
+- **Persistent data sources**: registered data sources are written to `datasources.json` and restored automatically on the next launch
+- **Optional password storage**: when enabled, passwords go into the **system credential manager** (Windows Credential Manager / macOS Keychain / Linux Secret Service), never into a config file
+- **Chinese-friendly**: automatic CSV encoding detection (UTF-8 / GBK), BOM stripping, and support for Chinese paths and file names
+- **UTF-8 logging**: log files are always written as UTF-8, so Chinese text never breaks because of the system locale
+- **Local-only listener**: binds to `127.0.0.1` with a one-time access token, unreachable from other machines on the LAN
+
+---
+
+## Supported Data Sources
+
+| Type | Required fields | Notes |
 |---|---|---|
-| **CSV 文件** | 文件路径 | 可配编码、分隔符、注释前缀、引号感知 |
-| **Excel 文件** | 文件路径 + 工作表名 | `.xlsx`。工作表名留空读第一张；公式单元格只读缓存值 |
-| **SQLite 文件** | 数据库文件路径 + 表名 | 一个文件里的每张表注册成一个数据源 |
-| **MySQL / MariaDB** | 主机、端口、库名、表名、用户名、密码 | 加载时执行 `SELECT *` 全表读取，大表注意内存 |
-| **PostgreSQL** | 主机、端口、库名、schema、表名、用户名、密码 | 同上；标识符不加引号时会折叠成小写，请用小写书写 |
+| **CSV file** | File path | Configurable encoding, delimiter, comment prefix, quote awareness |
+| **Excel file** | File path + sheet name | `.xlsx`. Leave the sheet name empty to read the first sheet; formula cells are read as cached values only |
+| **SQLite file** | Database file path + table name | Each table in a file is registered as a separate data source |
+| **MySQL / MariaDB** | Host, port, database, table, username, password | Runs `SELECT *` to load the whole table; watch memory on large tables |
+| **PostgreSQL** | Host, port, database, schema, table, username, password | Same as above; unquoted identifiers fold to lowercase, so write them in lowercase |
 
-> **注册时的"名字"就是 SQL 里的表名。** 例如注册时取名 `sales`，之后写 `select * from sales`。
+> **The "name" you give at registration time is the table name in SQL.** For example, if you register a source named `sales`, later you write `select * from sales`.
 
-### 为什么没有 PDF 数据源
+### Why There Is No PDF Data Source
 
-TinyQuery **不支持 PDF**。早期版本做过"只读带框线表格"的一版，实测后**主动撤除**了。原因值得说清楚，因为"能读一部分"听起来比"不支持"更好，实际上不是：
+TinyQuery **does not support PDF**. An early version read "bordered tables only," but after real-world testing that support was **deliberately removed**. The reasoning is worth spelling out, because "reads some of them" sounds better than "not supported" but isn't:
 
-**一、PDF 里没有"表格"，只有线和带坐标的文字。** 从这些还原行列必然是**推断**，而推断就会错。业界最好的开源方案（Camelot，专为 PDF 表格而生）在公认基准 ICDAR-2013 上的 F1 也只有约 **0.78**，两成左右是错的。
+**1. A PDF contains no "table," only lines and positioned text.** Reconstructing rows and columns from those is necessarily an **inference**, and inferences are sometimes wrong. The best open-source solution in the field (Camelot, built specifically for PDF tables) reaches only about **0.78** F1 on the established ICDAR-2013 benchmark — roughly one in five is wrong.
 
-**二、最要紧的一类文件恰好救不了 —— 从 Excel 导出的 PDF。** 这类文件里，单元格的文字会**越过自己的列边界**（甚至跨行），而框线是按视觉行画的。于是**框线切出来的"格"和文字的"逻辑单元格"不是一回事**：
+**2. The files that matter most are exactly the ones it can't rescue — PDFs exported from Excel.** In these files, cell text **overflows its own column boundary** (sometimes across rows), while the ruling lines are drawn along visual rows. So **the "cells" cut out by the lines are not the same as the text's logical cells**:
 
 ```
 ┌────┬──────────────────────────┐
@@ -77,87 +84,87 @@ TinyQuery **不支持 PDF**。早期版本做过"只读带框线表格"的一版
    实际得到：  列1="阶段 0 · 代码改造（收"   列2="尾端）端口策略改造：…"
 ```
 
-文件里只有"某个坐标上有个字"，**没有任何信息说明"（收"和"尾端）"属于同一个单元格**——两种解释都自洽。想还原就只能猜。
+All the file says is "there is a character at this coordinate." **Nothing states that "（收" and "尾端）" belong to the same cell** — both readings are self-consistent. Reconstructing it means guessing.
 
-**三、换库、或者"先转成 Excel 再读"，都解决不了。** 都试过：`pdfplumber`（业界最常用）在同一份文件上给出**完全相同**的错误切分，因为它看的框线和我们是同一份。而"先转 Excel"更糟 —— 错误被洗成一张**看起来正常的 xlsx**，用户只会以为是原文件就这么写的，**把"可检测的失败"变成了"不可检测的错误"**。
+**3. Switching libraries or "convert to Excel first, then read" doesn't help.** Both were tried: `pdfplumber` (the most widely used in the field) produces the **exact same** wrong split on the same file, because it sees the same ruling lines we do. And "convert to Excel first" is worse — the error gets laundered into an **xlsx that looks normal**, so users assume the original file was written that way, **turning a detectable failure into an undetectable error**.
 
-**四、所以这是个取舍，不是能力不足。** 一张还原错的表，`select count(*)` 照样给出行数，列名也像模像样，用户很难自己发现数字串了列。**这种"看起来对、实际错"的结果比明确说不支持危险得多。**
+**4. So this is a trade-off, not a missing capability.** With a badly reconstructed table, `select count(*)` still returns a row count and the column names still look plausible, so users rarely notice the numbers landed in the wrong columns. **That kind of "looks right, is wrong" result is far more dangerous than an explicit statement that something isn't supported.**
 
-**遇到只拿得到 PDF 的表格怎么办**：找原始 Excel/CSV 文件直接导入（最可靠）；确实只有 PDF 时，用 Acrobat / WPS 的"PDF 转 Excel"，**转完自己核对一遍**再导入。转换工具同样在猜，核对这一步不能省。
+**If a table only exists as a PDF**: find the original Excel/CSV file and import it directly (most reliable). If a PDF really is all you have, use "PDF to Excel" in Acrobat / WPS, **verify the conversion yourself**, and then import it. Conversion tools are guessing too, and that verification step is not optional.
 
 ---
 
-## 下载与运行
+## Download and Run
 
-程序是**免安装**的：解压出来直接运行，不需要预先装 Java（运行时已经打包在里面）。
+The application is **portable**: unzip it and run — no need to install Java first (the runtime is bundled).
 
 ### Windows
 
-1. 解压 `TinyQuery-1.0.0-win.zip`
-2. 双击里面的 `TinyQuery.exe`
+1. Unzip `TinyQuery-1.1.0-win.zip`
+2. Double-click `TinyQuery.exe` inside
 
-> 不要只把 `TinyQuery.exe` 单独拖出来 —— 它要靠同目录下的 `app\` 和 `runtime\` 才能启动。
+> Don't drag `TinyQuery.exe` out on its own — it needs the `app\` and `runtime\` directories alongside it to start.
 
 ### macOS
 
-1. 打开 `TinyQuery-1.0.0.dmg`，把 TinyQuery 拖进「应用程序」
-2. 首次打开见下一节的放行方法
+1. Open `TinyQuery-1.1.0.dmg` and drag TinyQuery into Applications
+2. For the first launch, see the workaround in the next section
 
-> 当前提供的是 **Apple Silicon（M1~M4）** 版本。Intel Mac 请从源码构建，或用 jar 直接运行（见[从源码构建](#从源码构建)）。
+> The current build is for **Apple Silicon (M1–M4)**. On an Intel Mac, build from source or run the jar directly (see [Build from Source](#build-from-source)).
 
 ### Linux
 
-**方式一：压缩包（推荐，所有发行版通用）**
+**Option 1: Archive (recommended, works on all distributions)**
 
 ```bash
-tar -xzf TinyQuery-1.0.0-linux-x86_64.tar.gz
+tar -xzf TinyQuery-1.1.0-linux-x86_64.tar.gz
 ./TinyQuery/bin/TinyQuery
 ```
 
-**方式二：安装包**
+**Option 2: Installer package**
 
 ```bash
-sudo dpkg -i tinyquery_1.0.0-1_amd64.deb     # Debian / Ubuntu 系
-sudo rpm -i tinyquery-1.0.0-1.x86_64.rpm     # Fedora / RHEL 系
+sudo dpkg -i tinyquery_1.1.0-1_amd64.deb     # Debian / Ubuntu
+sudo rpm -i tinyquery-1.1.0-1.x86_64.rpm     # Fedora / RHEL
 ```
 
-装完可以从应用菜单启动。
+After installation, launch it from the application menu.
 
-> 界面需要系统里有**中文字体**，否则控制窗口与托盘菜单里的中文会显示成方块。
-> 装法：`sudo apt install fonts-wqy-microhei`（约 5 MB）或 `fonts-noto-cjk`（约 91 MB，覆盖更全）。
-> `.deb` 已带 `Recommends` 指向这两个包，用 `apt` 安装时通常会自动装上；
-> `.rpm` 未声明，需要自己装。
+> The UI requires **Chinese fonts** to be installed, otherwise Chinese text in the console window and tray menu appears as boxes.
+> Install them with: `sudo apt install fonts-wqy-microhei` (about 5 MB) or `fonts-noto-cjk` (about 91 MB, broader coverage).
+> The `.deb` declares `Recommends` for both packages, so `apt` usually pulls one in automatically;
+> the `.rpm` declares nothing, so you must install one yourself.
 
 ---
 
-## ⚠️ 首次打开提示（程序未签名）
+## ⚠️ First Launch Prompt (Unsigned Application)
 
-**这是正常现象，不是文件损坏，也不是病毒。**
+**This is expected behavior — not a corrupted file, and not a virus.**
 
-本项目是开源的非盈利项目，没有购买代码签名证书（Windows 证书与 Apple Developer 账号都要钱）。所以系统会提示"未知发布者"。按下面的方法放行一次即可，之后不再提示。
+This is an open-source, non-profit project without a code-signing certificate (both Windows certificates and an Apple Developer account cost money). So the system reports an "unknown publisher." Allow it once using the method below and it won't prompt again.
 
-### Windows：SmartScreen 拦了
+### Windows: SmartScreen blocked it
 
-看到「Windows 已保护你的电脑」时：
+When you see "Windows protected your PC":
 
-> 点 **更多信息** → 点 **仍要运行**
+> Click **More info** → click **Run anyway**
 
-**如果是从浏览器下载的**（网盘、QQ、邮件附件等），一定会弹这个。
-**如果是用 U 盘或局域网拷贝过去的**，通常不会弹 —— 因为本地拷贝不带"网络来源标记"。
+**If you downloaded it from a browser** (cloud drive, QQ, email attachment, etc.), this prompt always appears.
+**If you copied it over on a USB drive or over the LAN**, it usually won't — local copies carry no "mark of the web."
 
-### macOS：Gatekeeper 拦了
+### macOS: Gatekeeper blocked it
 
-提示「无法打开，因为无法验证开发者」时，**二选一**：
+When it says the app "cannot be opened because the developer cannot be verified," **pick either option**:
 
-- **右键点图标 → 选「打开」→ 再点「打开」**（直接双击不行）
-- 或执行一次：
+- **Right-click the icon → choose "Open" → click "Open" again** (double-clicking directly won't work)
+- Or run this once:
   ```bash
   xattr -dr com.apple.quarantine /Applications/TinyQuery.app
   ```
 
 ### Linux
 
-一般不会拦。若提示权限不足：
+Normally nothing blocks it. If you get a permission error:
 
 ```bash
 chmod +x TinyQuery/bin/TinyQuery
@@ -165,185 +172,185 @@ chmod +x TinyQuery/bin/TinyQuery
 
 ---
 
-## 快速上手
+## Quick Start
 
-1. 启动程序，会自动打开浏览器进入界面（没自动打开就手动访问日志里打印的地址）
-2. 左侧「数据源」→「新增」，选类型、填参数、起个名字
-3. 在查询框里写 SQL，点执行
+1. Launch the application; it opens your browser to the UI automatically (if not, visit the address printed in the log)
+2. On the left, go to "Data Sources" → "Add", pick a type, fill in the parameters, and give it a name
+3. Write SQL in the query box and click Run
 
-**示例**：假设注册了一个叫 `sample` 的 CSV（列：`name, age, city, salary`）
+**Example**: suppose you registered a CSV named `sample` (columns: `name, age, city, salary`)
 
 ```sql
-select * from sample                       -- 全部
-select name, age from sample where age > 25 -- 过滤
-select * from sample order by salary desc limit 10   -- 排序取前 10
-select count(*), avg(salary) from sample   -- 聚合
-select city, count(*) from sample where age > 20   -- 注意：无 GROUP BY，见下方限制
+select * from sample                       -- all rows
+select name, age from sample where age > 25 -- filter
+select * from sample order by salary desc limit 10   -- sort and take top 10
+select count(*), avg(salary) from sample   -- aggregate
+select city, count(*) from sample where age > 20   -- note: no GROUP BY, see limitations below
 ```
 
-> **注意：表名不要加引号。** 反引号、双引号、方括号都会被当成表名的一部分，报「数据源不存在」。写 `sample`，不要写 `` `sample` ``。
+> **Note: don't quote table names.** Backticks, double quotes, and square brackets are all treated as part of the table name, producing a "data source not found" error. Write `sample`, not `` `sample` ``.
 
 ---
 
-## SQL 支持范围与限制
+## SQL Support and Limitations
 
-这是一个**轻量查询引擎**，不是完整的 SQL 数据库。支持的是常用子集。
+This is a **lightweight query engine**, not a full SQL database. It supports a commonly used subset.
 
-### 支持
+### Supported
 
-| 类别 | 语法 |
+| Category | Syntax |
 |---|---|
-| 投影 | `select a, b`、`select *` |
-| 过滤 | `where`、`and` / `or` / `not`、`=` `!=` `<>` `>` `>=` `<` `<=`、条件外层的括号 |
-| 排序 | `order by 单列或多列 [asc\|desc]`，如 `order by city asc, salary desc` |
-| 分页 | `limit n`、`limit n offset m`、`offset m`（服务端另有 page / pageSize 分页） |
-| 聚合 | `count(*)`、`count(列)`、`sum`、`avg`、`min`、`max` |
+| Projection | `select a, b`, `select *` |
+| Filtering | `where`, `and` / `or` / `not`, `=` `!=` `<>` `>` `>=` `<` `<=`, parentheses around conditions |
+| Sorting | `order by` one or more columns `[asc\|desc]`, e.g. `order by city asc, salary desc` |
+| Pagination | `limit n`, `limit n offset m`, `offset m` (the server also has separate page / pageSize pagination) |
+| Aggregation | `count(*)`, `count(column)`, `sum`, `avg`, `min`, `max` |
 
-### 不支持（会报错）
+### Not Supported (reports an error)
 
-| 语法 | 说明 |
+| Syntax | Notes |
 |---|---|
-| `select a as 别名` | **未实现**。别名会被当成长度为一个的列名，报 `Unknown column: a as 别名`。结果列名就是原列名 |
-| `group by` | **有意不做**。当前聚合是整体聚合，不做分组。要看分布请用图表功能 |
-| `in (...)` / `between` / `is null` | **有意不做**。改用 `c = 'a' or c = 'b'`、`n >= 1 and n <= 10` |
-| `like` | 同上，未实现 |
-| `limit m, n` | 参数顺序与标准相反、容易误读；请改用 `limit n offset m` |
-| `select distinct` | 不支持 |
-| `join` / 子查询 / `union` | 不支持 |
-| 表名加引号 | `` `t` ``、`"t"`、`[t]` 都不行 |
+| `select a as alias` | **Not implemented.** The alias is treated as a column name one character long, producing `Unknown column: a as 别名`. Result column names are the original column names |
+| `group by` | **Deliberately omitted.** Aggregation is currently whole-table, not grouped. Use the chart feature to see distributions |
+| `in (...)` / `between` / `is null` | **Deliberately omitted.** Use `c = 'a' or c = 'b'` and `n >= 1 and n <= 10` instead |
+| `like` | Same as above, not implemented |
+| `limit m, n` | Argument order is reversed from the standard and easy to misread; use `limit n offset m` instead |
+| `select distinct` | Not supported |
+| `join` / subqueries / `union` | Not supported |
+| Quoted table names | `` `t` ``, `"t"`, `[t]` all fail |
 
-> 上表曾经出过两类错误，都是文档写了而实现没有（或反之）：
-> `in` / `between` / `is null` 被误写成"支持"，`select a as 别名` 同样被误写成"支持"，
-> 而已经实现的「条件外层括号」被写成"不支持"。
-> **现在这张表由 `ReadmeAudit` 逐条对着真实行为核对**（见 [NOTES.md](NOTES.md) 第四节）。
+> This table has previously contained two kinds of errors, where the docs claimed something the implementation didn't do (or vice versa):
+> `in` / `between` / `is null` were wrongly listed as "supported", `select a as alias` was likewise wrongly listed as "supported",
+> and the implemented "parentheses around conditions" was listed as "not supported".
+> **This table is now checked entry by entry against actual behavior by `ReadmeAudit`** (see section 4 of [NOTES.md](NOTES.md)).
 >
-> 更完整的限制与缺陷说明见 [NOTES.md](NOTES.md)。
+> See [NOTES.md](NOTES.md) for a fuller description of limitations and defects.
 
-### ⚠️ 报错信息可能误导
+### ⚠️ Error Messages Can Be Misleading
 
-目前有一类已知的报错不准确：**写出不支持的语法时，错误信息可能说「数据源不存在」**，而实际上数据源是好的，是不支持那个语法。
+There is a known class of inaccurate error messages: **when you write unsupported syntax, the error may say "data source not found"**, even though the data source is fine and the real problem is the unsupported syntax.
 
-例如：
+For example:
 
 ```
 select * from sample join other on sample.id = other.id
 → 报：数据源不存在：sample join other on sample.id = other.id
 ```
 
-它把 `from` 之后的整段都当成了表名。**遇到「数据源不存在」但名字看着没问题时，先检查是不是用了上面表格里不支持的语法。**
+It treats everything after `from` as the table name. **If you get "data source not found" but the name looks correct, first check whether you used syntax the table above lists as unsupported.**
 
-（根因是解析器按空格切分找 `from`，对子句边界没有做合法性检查。这是已知问题，尚未修复 —— 详见 [NOTES.md](NOTES.md) 的 2.2。）
+(The root cause is that the parser splits on spaces to find `from` and performs no validity check on clause boundaries. This is a known issue, not yet fixed — see section 2.2 of [NOTES.md](NOTES.md).)
 
-> `group by`、`limit m, n`、普通列混聚合这几类现在有专门的报错文案，能说清"不支持"而不是"数据源不存在"；其余仍受此影响。
+> `limit m, n` and mixing plain columns with aggregates now have dedicated error messages that clearly say "not supported" rather than "data source not found"; **`group by` and everything else are still affected.**
 
 ---
 
-## 数据存放位置
+## Where Data Is Stored
 
-程序自己的东西（数据源配置、日志、锁文件）放在**用户数据目录**，不在程序目录里：
+The application's own files (data source config, logs, lock file) live in the **user data directory**, not in the application directory:
 
-| 平台 | 路径 |
+| Platform | Path |
 |---|---|
 | Windows | `%APPDATA%\TinyQuery\` |
 | macOS | `~/Library/Application Support/TinyQuery/` |
-| Linux | `~/.local/share/TinyQuery/`（遵循 `$XDG_DATA_HOME`） |
+| Linux | `~/.local/share/TinyQuery/` (respects `$XDG_DATA_HOME`) |
 
-目录内容：
+Directory contents:
 
 ```
-datasources.json     已注册的数据源（不含密码）
-tinyquery.lock       单实例锁（进程级，退出即释放）
-tinyquery.url        当前实例的访问地址
-logs/tinyquery.log   运行日志 —— 出问题先看这里
+datasources.json     registered datasources (no passwords)
+tinyquery.lock       single-instance lock (process-level, released on exit)
+tinyquery.url        access URL of this instance
+logs/tinyquery.log   runtime log - check here first when something breaks
 ```
 
-可用环境变量 `TINYQUERY_HOME` 整体覆盖这个目录（便携部署用）。
+The `TINYQUERY_HOME` environment variable overrides this entire directory (useful for portable deployments).
 
-**卸载程序不会删除这个目录**，也不会删除已保存的密码（见下）。
+**Uninstalling does not delete this directory**, nor any saved passwords (see below).
 
 ---
 
-## 安全说明
+## Security
 
-- **只监听 `127.0.0.1`**，局域网/公网无法访问
-- **所有 API 需要令牌**：进程启动时随机生成，注入到首页；不带令牌的请求一律 401
-  - 请求头：`X-TinyQuery-Token`
-  - 每次启动令牌都会变
-- 数据全部在内存里，除了你主动注册的文件，不读写别的东西
-- **密码**：勾选「保存密码」后存进系统凭据管理器，条目标名为 `TinyQuery/<数据源名>`；**不勾选则完全不落盘**
+- **Listens only on `127.0.0.1`**, unreachable from the LAN or the internet
+- **Every API requires a token**: generated randomly at process startup and injected into the home page; requests without a token get a 401
+  - Header: `X-TinyQuery-Token`
+  - The token changes on every launch
+- All data stays in memory; apart from the files you explicitly register, nothing else is read or written
+- **Passwords**: when "Save password" is checked, they go into the system credential manager under the entry name `TinyQuery/<datasource name>`; **if unchecked, nothing is ever written to disk**
 
-> ⚠️ **卸载程序不会清除已保存的密码。** 需要自己删：
-> - Windows：控制面板 → 凭据管理器 → Windows 凭据 → 找 `TinyQuery/...`
-> - macOS：钥匙串访问 → 搜 `TinyQuery`
-> - Linux：用「密码和密钥」（seahorse）之类的钥匙串管理工具搜 `TinyQuery`，或执行
->   `secret-tool clear key 'TinyQuery/<数据源名>'`
+> ⚠️ **Uninstalling does not clear saved passwords.** Delete them yourself:
+> - Windows: Control Panel → Credential Manager → Windows Credentials → find `TinyQuery/...`
+> - macOS: Keychain Access → search for `TinyQuery`
+> - Linux: search for `TinyQuery` in a keyring manager such as Passwords and Keys (seahorse), or run
+>   `secret-tool clear key 'TinyQuery/<datasource name>'`
 
 ---
 
-## 从源码构建
+## Build from Source
 
-### 环境要求
+### Requirements
 
-| | 版本 |
+| | Version |
 |---|---|
-| JDK | **17**（jpackage 从 JDK 14 起随 JDK 提供） |
+| JDK | **17** (jpackage ships with the JDK from JDK 14 onward) |
 | Maven | 3.9+ |
 | Node.js | **`^22.18.0 \|\| >=24.12.0`** |
 
-### 构建
+### Build
 
 ```bash
-# 1. 前端（必须先做：后端构建带"dist 新鲜度"防呆检查）
+# 1. Frontend (must come first: the backend build enforces a "dist freshness" guard)
 cd tinyquery-frontend
 npm install
 npm run build
 
-# 2. 后端 + 测试
+# 2. Backend + tests
 cd ..
-mvn clean package          # 产出 target/tinyquery-1.0.0.jar，并跑全部测试
+mvn clean package          # produces target/tinyquery-1.1.0.jar and runs the full test suite
 
-# 3. 打成免安装程序
-bash    packaging/package-linux.sh     # Linux：tar.gz（加 --deb / --rpm 出安装包）
+# 3. Package the portable app
+bash    packaging/package-linux.sh     # Linux: tar.gz (add --deb / --rpm for installer packages)
 pwsh -File packaging/package.ps1       # Windows
-bash    packaging/make-icns.sh         # macOS：先由 PNG 生成 icns
+bash    packaging/make-icns.sh         # macOS: generate the icns from PNG first
 ```
 
-`packaging/` 下每个脚本的头部注释都写了**为什么这么做**（踩过的坑、平台限制），改动前值得一读。
+The header comment of every script under `packaging/` explains **why it works that way** (pitfalls hit, platform constraints) — worth reading before making changes.
 
-### 直接跑 jar（不打包）
+### Running the Jar Directly (no packaging)
 
 ```bash
-java -jar target/tinyquery-1.0.0.jar
+java -jar target/tinyquery-1.1.0.jar
 ```
 
-这条路径在**任何装了 JDK 17 的机器**上都能用，包括没有现成安装包的平台（例如 Intel Mac）。此时它按"开发模式"运行，**不会自动打开浏览器**，需手动访问日志里的地址。
+This path works on **any machine with JDK 17**, including platforms with no ready-made installer (Intel Mac, for example). In this mode it runs as a "development mode" build: it **does not open the browser automatically**, so you need to visit the address from the log manually.
 
-### 运行测试
+### Running Tests
 
 ```bash
 mvn test
 ```
 
-约 340 个测试，其中一部分是平台专属的（Windows / macOS 各自跳过对方那些），所以不同平台的"跳过数"不同，属正常。
+About 340 tests, some of them platform-specific (Windows and macOS each skip the other's), so "skipped" counts differ by platform — that's normal.
 
 ---
 
-## 已知问题
+## Known Issues
 
-| 问题 | 影响 | 说明 |
+| Issue | Impact | Notes |
 |---|---|---|
-| **不支持的语法报"数据源不存在"** | 排查困难 | 见[上方说明](#-报错信息可能误导) |
-| **Linux 需要 keyring 才能真正保存密码** | 存不上 | 已实现 Secret Service（libsecret）支持，但**系统里得有可用的 keyring**（GNOME Keyring / KWallet）。服务器版、精简发行版、纯窗口管理器环境往往没装或没启动，此时"保存密码"会报错、每次仍需手输。装法：`sudo apt install gnome-keyring libsecret-1-0` |
-| **Linux 缺中文字体时菜单显示方块** | 观感 | 装 `fonts-wqy-microhei`（约 5MB）或 `fonts-noto-cjk` 即可。`.deb` 已带 `Recommends`，用 `apt` 安装时通常自动装上 |
-| **`.deb` 在极简系统上卸不掉** | 卸载 | 仅影响最小化安装 / WSL / 纯服务器。带桌面的常规发行版**不受影响**（已实测确认）。变通：`sudo dpkg --purge --force-all tinyquery`。详见下方 |
-| **打包体积偏大** | 约 180 MB | jpackage 默认带完整 JDK；后续可用 jlink 裁剪到 60~80 MB |
-| **Intel Mac 暂无安装包** | 需自行构建 | 可用 jar 方式运行 |
+| **Unsupported syntax reports "data source not found"** | Hard to diagnose | See [the note above](#-error-messages-can-be-misleading) |
+| **Linux needs a keyring to actually save passwords** | Passwords not saved | Secret Service (libsecret) support is implemented, but the **system must have a working keyring** (GNOME Keyring / KWallet). Server editions, minimal distributions, and bare window-manager setups often lack one or don't start it, in which case "save password" errors out and you must retype it every time. Install with: `sudo apt install gnome-keyring libsecret-1-0` |
+| **Menus show boxes when Linux lacks Chinese fonts** | Cosmetic | Install `fonts-wqy-microhei` (about 5MB) or `fonts-noto-cjk`. The `.deb` already declares `Recommends`, so `apt` usually installs one automatically |
+| **`.deb` can't be removed on very minimal systems** | Uninstall | Affects only minimal installs / WSL / headless servers. Regular desktop distributions are **unaffected** (confirmed by testing). Workaround: `sudo dpkg --purge --force-all tinyquery`. Details below |
+| **Large package size** | About 180 MB | jpackage bundles the full JDK by default; jlink could later trim this to 60–80 MB |
+| **No installer for Intel Mac yet** | Build it yourself | You can run it via the jar |
 
-### 关于 `.deb` 卸载失败（Linux）
+### About `.deb` Removal Failures (Linux)
 
-> **先给结论：带桌面的常规发行版不会遇到这个问题。** 已在真实的 Ubuntu 虚拟机上实测：`sudo dpkg -r tinyquery` 正常完成，程序文件与菜单项都清除干净。下面说的是**最小化安装**（服务器、WSL、容器镜像）才会碰到的情况。
+> **The short version: regular desktop distributions don't hit this.** Verified on a real Ubuntu VM: `sudo dpkg -r tinyquery` completes normally and removes both the application files and the menu entry. What follows applies to **minimal installs** (servers, WSL, container images).
 
-现象：在极简系统上执行 `sudo dpkg -r tinyquery` 会报
+Symptom: on a minimal system, `sudo dpkg -r tinyquery` reports
 
 ```
 xdg-desktop-menu: No writable system menu directory found.
@@ -351,22 +358,22 @@ dpkg: error processing package tinyquery (--remove):
  installed tinyquery package pre-removal script subprocess returned error exit status 3
 ```
 
-原因：jpackage 生成的 `prerm` 脚本带 `set -e`，其中调用了 `xdg-desktop-menu uninstall`。该命令会**顺带处理 `*.directory` 文件**，而那条路径要求系统的 `/usr/share/desktop-directories` 存在且可写 —— 最小化安装上没有这个目录，于是命令以 3 退出，`set -e` 中止整个卸载，`/opt/tinyquery` 原封不动留着。
+Cause: the `prerm` script generated by jpackage uses `set -e` and calls `xdg-desktop-menu uninstall`. That command **also handles `*.directory` files**, and that code path requires `/usr/share/desktop-directories` to exist and be writable — minimal installs don't have it, so the command exits with status 3, `set -e` aborts the whole removal, and `/opt/tinyquery` is left untouched.
 
-（这个目录由桌面组件提供，所以装了桌面环境的发行版都有。）
+(That directory comes from desktop components, so any distribution with a desktop environment has it.)
 
-变通办法（任选）：
+Workarounds (pick one):
 
 ```bash
-# 1) 强制卸载
+# 1) Force-remove
 sudo dpkg --purge --force-all tinyquery
 
-# 2) 或先补上缺失的目录再正常卸载
+# 2) Or restore the missing directories, then uninstall normally
 sudo mkdir -p /usr/share/desktop-directories
 sudo dpkg -r tinyquery
 ```
 
-**另外**：`dpkg -r` 之后 `dpkg -l tinyquery` 会显示状态 `rc`，这是**正常的**，意思是「已卸载，但 dpkg 还保留着包的记录」（因为包里带了 `/opt` 这个目录条目）。程序确实已经删掉了。想连记录一起清掉：
+**Also**: after `dpkg -r`, `dpkg -l tinyquery` shows status `rc`. That is **normal** — it means "removed, but dpkg still keeps the package record" (because the package includes the `/opt` directory entry). The application really is gone. To clear the record as well:
 
 ```bash
 sudo dpkg --purge tinyquery
@@ -374,8 +381,59 @@ sudo dpkg --purge tinyquery
 
 ---
 
-## 第三方依赖与许可
+## Third-Party Dependencies and Licenses
 
-主要依赖：Spring Boot、Vue 3、Element Plus、JNA，以及各数据库的 JDBC 驱动。
+Main dependencies: Spring Boot, Vue 3, Element Plus, JNA, and the JDBC drivers for each database.
 
-完整的依赖清单、版本与许可证（含 LGPL 类依赖的说明）见 [`packaging/THIRD-PARTY.md`](packaging/THIRD-PARTY.md)。
+The complete dependency list, versions, and licenses (including notes on LGPL-class dependencies) are in [`packaging/THIRD-PARTY.md`](packaging/THIRD-PARTY.md).
+
+---
+
+## About This Project
+
+TinyQuery is a personal learning project by a university student, written in spare time outside coursework, and built with heavy large language model assistance.
+
+**It is not a commercial product, and not production-grade software.** Please read this section before using it or contributing.
+
+The purpose is learning, specifically two things:
+
+1. **Building a cross-platform data query engine** — how to load heterogeneous data sources into a columnar store, execute SQL over them in a vectorized way, and ship the result as a desktop application that runs on Windows, macOS, and Linux.
+2. **Practicing AI-assisted software engineering** — how to work effectively with a large language model on a codebase of real size, including the parts that are *not* writing code: design boundaries, testing strategy, regression baselines, packaging, and release process.
+
+### How It Was Built
+
+- **The design intent is the author's.** Module decomposition, the design intent of each core component, and the boundaries of what the project will and will not do were decided by the author.
+- **The AI did a large share of the implementation.** It wrote a substantial portion of the code, and much of the engineering process around it — test scaffolding, packaging scripts, and parts of the tooling.
+- **Not every line was hand-written or line-by-line reviewed by the author.** That is a direct consequence of working this way, and it is stated here rather than left implicit.
+
+What the author does stand behind is the design, the direction, and the acceptance criteria. If you find a problem — in code the AI wrote or anywhere else — please open an issue. It will be taken seriously and handled properly.
+
+### Disclaimer
+
+TinyQuery is provided **as is**, without warranty of any kind, express or implied.
+
+- The project has made a genuine effort to be **usable**, but makes **no guarantee that it is suitable for production use**.
+- **Evaluate the risk yourself before relying on it.** For anything important, verify the results independently.
+- The author is a student. There is **no support commitment**, no service-level expectation, and no guarantee of timely responses.
+- Data stays on your own machine and you are responsible for it — including backups.
+
+### Feedback and Contributions
+
+Feedback is genuinely welcome. Two things to understand first:
+
+- **This is a personal project.** The author's priority is coursework, so maintenance time is limited and **responses may be slow**. Issues are not ignored — they are queued behind school.
+- **Check the docs first.** Before opening an issue, please read this README and the [Known Issues](#known-issues) section, and confirm the problem is not already documented.
+
+**Reporting a problem.** Open an issue. Useful reports include what you did, what you expected, and what actually happened; your operating system and how you ran TinyQuery (portable build or from source); the exact SQL and the data source type involved; and log excerpts if relevant — see [Where Data Is Stored](#where-data-is-stored) for log locations.
+
+If the problem lies in a part of the code that was AI-assisted, that is still worth reporting. Pointing it out is helpful, and it will be fixed.
+
+**Before opening a pull request,** please open an issue first to agree on the direction. This avoids wasted effort on both sides — a change may already be planned, may conflict with a design decision, or may not fit the project's scope.
+
+### License
+
+TinyQuery is released under the **MIT License**. See [LICENSE](LICENSE) for the full text.
+
+In short: you may use, modify, and redistribute it, including commercially, provided the copyright notice and license text are kept. The software comes with no warranty.
+
+Third-party components bundled in the release are covered by their own licenses — see [`packaging/THIRD-PARTY.md`](packaging/THIRD-PARTY.md).

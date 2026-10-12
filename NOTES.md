@@ -1,88 +1,90 @@
-# NOTES.md · 已知缺陷与已知限制
+# NOTES.md · Known Defects and Known Limitations
 
-这份文件收录**当前版本刻意不做的事**、**已知会出错的地方**，以及**容易误判为 bug 的行为**。
+**English** | [中文](NOTES.zh-CN.md)
 
-README 面向使用者，讲"能做什么"；这份面向维护者与排查问题的人，讲"哪里会绊倒你"。
+This file collects **the things the current version deliberately does not do**, **the places known to break**, and **behaviors that are easy to misdiagnose as bugs**.
 
-**区分两类，处理方式完全不同：**
+The README is for users and talks about "what it can do"; this one is for maintainers and troubleshooters and talks about "where it will trip you up."
 
-| | 含义 | 该怎么办 |
+**Two categories, handled completely differently:**
+
+| | Meaning | What to do |
 |---|---|---|
-| **已知缺陷** | 我们**认为它应该工作**，但现在不工作 | 欢迎修；修之前先看条目里的根因 |
-| **已知限制** | 我们**有意不做**，有取舍理由 | 不是 bug，别顺手"修"掉；要改先推翻理由 |
+| **Known defect** | We **think it should work**, but it does not right now | Fixes welcome; read the root cause in the entry first |
+| **Known limitation** | We **chose not to do it**, for tradeoff reasons | Not a bug — do not "fix" it in passing; overturn the rationale first |
 
 ---
 
-## 一、已知限制（有意为之）
+## 1. Known Limitations (Intentional)
 
-### 1.1 `GROUP BY` 不支持
+### 1.1 `GROUP BY` is not supported
 
-**现状**：`select 城市, count(*) from t group by 城市` 会报错。
+**Current state**: `select count(*) from t group by 城市` **is not stopped** — the parser takes `t group by 城市` as the table name, and the query fails with "Data source not found". `group by` has **no dedicated error message of its own**; see 2.4.
 
-**理由**：当前的执行模型是**整体聚合**——所有数据聚成一行。`group by` 需要的是分组聚合，是另一套执行路径（分组哈希表 + 每组独立输出），不是加个关键字的事。
+**Rationale**: the current execution model is **whole-table aggregation** — all data collapses into one row. What `group by` needs is grouped aggregation, which is a separate execution path (a grouping hash table plus independent output per group). It is not a matter of adding a keyword.
 
-**怎么替代**：
-- 只要总计 → 直接用 `count(*)` / `sum(c)` 等
-- 要按维度看分布 → 用**图表功能**。它内部走的是分组聚合接口（`/api/query/chart`），能按维度分组并支持 Top N，正是 `group by` 常见的那个用途
+**Workarounds**:
+- Only need the grand total → just use `count(*)` / `sum(c)` etc.
+- Need the distribution by dimension → use the **chart feature**. Internally it goes through the grouped-aggregation endpoint (`/api/query/chart`), which can group by dimension and supports Top N — exactly the common use case for `group by`
 
-**注意**：`select 城市, count(*) from t` 这种"普通列 + 聚合"的混用是**被主动拒绝**的，报错会说清原因（聚合结果只有一行，普通列没有行可引用）——这是刻意加的检查，不是解析失败。
+**Note**: mixing a plain column with an aggregate, as in `select 城市, count(*) from t`, is **actively rejected**, and the error says why (an aggregate result has only one row, so a plain column has no row to reference). This is a deliberate check, not a parse failure.
 
-### 1.2 只支持 7 个比较运算符
+### 1.2 Only 7 comparison operators are supported
 
-**支持**：`>=` `<=` `!=` `<>` `>` `<` `=`
+**Supported**: `>=` `<=` `!=` `<>` `>` `<` `=`
 
-**不支持**：`in (...)`、`between a and b`、`is null` / `is not null`、`like`、`not in`
+**Not supported**: `in (...)`, `between a and b`, `is null` / `is not null`, `like`, `not in`
 
-**理由**：这些都需要在解析器里单独加词法处理（`in` 后面跟括号列表、`between` 要吃掉 `and`、`is null` 是后缀式），而 `and` / `or` 的切分逻辑会和它们互相干扰。做了就得重新设计条件解析，收益不匹配。
+**Rationale**: each of these needs its own lexical handling in the parser (`in` is followed by a parenthesized list, `between` has to swallow an `and`, `is null` is postfix), and the `and` / `or` splitting logic interferes with all of them. Doing it means redesigning condition parsing, and the payoff does not match the cost.
 
-**替代写法**：
+**Rewrites**:
 
-| 想写 | 改成 |
+| You want to write | Write instead |
 |---|---|
 | `c in ('a','b')` | `c = 'a' or c = 'b'` |
 | `n between 1 and 10` | `n >= 1 and n <= 10` |
-| `c is null` | 暂无法表达（CSV/表格数据里空值少见） |
+| `c is null` | Not expressible for now (nulls are rare in CSV / tabular data) |
 
-### 1.3 标识符不能加引号
+### 1.3 Identifiers cannot be quoted
 
-`` `t` ``、`"t"`、`[t]` **都不行**。
+`` `t` ``, `"t"`, `[t]` — **none of them work**.
 
-**表现**：**解析器不报错**，它把引号连同名字一起当成表名（解析出的表名就是 `` `t` ``、`"t"`、`[t]`），于是报错推迟到查数据源时才出现，文案是「数据源不存在：`` `t` ``」。
+**Symptom**: **the parser does not error**. It treats the quotes as part of the name (the parsed table name literally is `` `t` ``, `"t"`, `[t]`), so the error is deferred until the data source lookup, where the message reads "Data source not found: `` `t` ``".
 
-**理由**：当前按空格与逗号切分标识符，没做引号转义。加了引号反而把引号当成名字的一部分。
+**Rationale**: identifiers are currently split on spaces and commas, with no quote escaping. Adding quotes just makes the quotes part of the name.
 
-**影响**：列名或表名里含空格、逗号、关键字时无法引用（见下面 2.4）。
+**Impact**: column or table names containing spaces, commas, or keywords cannot be referenced (see 2.4 below).
 
-> ⚠️ **排查提示**：这一类问题的共同点是「**解析器放行、错误推迟**」。
-> 以为解析器会拦住，就会去解析器里找原因，方向全错 —— 见 2.4。
+> ⚠️ **Troubleshooting hint**: the common thread in this class of problems is "**the parser lets it through, the error is deferred**."
+> If you assume the parser will stop it, you will go looking inside the parser — in entirely the wrong direction. See 2.4.
 
-### 1.4 公式单元格只读缓存值（xlsx 数据源）
+### 1.4 Formula cells read the cached value only (xlsx data source)
 
-Excel 公式单元格**不做求值**，只读 Excel 上次保存时算好的缓存值。
+Excel formula cells are **not evaluated**; only the cached value computed the last time Excel saved the file is read.
 
-**理由**：实现一个公式求值器等于重做一个 Excel 计算引擎（函数库、依赖图、循环引用检测），代价与收益完全不成比例。
+**Rationale**: implementing a formula evaluator amounts to rebuilding an Excel calculation engine (function library, dependency graph, circular-reference detection). The cost and the payoff are wildly out of proportion.
 
-**表现**：如果文件是程序生成的、公式从没被 Excel 打开过，缓存值可能为空 → 该单元格读出为空。**这是预期行为，不是读漏了。**
+**Symptom**: if the file was generated programmatically and the formulas were never opened by Excel, the cached value may be empty → that cell reads as empty. **This is expected behavior, not a missed read.**
 
-### 1.5 xlsx 的其他边界
+### 1.5 Other xlsx boundaries
 
-- **只支持 `.xlsx`**，`.xls` 会明确报错并提示另存为 `.xlsx`
-- **合并单元格只保留左上角的值**（与 Excel 的显示一致，其余位置为空）
-- 不读样式与配色（我们只关心数据）
+- **`.xlsx` only**; `.xls` errors out explicitly and tells you to save as `.xlsx`
+- **Merged cells keep only the top-left value** (matching how Excel displays them; the remaining positions are empty)
+- Styles and colors are not read (we only care about the data)
 
-### 1.5b PDF 数据源：做过，实测后撤除
+### 1.5b PDF data source: built, measured, then removed
 
-**结论**：TinyQuery **不提供 PDF 数据源**。曾经实现过一版"只读带框线表格"的（手写解析、零依赖、约 3100 行主代码 + 550 行测试），在真实文件上实测后**主动删掉**。这里记的是为什么，因为"能读一部分"听起来总比"不支持"好，实际不是。
+**Conclusion**: TinyQuery **does not offer a PDF data source**. A version that read "tables with ruled borders only" was once implemented (hand-written parsing, zero dependencies, about 3,100 lines of main code + 550 lines of tests) and was **deliberately deleted** after being measured against real files. Why is recorded here, because "it can read some of them" always sounds better than "unsupported" — it is not.
 
-**一、PDF 里没有"表格"，只有线和带坐标的文字。**
+**1. There are no "tables" in a PDF, only lines and text with coordinates.**
 
-从这些还原行列必然是**推断**。业界最好的开源方案（Camelot，专为 PDF 表格而生、带神经网络模式）在公认基准 ICDAR-2013 上的 F1 约 **0.778** —— 约 22% 是错的。
+Reconstructing rows and columns from those is necessarily an **inference**. The best open-source project in the field (Camelot, purpose-built for PDF tables, with a neural-network mode) scores an F1 of about **0.778** on the accepted benchmark ICDAR-2013 — roughly 22% wrong.
 
-**二、最要紧的一类文件恰好救不了：从 Excel 导出的 PDF。**
+**2. The type of file that matters most is exactly the one it cannot save: PDFs exported from Excel.**
 
-这是当初做这个功能的**主要动机** —— 第一个人把 Excel 转成 PDF 发给第二个人，第二个人只拿到 PDF。
+This was the **main motivation** for building the feature — one person converts an Excel file to PDF and sends it to a second person, who only has the PDF.
 
-但实测这类文件时发现：**单元格的文字会越过自己的列边界**（甚至跨行），而框线是按视觉行画的。于是**框线切出来的"格"和文字的"逻辑单元格"不是一回事**：
+But on real files of this kind we found: **the text of a cell overruns its own column boundary** (sometimes even across rows), while the ruled lines are drawn along visual rows. So **the "cells" cut out by the ruled lines and the "logical cells" of the text are not the same thing**:
 
 ```
 ┌────┬──────────────────────────┐
@@ -92,160 +94,160 @@ Excel 公式单元格**不做求值**，只读 Excel 上次保存时算好的缓
    实际得到：  列1="阶段 0 · 代码改造（收"   列2="尾端）端口策略改造：…"
 ```
 
-文件里只有"某个坐标上有个字"，**没有任何信息说明"（收"和"尾端）"属于同一个单元格** —— 两种解释都自洽。想还原就只能猜。
+The file only says "there is a character at such-and-such coordinate"; **nothing in it says that "（收" and "尾端）" belong to the same cell** — both readings are self-consistent. Reconstructing it means guessing.
 
-**三、换库解决不了，用"先转 Excel"更糟。**
+**3. Swapping libraries does not solve it, and "convert to Excel first" is worse.**
 
-都实测过，不是推测：
+All measured, not speculated:
 
-| 做法 | 结果 |
+| Approach | Result |
 |---|---|
-| 自己解析（当时的实现） | 切错 |
-| `pdfplumber`（业界最常用） | **完全相同**的切错 —— 因为它看的框线和我们是同一份 |
-| 先转成 xlsx 再读 | 错误**原封不动**带过去，而且变成了一个**看起来正常的 xlsx** |
+| Parse it ourselves (the implementation at the time) | Cut in the wrong place |
+| `pdfplumber` (the most widely used in the field) | **Exactly the same** wrong cut — because it sees the same ruled lines we do |
+| Convert to xlsx first, then read | The error carries over **untouched**, and it turns into an xlsx that **looks normal** |
 
-第三条最危险：**错误被洗白了**。用户看到 `列1 = 阶段 0 · 代码改造（收`，只会以为是原文件就这么写的，不会怀疑转换。**把"可检测的失败"变成了"不可检测的错误"，是净损失。**
+The third one is the most dangerous: **the error has been laundered**. Seeing `列1 = 阶段 0 · 代码改造（收`, the user will simply assume the original file was written that way and will never suspect the conversion. **Turning a "detectable failure" into an "undetectable error" is a net loss.**
 
-**四、所以这是取舍，不是能力不足。**
+**4. So this is a tradeoff, not a lack of capability.**
 
-一张还原错的表，`select count(*)` 照样给出行数，列名也像模像样，用户很难自己发现数字串了列。**"看起来对、实际错"比明确说不支持危险得多。**
+For a table reconstructed incorrectly, `select count(*)` still returns a row count and the column names still look plausible, and the user can hardly discover on their own that the numbers landed in the wrong columns. **"Looks right, actually wrong" is far more dangerous than an explicit unsupported.**
 
-**五、撤除时顺手验证的边界（供将来重新评估时参考）。**
+**5. Boundaries verified in passing while removing it (for reference if this is ever re-evaluated).**
 
-如果以后要重做，下面这些结论仍然成立，不用再踩一遍：
+If it is ever redone, the conclusions below still hold, so nobody has to step on these again:
 
-- PDF 文字存的不是字符而是**字形编号**，要靠字体的 `/ToUnicode` 表映射回来。没有这张表时中文全丢（编号小于 32 被当控制字符）而**数字看起来正常** → 必须报错，不能返回空表
-- **CMap 的键值两种写法都合法**：`<0001> <0031>` 与 `<0001><0031>`。真实文件用后者，**按空白切分会把相邻两行配成一个键值对，整张码表全废**
-- 真实文件的横线**按单元格切成多段**，没有一条横跨全表 → 判"有没有框线"必须把所有线段按 y 合并后再看跨度
-- 真实文件**每个字单独发一条 `Tj`** → 拼接时不能一律补空格（列名会变成「城 市」），要按字距判断
-- 扫描件（无文本层）与"字体解不出"要分开诊断：后者**有**文字绘制指令，提示去 OCR 会让用户白跑一趟
+- PDF text does not store characters but **glyph IDs**, which must be mapped back through the font's `/ToUnicode` table. Without that table, all Chinese is lost (IDs below 32 are treated as control characters) while **numbers look normal** → this must raise an error, never return an empty table
+- **Both CMap key-value syntaxes are legal**: `<0001> <0031>` and `<0001><0031>`. Real files use the latter, and **splitting on whitespace pairs up two adjacent rows into one key-value pair, wrecking the entire code table**
+- Horizontal lines in real files are **split into multiple segments per cell**, with no single line spanning the whole table → to decide "are there ruled lines", all segments must first be merged by y and only then checked for span
+- Real files **emit one `Tj` per character** → concatenation must not blindly insert spaces (column names would become 「城 市」); spacing has to be judged from the character advance
+- Scanned documents (no text layer) and "the font cannot be decoded" must be diagnosed separately: the latter **does** have text-drawing operators, and telling the user to go run OCR sends them on a wasted trip
 
-**六、用户遇到 PDF 怎么办（README 里也写了）。**
+**6. What users should do when they have a PDF (also written in the README).**
 
-找原始 Excel/CSV 直接导入（最可靠）；确实只有 PDF 时，用 Acrobat / WPS 的"PDF 转 Excel"，**转完自己核对一遍**再导入 —— 转换工具同样在猜，核对不能省。
+Find the original Excel/CSV and import that directly (most reliable); when only the PDF exists, use Acrobat / WPS "PDF to Excel" and **check it over yourself** before importing — conversion tools are guessing too, and the check is not optional.
 
-### 1.5c 构建标识：`build-info.properties` 在打包时生成
+### 1.5c Build identity: `build-info.properties` is generated at packaging time
 
-**现状**：打包时由 pom 里 antrun 的 `generate-build-info` 执行生成 `target/classes/build-info.properties`，内容三行：
+**Current state**: at packaging time the antrun `generate-build-info` execution in the pom generates `target/classes/build-info.properties` with three lines:
 
 ```
-build.version=1.0.0
+build.version=1.1.0
 build.time=2026-10-10 15:02
 build.commit=e0dce58
 ```
 
-运行时由 `BuildInfo` 读取，用在两处：启动日志一行「构建版本」，以及设置页底部一行（`/api/version` 提供）。
+At runtime it is read by `BuildInfo` and used in two places: one line in the startup log ("build version"), and one line at the bottom of the settings page (served by `/api/version`).
 
-**为什么整份文件由 Ant 写，而不是让 Maven 过滤占位符**：试过资源过滤，两处都卡住 ——
+**Why Ant writes the whole file instead of letting Maven filter placeholders**: resource filtering was tried, and both halves got stuck —
 
-1. Maven 已定义的属性会**压过** Ant 的 `<condition>`：在 `<properties>` 里声明 `build.commit` 为空之后，Ant 就永远填不上值；
-2. 不声明的话，Ant 设的属性 Maven 的 `resources` 过滤**看不见**，会原样打进产物（实测打出过 `${git.commit.resolved}`）。
+1. A property Maven has already defined **overrides** Ant's `<condition>`: once `build.commit` is declared as empty in `<properties>`, Ant can never fill in a value;
+2. If it is not declared, the properties Ant sets are **invisible** to Maven's `resources` filtering and get packaged verbatim (a build once emitted `${git.commit.resolved}`).
 
-转手到文件再读回来能work，但要额外一个 `.properties` 资源 + 额外一个阶段，链条长得不好维护。直接由 Ant 生成整份文件最简单：一次写清三个值，不经过任何过滤。
+Handing it off to a file and reading it back does work, but it needs an extra `.properties` resource plus an extra phase, and the chain gets too long to maintain. Having Ant generate the whole file directly is the simplest: all three values written in one pass, with no filtering in between.
 
-**取不到 git 时写空串，不写占位符**：没装 git、不是仓库、尚未提交都属于"取不到"，都不该让构建失败。空串在代码里被识别为"未知"，界面上**省略这一段**（变成 `1.0.0 · 2026-10-10 15:02`），不会留一个空的「·」。
+**When git is unavailable, write an empty string, not a placeholder**: git not installed, not a repository, and nothing committed yet all count as "unavailable", and none of them should fail the build. In code an empty string is recognized as "unknown", and the UI **omits that segment** (becoming `1.1.0 · 2026-10-10 15:02`) rather than leaving a dangling "·".
 
-同理，开发态直接跑（`mvn spring-boot:run` / IDE）时这个文件可能没生成或仍是 `@...@` 占位符 —— `BuildInfo` 会把**首尾都是 `@`** 的形态识别为"未知"并省略。直接显示 `@project.version@` 给用户，比不显示更像程序坏了。
+By the same token, when running in development mode directly (`mvn spring-boot:run` / IDE) this file may not be generated, or may still hold `@...@` placeholders — `BuildInfo` recognizes the **leading and trailing `@`** form as "unknown" and omits it. Showing users `@project.version@` looks more like the program is broken than showing nothing.
 
-**为什么不做成"比对 jar 内时间戳"**：jar 是 zip，里面每个条目的时间戳都是**写入 jar 的时刻**，不是文件原本的修改时间。所以"jar 内 `index.html` 的时间"恒等于打包时刻，**比不出"前端是否比 jar 旧"**。这个思路行不通，只能打包时写死一份元数据。
+**Why not "compare timestamps inside the jar"**: a jar is a zip, and the timestamp on every entry is **the moment it was written into the jar**, not the file's original modification time. So "the time of `index.html` inside the jar" is always exactly the packaging moment, and it **cannot tell you whether the frontend is older than the jar**. That approach does not work; the only option is to bake a copy of the metadata in at packaging time.
 
-### 1.6 没有 `application.properties`，配置写在启动类里
+### 1.6 There is no `application.properties`; configuration lives in the startup class
 
-**现状**：`src/main/resources/` 下**没有** `application.properties`（也没有 `.yml`）。所有配置项都由 `TinyQueryApplication` 在 `SpringApplication.run` 之前用 `System.setProperty` 设置。
+**Current state**: there is **no** `application.properties` under `src/main/resources/` (and no `.yml` either). Every configuration item is set by `TinyQueryApplication` via `System.setProperty` before `SpringApplication.run`.
 
-**为什么这样更好**：这里要设的三项都是**运行时才能算出来的值** ——
+**Why this is better**: all three items set here are **values that can only be computed at runtime** —
 
-| 配置项 | 为什么不能用静态文件 |
+| Configuration item | Why a static file cannot work |
 |---|---|
-| `logging.file.name` | 值来自**用户数据目录**，而它依操作系统而定（`%APPDATA%` / `~/Library/Application Support` / `$XDG_DATA_HOME`）。写死就错了 |
-| `server.port` | 要**探测空闲端口**（首选 8080，被占用则递增回退）。静态文件给不出"运行时才知道哪个端口空着" |
-| `server.address` | 与端口同一套优先级逻辑（命令行 > 系统属性 > 默认） |
+| `logging.file.name` | The value comes from the **user data directory**, which depends on the OS (`%APPDATA%` / `~/Library/Application Support` / `$XDG_DATA_HOME`). Hardcoding it would be wrong |
+| `server.port` | An **idle port has to be probed** (8080 preferred, falling back by incrementing when it is taken). A static file cannot express "which port is free is only known at runtime" |
+| `server.address` | The same precedence logic as the port (command line > system property > default) |
 
-**时序也是硬约束**：日志必须在 **Spring 启动之前**配好 —— `SpringApplication` 启动过程中就会初始化日志系统，写进配置文件反而可能来不及（配置文件要等环境准备好才被读到）。
+**Ordering is also a hard constraint**: logging must be configured **before Spring starts** — `SpringApplication` initializes the logging system during startup, so putting it in a configuration file may well be too late (the file is only read once the environment is ready).
 
-**所以不要"顺手补一个 `application.properties`"**：里面没有内容可写，硬塞进去只会把运行时可计算的值固化成错的常量。
+**So do not "helpfully add an `application.properties`"**: there is nothing to put in it, and forcing one in only freezes runtime-computable values into wrong constants.
 
-**想加新配置项时**：先判断它是**静态**的（如 `spring.mvc.throw-exception-if-no-handler-found`）还是**运行时计算**的。静态的可以进配置文件；运行时的请加到 `TinyQueryApplication`，并沿用同一套"命令行 > 系统属性 > 默认"的优先级写法。
+**When adding a new configuration item**: first decide whether it is **static** (like `spring.mvc.throw-exception-if-no-handler-found`) or **computed at runtime**. Static ones can go in a configuration file; runtime ones belong in `TinyQueryApplication`, following the same "command line > system property > default" precedence.
 
-### 1.7 数据源整表驻留内存，占用约为文件大小的 5 倍
+### 1.7 Data sources stay resident in memory in full, at roughly 5× the file size
 
-**现状**：打开一个数据源后，**整张表一直留在堆里**，没有上限、没有淘汰、没有 LRU。
-要释放只能删掉这个数据源或重启程序。
+**Current state**: once a data source is opened, **the entire table stays on the heap** — no cap, no eviction, no LRU.
+The only way to release it is to delete the data source or restart the program.
 
-**实测数字**（`MemoryFootprintTool`，口径：加载前后各触发 GC，比较堆使用量，取 5 次最小值）：
+**Measured numbers** (`MemoryFootprintTool`; methodology: trigger GC before and after loading, compare heap usage, take the minimum of 5 runs):
 
-| 数据 | 文件 | 行数 | 常驻堆 | 倍数 |
+| Data | File | Rows | Resident heap | Multiple |
 |---|---|---|---|---|
 | `huge.csv` | 27.4 MB | 1,000,000 | 134.7 MB | 4.92× |
 | `orders.csv` | 27.7 MB | 1,000,000 | 144.8 MB | 5.22× |
 | `social_media.csv` | 0.9 MB | 8,000 | 5.0 MB | 5.32× |
 
-**为什么会膨胀 5 倍**：`ColumnStore` 用 `Map<String, List<Object>>` 存列，
-每个单元格都是**装箱对象**（一个 `Integer` 至少 16 字节，不是 4 字节），
-外加每个 `ArrayList` 的扩容冗余。文本进内存后体积必然放大。
+**Why it inflates 5×**: `ColumnStore` stores columns as `Map<String, List<Object>>`,
+every cell is a **boxed object** (an `Integer` is at least 16 bytes, not 4),
+on top of the growth slack of every `ArrayList`. Once text is in memory its size necessarily grows.
 
-**已有的护栏**：加载前会做内存预检（`MemoryGuard`），明显装不下时
-**提前拒绝**，给一句可读的话，而不是撞上 `OutOfMemoryError` 让程序崩掉。规则是：
+**The guardrail that exists**: a memory pre-check is run before loading (`MemoryGuard`), and when it clearly will not fit the load is
+**refused up front**, with a readable sentence, instead of crashing into an `OutOfMemoryError`. The rules are:
 
-- 预估需求 = 文件大小 × **6**（实测上界，宁可误拒不可漏放）
-- 可用预算 = JVM 堆上限 × **50%**（留一半给加载/查询的临时对象与其它数据源）
-- 超过预算即拒绝，错误码 `error.memoryInsufficient`，文案里带具体数字与替代方案
+- Estimated requirement = file size × **6** (the measured upper bound; better to refuse wrongly than to let one through)
+- Available budget = JVM max heap × **50%** (half is left for the temporary objects of loading/querying and for other data sources)
+- Exceeding the budget means refusal, error code `error.memoryInsufficient`, with the message carrying the concrete numbers and the alternatives
 
-**打包版本的堆上限**：`packaging/` 脚本传了 `-XX:MaxRAMPercentage=50`，
-即物理内存的一半。不传的话 JVM 默认只给约 1/4，且随机器而变、用户无从预期。
-（直接跑 jar 时没有这个参数，走 JVM 默认值。）
+**Heap cap in packaged builds**: the `packaging/` scripts pass `-XX:MaxRAMPercentage=50`,
+i.e. half of physical memory. Without it the JVM defaults to about 1/4, which varies by machine and gives users nothing to expect.
+(Running the jar directly has no such argument and falls back to the JVM default.)
 
-**剩余的限制**：
+**Remaining limitations**:
 
-- **JDBC 数据源不做预检** —— 结果集多大要连上才知道，事先估不出来。
-  这是已知缺口：`JdbcLoader` 仍可能 OOM
-- 预检只能按**文件大小**估，估不准真实对象图 —— 所以系数取的是上界
-- 预检**不会**帮用户"想办法装下"（如自动分块、落盘换出）
+- **JDBC data sources get no pre-check** — how big the result set is is only known once you connect, and cannot be estimated in advance.
+  This is a known gap: `JdbcLoader` can still OOM
+- The pre-check can only estimate from **file size**, and cannot model the real object graph — hence the upper-bound coefficient
+- The pre-check does **not** help the user "find a way to make it fit" (no automatic chunking, no spilling to disk)
 
-**用户能怎么办**：改用 SQLite 数据源（它按需读、不整表进内存，是这种场景的正解），
-或先在外部把文件拆小、筛掉不需要的行。
+**What users can do**: switch to a SQLite data source (it reads on demand and does not pull the whole table into memory — the right answer for this situation),
+or split the file into smaller pieces externally and filter out rows they do not need.
 
-**为什么不做淘汰（LRU / 分块换出）**：会改变「数据源注册后一直可用」这个语义 ——
-注册时说能用，查询时却可能因为被淘汰而要重新加载，行为变得不可预测。
-当前定位是本地轻量工具，用户对"我开的文件有多大"有直觉，护栏加说明比自动淘汰更合适。
+**Why no eviction (LRU / chunked spilling)**: it would change the semantics of "a data source stays usable once registered" —
+registered as usable, yet a query might have to reload it because it was evicted, making behavior unpredictable.
+The current positioning is a local lightweight tool, and users have an intuition for how big the file they opened is; a guardrail plus documentation suits it better than automatic eviction.
 
 ---
 
-### 1.8 发布包带的是**裁剪过的** runtime，模块清单是手工维护的
+### 1.8 Release packages ship a **trimmed** runtime, and the module list is maintained by hand
 
-**现状**：打包时先用 `jlink` 生成一个只含必需模块的 runtime（约 47 MB），
-再用 `jpackage --runtime-image` 打进去。发布包从约 176 MB 降到约 94 MB。
+**Current state**: at packaging time `jlink` first produces a runtime containing only the required modules (about 47 MB),
+which `jpackage --runtime-image` then packages in. The release package dropped from about 176 MB to about 94 MB.
 
-**模块清单在 `packaging/make-runtime.py` 里手工维护**，共 27 个模块。这是有意为之的取舍：
-自动裁剪做不到正确，原因是 ——
+**The module list is maintained by hand in `packaging/make-runtime.py`**, 27 modules in total. This is a deliberate tradeoff:
+automatic trimming cannot be made correct, because —
 
-**`jdeps` 给出的答案是错的**。`jdeps --print-module-deps` 只报 4 个模块
-（`java.base, java.desktop, java.management, java.sql`），因为 Spring Boot 的自动配置
-是**条件化 + 反射**的，依赖关系不在字节码里。按它裁的结果是启动直接失败：
+**The answer `jdeps` gives is wrong**. `jdeps --print-module-deps` reports only 4 modules
+(`java.base, java.desktop, java.management, java.sql`), because Spring Boot's auto-configuration
+is **conditional + reflective** and the dependencies are not in the bytecode. Trimming by that answer makes startup fail outright:
 
 ```
 org.springframework.context.ApplicationContextException: Unable to start web server
 Caused by: java.lang.NoClassDefFoundError: org/ietf/jgss/GSSException
 ```
 
-缺的是 `java.security.jgss`（Tomcat 建默认 Realm 时要用），`jdeps` 完全没提。
-注意顶层报的是"起不了 web server"，**根因埋在两层 `Caused by` 下面** ——
-不解包日志根本看不出是模块问题。
+What was missing is `java.security.jgss` (needed when Tomcat builds the default Realm), which `jdeps` never mentioned.
+Note that the top level reports "cannot start web server", and **the root cause is buried two `Caused by` levels down** —
+without unpacking the log you cannot tell it is a module problem at all.
 
-**所以清单的依据是实测，不是推断**：用
-`java --show-module-resolution -jar ...` 跑一遍真实应用，看它到底 binds 了哪些模块。
-清单分三段，每段注明依据，将来 JDK 升级时能看出该动哪一段。
+**So the list is based on measurement, not inference**: run the real application with
+`java --show-module-resolution -jar ...` and see which modules it actually binds.
+The list is split into three sections, each annotated with its basis, so that a future JDK upgrade makes clear which section needs touching.
 
-**这个失败模式为什么危险**：漏一个模块**不会在打包时报错**，而是在用户那里表现为
-「双击了没反应」—— 最没有信息量的一种故障。特别是这几类：
+**Why this failure mode is dangerous**: a missing module **does not fail at packaging time**; it surfaces for the user as
+"double-clicked and nothing happened" — the least informative kind of failure there is. In particular these categories:
 
-| 漏掉的模块 | 症状 | 为什么难发现 |
+| Missing module | Symptom | Why it is hard to spot |
 |---|---|---|
-| `jdk.crypto.ec` | 连 MySQL/PostgreSQL 失败 | **明文连接照样能通**，只有 TLS 场景才暴露 |
-| `jdk.localedata` | 中文日期变成 `1970 Jan 1` | 不报错，只是静默降级成英文格式 |
-| `java.security.jgss` | 启动直接失败 | 报的是"起不了 web server"，看不出是模块问题 |
+| `jdk.crypto.ec` | MySQL/PostgreSQL connections fail | **Plaintext connections still work**, so only TLS scenarios expose it |
+| `jdk.localedata` | Chinese dates turn into `1970 Jan 1` | No error, just a silent downgrade to English formats |
+| `java.security.jgss` | Startup fails outright | The message says "cannot start web server", with no hint that it is a module problem |
 
-**逃生口**：真出问题时用完整 JRE 出包救急 ——
+**Escape hatch**: if it really goes wrong, package with a full JRE to get unblocked —
 
 ```
 powershell -File packaging\package.ps1 -FullRuntime     # Windows
@@ -253,39 +255,39 @@ powershell -File packaging\package.ps1 -FullRuntime     # Windows
 ./packaging/package-linux.sh --full-runtime             # Linux
 ```
 
-**验收是强制的**：`packaging/verify-package.py`（全链路，含真实 MySQL/PostgreSQL/SQLite 连接）
-与 `packaging/verify-crypto.py`（加密/字符集/本地化）。两者都跑的是**打包产物本身**，
-不是 `java -jar` —— 只有前者会用到自带的那个 runtime。
+**Acceptance testing is mandatory**: `packaging/verify-package.py` (full chain, including real MySQL/PostgreSQL/SQLite connections)
+and `packaging/verify-crypto.py` (crypto / charsets / localization). Both run **the packaged artifact itself**,
+not `java -jar` — only the former exercises the bundled runtime.
 
-这两个脚本的价值已经用**缺陷注入**验证过：故意裁掉 `java.sql` 时它们报红并打印根因；
-故意裁掉 `jdk.crypto.ec` + `jdk.localedata` 时精确定位到这两项。
-**一个从没红过的验收脚本不能算验收脚本。**
+The value of these two scripts has been verified by **fault injection**: deliberately trimming `java.sql` makes them go red and print the root cause;
+deliberately trimming `jdk.crypto.ec` + `jdk.localedata` pins the failure to exactly those two.
+**An acceptance script that has never gone red does not count as an acceptance script.**
 
-### 1.9 `packaging\package.ps1` 必须以 UTF-8 **带 BOM** 保存
+### 1.9 `packaging\package.ps1` must be saved as UTF-8 **with BOM**
 
-**现状**：该文件带 BOM，且文件头有醒目警告。
+**Current state**: the file has a BOM, and the top of the file carries a prominent warning.
 
-**为什么**：Windows PowerShell 5.1（系统自带的那个）读取 `.ps1` 时，
-**没有 BOM 就按系统 ANSI 代码页解码**（简体中文 Windows 上是 GBK）。
-文件里全是中文注释，按 GBK 解出来是一堆乱码，其中的字符会破坏引号配对，
-于是整个脚本**连解析都过不去**，报「表达式或语句中包含意外的标记」。
+**Why**: when Windows PowerShell 5.1 (the one that ships with the OS) reads a `.ps1` file,
+**without a BOM it decodes using the system ANSI code page** (GBK on Simplified Chinese Windows).
+The file is full of Chinese comments, which decode into garbage under GBK, and some of those characters break quote pairing,
+so the script **does not even parse**, reporting "unexpected token in expression or statement".
 
-实测踩过：`git show HEAD:packaging/package.ps1` 开头是 `255,254`（UTF-16 LE BOM），
-而工作区副本被某次编辑写成了 UTF-8 无 BOM —— 脚本在 Windows 上完全无法运行。
+Measured the hard way: `git show HEAD:packaging/package.ps1` starts with `255,254` (UTF-16 LE BOM),
+while the working-tree copy had been written as UTF-8 without BOM by some edit — the script was completely unrunnable on Windows.
 
-**会反复出现**，因为多数编辑器默认写「UTF-8 无 BOM」。所以加了守卫：
+**It will keep happening**, because most editors default to writing "UTF-8 without BOM". So a guard was added:
 
 ```
 python packaging/check-ps1-encoding.py
 ```
 
-它扫 `packaging/` 下所有 `.ps1`，对「UTF-8 无 BOM 且含非 ASCII」直接报错并给出修法。
-**改动 `.ps1` 之后跑一下**——包括用自动化工具编辑之后，因为工具同样可能吃掉 BOM。
+It scans every `.ps1` under `packaging/` and reports an error, with the fix, for any file that is "UTF-8 without BOM and contains non-ASCII".
+**Run it after touching a `.ps1`** — including after editing with automated tools, since those can eat the BOM too.
 
-## 二、已知缺陷（应工作但当前不工作）
+## 2. Known Defects (Should Work But Currently Does Not)
 
 
-### 2.1 列别名（`as`）完全不支持
+### 2.1 Column aliases (`as`) are not supported at all
 
 ```sql
 select city as c from sales      -- ❌ error:Unknown column:city as c
@@ -293,352 +295,370 @@ select city c from sales         -- ❌ error:Unknown column:city c
 select 城市 as 城市名 from t       -- ❌ error:Unknown column:城市 as 城市名
 ```
 
-**根因（实测确认）**：解析器把整个 `city as c` 当成**一个列名**。
-`selectColumns` 里装的是字符串 `"city as c"`，执行层去表里找这个名字，自然找不到。
+**Root cause (confirmed by measurement)**: the parser treats the whole of `city as c` as **a single column name**.
+`selectColumns` holds the string `"city as c"`, and the execution layer goes looking for that name in the table and naturally does not find it.
 
-全文检索确认：`SQLParser` 里**没有任何处理 `as` 的代码**，且从初始提交起就没有过 ——
-**这不是回归，是从未实现。**
+A full-text search confirms: there is **no code in `SQLParser` that handles `as` at all**, and there never has been since the initial commit —
+**this is not a regression, it was never implemented.**
 
-**为什么以前没人发现**：README 的【支持】表把它写成了"支持"
-（`8cc9c9f` 重写 README 时写进去的，同一个提交还把 `in` / `between` / `is null`
-错写成"支持"）。用户照着写会得到一个 `Unknown column:city as c` ——
-列名看着没错，很难联想到"别名不支持"。**这一条就是文档与实现长期不一致的典型。**
+**Why nobody noticed before**: the README's [Supported] table listed it as "supported"
+(written in when the README was rewritten in `8cc9c9f`; the same commit also wrongly listed `in` / `between` / `is null`
+as "supported"). Users who follow it get an `Unknown column:city as c` —
+the column name looks fine, so it is hard to connect it to "aliases are unsupported". **This entry is the textbook case of documentation and implementation drifting apart.**
 
-**现状**：本轮已把 README 改回与实现一致（移入【不支持】）。
-实现列别名属于**新功能**，用户没有提过这个需求，前端与文案里也没有任何引导 ——
-所以按"文档如实描述"处理，而不是顺手加功能。
+**Current state**: this round the README has been brought back in line with the implementation (moved to [Not supported]).
+Implementing column aliases is a **new feature**; no user has asked for it, and there is no prompting for it anywhere in the frontend or the copy —
+so it was handled as "document it truthfully" rather than slipping in a feature.
 
-**修的时候要注意**（留给将来）：`as` 的处理与 2.3 的 `from` 扫描是**同一个词法层**，
-要一起考虑引号感知；别名还要在 `where` / `order by` 里可引用。
+**Things to watch when fixing it** (left for the future): handling `as` and the `from` scanning of 2.3 live in **the same lexical layer**,
+so quote awareness has to be considered for both together; aliases also have to be referenceable in `where` / `order by`.
 
-### 2.2 列名或别名里含 `from` 会解析失败
+### 2.2 Column names or aliases containing `from` fail to parse
 
-> **前提说明**：由于 2.1，列别名现在整体不可用。但 `from` 扫描这个缺陷**独立存在** ——
-> 它同样影响**列名本身**含 `from` 的场景（如 `select city_from as ...` 中的列名部分、
-> 以及 `select 'from'` 这类字符串字面量），所以单独保留。
+> **Preamble**: because of 2.1, column aliases are currently unusable as a whole. But this `from`-scanning defect **stands on its own** —
+> it equally affects the case where **the column name itself** contains `from` (for instance the column-name part of `select city_from as ...`,
+> and string literals like `select 'from'`), so it is kept as a separate entry.
 
 ```sql
-select 'from' as x from t           -- ❌ 报：数据源不存在：' as x from t
-select city_as from_x from t_from_x -- ❌ 报：数据源不存在：_x from t_from_x
+select 'from' as x from t           -- ❌ error:Data Source not found:' as x from t
+select city_as from_x from t_from_x -- ❌ error:Data Source not found:_x from t_from_x
 ```
 
-**根因（实测确认）**：`SQLParser` 定位 `from` 关键字时**按第一个 `" from "` 切分**，
-没有区分"引号内 / 标识符内部"的 `from`。
+**Root cause (confirmed by measurement)**: when `SQLParser` locates the `from` keyword it **splits on the first `" from "`**,
+without distinguishing `from` inside quotes or inside an identifier.
 
-**关键点：解析器本身不报错。** 它安静地切出了一个垃圾表名：
+**The key point: the parser itself does not error.** It quietly slices out a garbage table name:
 
-| 你写的 | 解析出的表名 |
+| What you wrote | Table name parsed out |
 |---|---|
 | `select 'from' as x from t` | `' as x from t` |
 | `select city_as from_x from t_from_x` | `_x from t_from_x` |
-| `select * from t_from_x` | `t_from_x`（正常） |
+| `select * from t_from_x` | `t_from_x` (normal) |
 
-**注意最后一行**：表名自己含 `from` 反而是好的。缺陷不是"含 `from` 就坏"，
-而是"**按第一个 ` from ` 切**"—— 所以只有出现在 ` from ` **之前**的部分会被腰斩。
-`where 城市 = 'from'` 也正常（`where` 之后不再找 `from`）。
+**Note the last row**: a table name that itself contains `from` is fine. The defect is not "containing `from` breaks it",
+it is "**splitting on the first ` from `**" — so only the part that appears **before** ` from ` gets cut in half.
+`where 城市 = 'from'` is also fine (`from` is no longer searched for after `where`).
 
-报错要到执行层去查这个"表"时才出现 —— 所以文案是「数据源不存在」这种误导性说法（见 2.4）。
+The error only appears when the execution layer goes to look up that "table" — hence the misleading wording "Data source not found" (see 2.4).
 
-相关位置：`SQLParser.java` 中查找 `from` 的那两处。
+Relevant locations: the two places in `SQLParser.java` that look for `from`.
 
-**为什么还没修**：需要引入"带引号感知的词法扫描"，与 1.3（标识符不支持引号）是同一个底层改动。要修就一起修。
+**Why it has not been fixed yet**: it requires introducing "quote-aware lexical scanning", which is the same underlying change as 1.3 (identifiers do not support quotes). Fix them together or not at all.
 
-**绕开**：列名里不要出现 `from` 这个词。`where 城市 = 'from'` 是正常的（`where` 之后不再找 `from`）。
+**Workaround**: do not use the word `from` in column names. `where 城市 = 'from'` is fine (`from` is no longer searched for after `where`).
 
-### 2.4 不支持语法的报错信息会误导
+### 2.4 Error messages for unsupported syntax are misleading
 
-**现象**：写出不支持的语法时，错误信息可能说「**数据源不存在**」，而实际数据源是好的。
+**Symptom**: when you write unsupported syntax, the error message may say "**Data source not found**", when the data source is in fact fine.
 
 ```
 select * from t join t2 on t.姓名 = t2.姓名
 ```
 
-解析出的表名是 `t join t2 on t.姓名 = t2.姓名` —— **整段都被当成了表名**。查不到这么个数据源，于是报「数据源不存在」。
+The parsed table name is `t join t2 on t.姓名 = t2.姓名` — **the whole thing was taken as the table name**. No such data source is found, so it reports "Data source not found".
 
-**根因**：与 2.2 同源。`from` 之后的内容被整段吃掉，没有做子句边界的合法性检查。
+**Root cause**: same origin as 2.2. Everything after `from` is swallowed whole, with no validity check on the clause boundary.
 
-**排查提示**：**遇到「数据源不存在」但名字看着没问题时，先检查是不是用了不支持的语法**（`join`、`distinct`、带引号的表名等）。判断办法是看报错里的"表名"是不是一长串 —— 正常表名不会含空格和 `on`。
+**Troubleshooting hint**: **when you hit "Data source not found" but the name looks fine, first check whether you used unsupported syntax** (`join`, `distinct`, quoted table names, etc.). The way to tell is whether the "table name" in the error is a long string — a normal table name does not contain spaces or `on`.
 
-**已改善的部分**：`group by`、`limit m, n`、普通列混聚合这几类现在**在解析期就被拦下**，有专门的报错文案，不再掉进"数据源不存在"。剩下的集中在 `from` 边界问题上。
+**What has already improved**: `limit m, n` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.) What remains is concentrated in the `from` boundary problem.
 
-> **给排查的人**：这类问题的共同模式是「**解析器放行、错误推迟到执行层**」。
-> 想当然地去解析器里找"为什么没拦住"，会白花时间 —— 先确认解析出来的表名是什么。
+> **For whoever troubleshoots this**: the shared pattern in this class of problems is "**the parser lets it through and the error is deferred to the execution layer**."
+> Assuming the answer is in the parser — "why didn't it stop this?" — wastes time. First confirm what table name was actually parsed.
 
 ---
 
-## 三、容易被误判成 bug 的行为
+## 3. Behaviors Easily Misdiagnosed as Bugs
 
-### 3.1 切语言后，无请求头的调用回落到桌面语言
+### 3.1 After switching language, calls without the request header fall back to the desktop language
 
-界面语言有两条路径：请求头 `X-TinyQuery-Locale`（前端每次请求都带）与桌面端设置（托盘菜单 / 设置页）。
+The UI language has two paths: the `X-TinyQuery-Locale` request header (sent by the frontend on every request) and the desktop setting (tray menu / settings page).
 
-**没有请求头时**（例如直接用 curl 调 API），走的是**桌面端设置**，不是中文也不是英文硬编码。所以"我没带 locale 头，怎么返回英文了"通常是因为托盘里切成英文了。
+**With no request header** (for example calling the API directly with curl), the **desktop setting** applies — not Chinese, and not a hardcoded English. So "I did not send a locale header, why is it returning English?" usually means the language was switched to English in the tray.
 
-优先级：`TINYQUERY_LOCALE` 环境变量 > 数据目录下的 `locale.txt` > 中文。
+Precedence: `TINYQUERY_LOCALE` environment variable > `locale.txt` in the data directory > Chinese.
 
-### 3.2 英文模式下仍会看到中文
+### 3.2 Chinese is still visible in English mode
 
-以下**不应该**翻译，看到中文是对的：
+The following **should not** be translated; seeing Chinese is correct:
 
-- **用户数据**：自己起的文件名、工作表名、列名、数据源名（报错里回显它们是有意为之——翻译了用户反而找不到自己的文件）
-- **存储的配置值**：如 CSV 编码的 `自动`
-- **语言选择器里的「中文」二字**（唯一一个刻意保留的中文界面文案）
-- 用户自己写在 SQL / 注释里的中文
+- **User data**: file names you chose yourself, sheet names, column names, data source names (echoing them back in errors is deliberate — translating them would leave users unable to find their own files)
+- **Stored configuration values**: such as `自动` for the CSV encoding
+- **The two characters 「中文」 in the language selector** (the one and only deliberately preserved piece of Chinese UI copy)
+- Chinese that users wrote themselves in SQL / comments
 
-判断办法：把用户数据替换成占位符，看**模板骨架**还含不含中文。骨架有中文才是漏翻。
+How to tell: replace the user data with placeholders and see whether the **template skeleton** still contains Chinese. Chinese in the skeleton is what a missing translation looks like.
 
-### 3.2b 中文模式下看到英文：不是漏翻，是**缓存了上一份**
+### 3.2b Seeing English in Chinese mode: not a missing translation, it is **cached from the previous pass**
 
-**现象**：从中文切到英文、再切回中文之后，「数据源类型」下拉、配置项名字、名字右边的问号提示、以及已注册数据源的分组标题**全都停在英文**。冷启动直接是中文则一切正常。
+**Symptom**: after switching from Chinese to English and back to Chinese, the "Data source type" dropdown, the configuration item names, the question-mark tooltips next to those names, and the group headings of registered data sources **all stay in English**. A cold start straight into Chinese is entirely normal.
 
-**原因**：这四处的文案**不是前端词条**，而是后端按请求头 `X-TinyQuery-Locale` 下发的类型元数据；前端启动时取一次存在 `types` 里，切语言时只改了 i18n 的 locale，**没有重新取**。于是界面外壳跟着变了，这四处还停在切换前的那一份。
+**Cause**: the copy in these four places is **not a frontend string entry**; it is type metadata the backend serves according to the `X-TinyQuery-Locale` request header. The frontend fetches it once at startup into `types`, and switching language only changes the i18n locale, **without re-fetching**. So the UI shell follows along while these four places stay on the copy from before the switch.
 
-**为什么难发现**：它长得像"这一块没翻译"，但实际是"这一块翻译了、只是没刷新"。而且**只验证一个方向就会漏掉** —— 当初验收只测了"英文模式下没有中文"（这个确实通过），没测"中文模式下是中文"。**只查单向，等于没查。**
+**Why it is hard to spot**: it looks like "this part was not translated", when in fact it is "this part was translated, it simply was not refreshed". And **testing only one direction will miss it** — the original acceptance test only covered "no Chinese in English mode" (which did pass) and never tested "Chinese in Chinese mode". **Checking one direction only is as good as not checking.**
 
-修法是 `App.vue` 里 `watch(locale, ...)` 重新取一次 `types`（见该处注释）。挂在 `locale` 上而不是切语言的按钮里，因为语言还可能由启动时的 `reconcileLocale` 与服务端对齐而改变。
+The fix is a `watch(locale, ...)` in `App.vue` that re-fetches `types` (see the comment there). It hangs off `locale` rather than off the language-switching button, because the language can also change when `reconcileLocale` aligns with the server at startup.
 
-**现在已可自动验证**：`tools/locale-e2e/run_all.py` 用真浏览器（Edge/Chrome + CDP）覆盖了
-这条规则的 5 个场景，**不需要人工点**了。其中 s4 专门盯这个"半新半旧"的形态：
-切换后 `documentElement.lang` 已经是 `zh`，但类型下拉若还是 `CSV File` 就判失败。
+**It can now be verified automatically**: `tools/locale-e2e/run_all.py` uses a real browser (Edge/Chrome + CDP) to cover
+the 5 scenarios of this rule, so **no manual clicking** is needed. Scenario s4 specifically watches this "half new, half old" shape:
+after the switch `documentElement.lang` is already `zh`, but if the type dropdown still says `CSV File` the run fails.
 
-**为什么最终没有引入 Vitest / jsdom**：`reconcileLocale` 的分支逻辑看着适合单测，
-但本条缺陷恰恰是 jsdom 测不到的那类（响应式刷新 + 后端重取）。
-与其建一套只能测 mock 的设施，不如把真浏览器的场景做扎实。
+**Why Vitest / jsdom was ultimately not introduced**: the branching logic of `reconcileLocale` looks like a good fit for unit tests,
+but this very defect is the kind jsdom cannot reach (reactive refresh + backend re-fetch).
+Rather than build a harness that can only test mocks, it is better to make the real-browser scenarios solid.
 
-详见 `tools/locale-e2e/README.md`。
+See `tools/locale-e2e/README.md`.
 
-### 3.2c 接口的 `elapsed` 曾用墙上时间测，数字是量化过的
+### 3.2c The API's `elapsed` used to be measured with wall-clock time, so the numbers were quantized
 
-**现象**：同一句 SQL 连打，`elapsed` 报出 `16, 0, 5, 0, 0, 16, 0, 0` 这样的值，夹杂 0。
+**Symptom**: firing the same SQL repeatedly reports `elapsed` values like `16, 0, 5, 0, 0, 16, 0, 0`, with zeros mixed in.
 
-**原因**：用 `System.currentTimeMillis()`（墙上时间）取起点与终点。它是"现在是几点"，不是"过了多久"，粒度取决于操作系统。本项目查询常见耗时就在这个量级，于是测出来只能是粒度的整数倍，**短查询稳定报 0** —— 调用方会以为根本没查。
+**Cause**: `System.currentTimeMillis()` (wall-clock time) was used for the start and end points. It answers "what time is it", not "how long has passed", and its granularity depends on the operating system. Typical query times in this project sit right at that magnitude, so measurements could only be integer multiples of the granularity, and **short queries reliably reported 0** — callers would think nothing was queried at all.
 
-改用 `System.nanoTime()`（单调、纳秒级，专为测耗时设计）。已收在 `QueryTimer` 一个类里，两个接口（表格查询、图表聚合）共用，避免以后新增接口再写错一次。**注意 `currentTimeMillis` 仍有一处正确用法**：`DataSourceManager` 给数据源打注册时间戳 —— 那里要的就是"现在是几点"，不能改。
+Switched to `System.nanoTime()` (monotonic, nanosecond-resolution, designed for measuring elapsed time). It is now collected into a single class, `QueryTimer`, shared by both endpoints (table query and chart aggregation), so a future endpoint does not get it wrong a third time. **Note that `currentTimeMillis` still has one correct use**: `DataSourceManager` stamps data sources with a registration timestamp — there, "what time is it" is exactly what is wanted and must not be changed.
 
-**实测补充（与最初记录不符，如实记下）**：待办里写"Windows 上粒度约 15.6ms"，但**本机（Windows 11 / JDK 17）实测 `currentTimeMillis` 的粒度是 1ms**（连测 400ms，跳变分布 `{1ms: 389, 2ms: 5}`），`nanoTime` 是 99ns。
+**Measured addendum (inconsistent with the original record, noted faithfully here)**: the to-do said "granularity on Windows is about 15.6 ms", but **on this machine (Windows 11 / JDK 17) `currentTimeMillis` was measured at 1 ms granularity** (measured continuously for 400 ms; the distribution of jumps was `{1ms: 389, 2ms: 5}`), while `nanoTime` was 99 ns.
 
-所以症状的表现与最初记录不同：不是"在 0 与 16 之间跳"，而是**短查询一律报 0**。在 20 万行数据上实测：`cancel` 前 `[5, 2, 2, 2, 1, 1, 1, 0, 8, 0]`，端到端 15~33ms。**结论（用错了 API）不变，但"粒度 15.6ms"这个数字不能照抄到别的机器上 —— 它随操作系统与硬件而变。**
+So the symptom looks different from the original record: it is not "jumping between 0 and 16" but **short queries uniformly reporting 0**. Measured on 200,000 rows: before `cancel`, `[5, 2, 2, 2, 1, 1, 1, 0, 8, 0]`, with 15~33 ms end to end. **The conclusion (the wrong API was used) stands, but the figure "15.6 ms granularity" must not be copied to another machine — it varies with operating system and hardware.**
 
-**一个容易读错的点**：`elapsed` 只覆盖**引擎执行**那一段，不含 HTTP、JSON 序列化与结果传输。所以"`elapsed` 远小于端到端"是正常的，不是 bug。验证方式是按引擎工作量拉出梯度：
+**An easy misreading**: `elapsed` only covers the **engine execution** segment, not HTTP, JSON serialization, or result transfer. So "`elapsed` far below end-to-end" is normal, not a bug. The way to verify is to build a gradient of engine workload:
 
-| 场景 | elapsed | 端到端 |
+| Scenario | elapsed | End to end |
 |---|---|---|
 | `select * from big limit 5` | 0~1 ms | 15~23 ms |
 | `select * from big limit 1000` | 1 ms | 16 ms |
-| `order by amount desc`（全表排序） | 32~42 ms | 45 ms |
+| `order by amount desc` (full-table sort) | 32~42 ms | 45 ms |
 
-只有真正干了活的查询（全表排序）才把 `elapsed` 拉起来，且**同一量级**；轻查询读数为 0 是因为**真的不到 1ms**。判断"计时准不准"要看它在重活上跟不跟得上，而不是拿它和端到端比。
+Only a query that really does work (the full-table sort) pulls `elapsed` up, and it does so **at the same order of magnitude**; light queries read 0 because they **really do take under 1 ms**. Whether the timing is accurate should be judged by whether it keeps up on heavy work, not by comparing it with end-to-end.
 
-### 3.2d 组件里抄 Element Plus 的默认色 = 换主题时脱节的元凶
+### 3.2d Copying Element Plus default colors into components = the culprit behind theme-switch drift
 
-**现象**：图表配色面板里，选中的色块是一圈**蓝色**边框，而旁边所有元素都是紫色的。
+**Symptom**: in the chart color panel, the selected swatch has a **blue** ring around it, while every neighboring element is purple.
 
-**原因**：`tokens.css` 已把 `--el-color-primary` 从 Element Plus 的默认蓝 `#409eff`
-覆盖成了遐蝶紫，但 `ChartPanel.vue` 里直接写了 `border-color: #409eff` ——
-**抄的是 EP 的默认值，不是主题的值**，所以它不跟着变。
+**Cause**: `tokens.css` has already overridden `--el-color-primary` from Element Plus's default blue `#409eff`
+to Violet, but `ChartPanel.vue` hardcodes `border-color: #409eff` —
+**it copied EP's default value, not the theme value**, so it does not change along with it.
 
-同一批还有 `#606266`（EP 的 `--el-text-color-regular`）、`#909399`、
-`#dcdfe6`（EP 的 `--el-border-color`）、`#e6a23c`（EP 的 warning）。
+The same batch also includes `#606266` (EP's `--el-text-color-regular`), `#909399`,
+`#dcdfe6` (EP's `--el-border-color`), and `#e6a23c` (EP's warning).
 
-**这不是"不够整洁"，是已经可见的 bug。** 判据：把 tokens.css 里某个令牌改一个明显
-不同的值，界面上还不变的地方就是抄死的。
+**This is not "not tidy enough" — it is an already-visible bug.** The test: change some token in tokens.css
+to something obviously different, and whatever does not change on screen is hardcoded.
 
-**解法**：`tokens.css` 里加一层语义别名 `--ui-*`，值指向 EP 变量本身：
+**Fix**: add a layer of semantic aliases `--ui-*` in `tokens.css`, with values pointing at the EP variables themselves:
 
 ```css
---ui-selected: var(--el-color-primary);   /* 不是 #409eff */
+--ui-selected: var(--el-color-primary);   /* not #409eff */
 --ui-text: var(--el-text-color-regular);
 --ui-border: var(--el-border-color);
 ```
 
-组件只引用 `--ui-*`。这样 EP 改主题、本文件改覆盖值，两边一起动。
+Components reference only `--ui-*`. That way, EP changing its theme and this file changing its overrides both take effect together.
 
-**顺带修掉的一处不一致**：图表浮层原本 `background: #ffffff` + `border: #dcdfe6`，
-而 tokens.css 的注释明确写着「面板不再是 `#ffffff`，而是带一点紫调的 `#fbfafd`」。
-改用 `--ui-surface` / `--ui-border` 后与其它面板统一了。
-**唯一刻意保留纯白的地方是画布遮罩** —— 那里必须不透明，半透明会让旧图形透上来。
+**An inconsistency fixed along the way**: the chart overlay originally had `background: #ffffff` + `border: #dcdfe6`,
+while the comment in tokens.css explicitly says "panels are no longer `#ffffff` but a slightly purple-tinted `#fbfafd`".
+Switching to `--ui-surface` / `--ui-border` brought it in line with the other panels.
+**The one place deliberately kept pure white is the canvas overlay** — it must be opaque there, since translucency would let the old graphics show through.
 
-**怎么查还有没有漏网的**：
+**How to check for stragglers**:
 
 ```
-python -c "<扫描 src 下所有 .vue/.css 的颜色属性上的字面色值>"
+python -c "<scan literal color values on color properties across all .vue/.css under src>"
 ```
 
-判据要**只看颜色属性**（`color` / `background` / `border-*` / `box-shadow` / `--*` 等），
-否则 `white-space: nowrap` 里的 `white` 会被误判成颜色 —— 这个假阳性踩过。
+The test must **look only at color properties** (`color` / `background` / `border-*` / `box-shadow` / `--*`, etc.),
+otherwise the `white` in `white-space: nowrap` gets misread as a color — this false positive has been hit before.
 
-### 3.3 导出范围与界面一致，聚合结果不能导出
+### 3.3 Export range matches the UI, and aggregate results cannot be exported
 
-导出遵循当前 `limit` / `offset`。另外，聚合结果（如 `count(*)`）没有明细行，**不提供导出**——这是刻意的，不是按钮失灵。
+Export honors the current `limit` / `offset`. Also, aggregate results (such as `count(*)`) have no detail rows and **are not exportable** — this is deliberate, not a broken button.
 
-### 3.4 Linux 上托盘菜单显示方块字 = 系统缺中文字体
+### 3.4 Box glyphs in the tray menu on Linux = the system lacks Chinese fonts
 
-**现象**：在 Linux 上装好程序，托盘菜单的中文变成一个一个方块（豆腐块）。
+**Symptom**: after installing the program on Linux, the Chinese in the tray menu turns into little boxes (tofu).
 
-**原因**：Windows / macOS 系统自带中文字体，Linux **不保证**。
-TinyQuery 的托盘菜单用 `SansSerif`，它会由 fontconfig 映射到某个实际字体；
-若系统里一个含 CJK 字形的字体都没有，映射结果就画不出汉字。
+**Cause**: Windows / macOS ship Chinese fonts with the system; Linux **does not guarantee** them.
+TinyQuery's tray menu uses `SansSerif`, which fontconfig maps to some actual font;
+if the system has no font containing CJK glyphs at all, the mapping result cannot draw Han characters.
 
-**这不是程序 bug**，是缺字体。装一个即可：
+**This is not a program bug**, it is a missing font. Installing one is enough:
 
 ```bash
-sudo apt-get install fonts-wqy-microhei    # 约 5 MB，够用
-# 或
-sudo apt-get install fonts-noto-cjk        # 约 91 MB，覆盖更全
+sudo apt-get install fonts-wqy-microhei    # about 5 MB, enough
+# or
+sudo apt-get install fonts-noto-cjk        # about 91 MB, broader coverage
 ```
 
-**已经做过的改进**：`packaging/package-linux.sh` 打 deb 时会补一条
-`Recommends: fonts-wqy-microhei | fonts-noto-cjk`，用 apt 安装时通常会自动带上。
-（`Recommends` 而非 `Depends`：缺字体程序照样能跑，不该因此让人装不上。
-jpackage 没有写 `Recommends` 的选项 —— OpenJDK 的 jpackage 负责人确认过
-「无法关闭依赖解析，也只能追加依赖，不能改类型」，所以是打包后改 control 文件。）
+**An improvement already made**: `packaging/package-linux.sh` adds a
+`Recommends: fonts-wqy-microhei | fonts-noto-cjk` line when building the deb, so an apt install usually pulls it in automatically.
+(`Recommends` rather than `Depends`: the program runs fine without the font, and nobody should be blocked from installing because of it.
+jpackage has no option for writing `Recommends` — the OpenJDK jpackage lead confirmed
+"dependency resolution cannot be disabled, and dependencies can only be appended, not retyped", hence editing the control file after packaging.)
 
-**rpm 没有这条**：jpackage 只产二进制 rpm，改它需要 `rpmrebuild`，
-而它不在 Ubuntu/Debian 默认仓库里。rpm 用户请照上面的命令自行安装。
+**rpm has no such line**: jpackage only produces a binary rpm, and changing it requires `rpmrebuild`,
+which is not in the default Ubuntu/Debian repositories. rpm users should install it themselves with the commands above.
 
-**为什么不用 `--linux-package-deps`**：那个选项加的是 `Depends`（硬依赖），
-会把一个字体包变成装机前提 —— 代价大于收益。
+**Why not `--linux-package-deps`**: that option adds a `Depends` (a hard dependency),
+turning a font package into an installation prerequisite — the cost outweighs the benefit.
 
-**怎么自己确认是不是这个问题**：
+**How to check for yourself whether this is the problem**:
 
 ```bash
-fc-list :lang=zh | wc -l      # 输出 0 就是没有中文字体
+fc-list :lang=zh | wc -l      # 0 means no Chinese font is installed
 ```
 
-**有测试守着**：`TrayIconInstallerTest` 会检查菜单字体能否显示菜单文案里的每个字，
-字体缺失时它**故意失败** —— 这是防呆，不要为了「让构建过」而放宽它。
-另有一个独立自检 `packaging/check-font-recommends.sh`，验证 deb 补 Recommends 的逻辑没坏。
+**A test guards this**: `TrayIconInstallerTest` checks whether the menu font can display every character in the menu copy,
+and it **deliberately fails** when the font is missing — that is a safety net, so do not loosen it just to "make the build pass".
+There is also a separate self-check, `packaging/check-font-recommends.sh`, verifying that the deb Recommends logic is not broken.
 
 ---
 
-## 四、本文件的断言由测试守着
+## 4. The Assertions in This File Are Guarded by Tests
 
-上面每一条「我们认为会怎样」都有对应的测试：
+Every "we think it behaves like this" above has a corresponding test:
 
-| 条目 | 测试类 |
+| Entry | Test class |
 |---|---|
-| 解析器相关的限制与缺陷（1.1–1.5、2.1–2.4、3.x） | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
-| 启动配置与用户数据目录（1.6） | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
-| 内存占用与预检（1.7） | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
-| 裁剪后的 runtime 仍能连库、读中文、出图（1.8） | `packaging/verify-package.py`（独立验收，**需要真的数据库**） |
-| 裁剪后加密/字符集/本地化模块齐全（1.8） | `packaging/verify-crypto.py`（独立验收） |
-| `.ps1` 的 BOM 没被吃掉（1.9） | `packaging/check-ps1-encoding.py`（独立自检） |
-| 托盘菜单字体能显示中文（3.4） | `src/test/java/com/tinyquery/desktop/TrayIconInstallerTest.java` |
-| deb 补中文字体 Recommends（3.4） | `packaging/check-font-recommends.sh`（独立自检，**只在 Linux 上跑**） |
-| README 两张表与真实行为一致（全部） | `src/test/java/com/tinyquery/audit/ReadmeAudit.java`（审计工具，见下） |
+| Parser-related limitations and defects (1.1–1.5, 2.1–2.4, 3.x) | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
+| Startup configuration and user data directory (1.6) | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
+| Memory footprint and pre-check (1.7) | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
+| The trimmed runtime still connects to databases, reads Chinese, and renders charts (1.8) | `packaging/verify-package.py` (standalone acceptance, **needs real databases**) |
+| Crypto/charset/localization modules intact after trimming (1.8) | `packaging/verify-crypto.py` (standalone acceptance) |
+| The `.ps1` BOM has not been eaten (1.9) | `packaging/check-ps1-encoding.py` (standalone self-check) |
+| The tray menu font can display Chinese (3.4) | `src/test/java/com/tinyquery/desktop/TrayIconInstallerTest.java` |
+| The deb adds a Chinese-font Recommends (3.4) | `packaging/check-font-recommends.sh` (standalone self-check, **runs on Linux only**) |
+| The README's two tables match real behavior (all) | `src/test/java/com/tinyquery/audit/ReadmeAuditTest.java` (runs in `mvn test`) + `ReadmeAudit.java` (the assertions, and a `main` for manual runs) |
 
-1.7 的**实测数字**由 `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java` 产生，
-可随时重跑复核（`mvn test-compile` 后直接跑 main 方法，或在 IDE 里运行）。
+The **measured numbers** in 1.7 are produced by `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java`,
+and can be re-run at any time to re-check (`mvn test-compile`, then run the main method directly, or run it from the IDE).
 
-3.4 的第二个自检**不在 Maven 里**：它要 `dpkg-deb`，Windows 上没有，
-放进 Maven 会让 Windows 构建变红或被迫跳过（跳过就等于没有）。
-它由 `packaging/package-linux.sh` 在打 deb/rpm 前主动调用，自检不过就中止打包 ——
-这样"坏掉"不会拖到用户装上包才发现。手动跑：`bash packaging/check-font-recommends.sh`。
+3.4's second self-check is **not in Maven**: it needs `dpkg-deb`, which does not exist on Windows,
+and putting it in Maven would either make Windows builds go red or force it to be skipped (and skipping equals not having it).
+It is invoked proactively by `packaging/package-linux.sh` before building the deb/rpm, and packaging aborts if the self-check fails —
+so "it broke" does not wait until a user has installed the package to surface. Run it manually with: `bash packaging/check-font-recommends.sh`.
 
-1.8 / 1.9 的三个自检同样**不在 Maven 里**，理由各不相同：
+The three self-checks for 1.8 / 1.9 are likewise **not in Maven**, each for a different reason:
 
-- `verify-package.py` 要**真的数据库**（MySQL/PostgreSQL 由 docker 起，端口可配）。
-  放进 Maven 会让没起数据库的机器变红，而人会习惯性跳过它 —— 跳过就等于没有
-- `verify-crypto.py` 依赖 `jpackage` 产物的目录结构，`mvn test` 阶段根本没有产物
-- `check-ps1-encoding.py` 只跟 Windows 的 `.ps1` 有关，且是个**秒级**的廉价检查，
-  适合在改动打包脚本后手动跑
+- `verify-package.py` needs **real databases** (MySQL/PostgreSQL started via docker, ports configurable).
+  Putting it in Maven would turn machines without databases running red, and people would habitually skip it — and skipping equals not having it
+- `verify-crypto.py` depends on the directory structure of the `jpackage` output, and at the `mvn test` stage there is no output at all
+- `check-ps1-encoding.py` only concerns Windows `.ps1` files, and is a **sub-second** cheap check,
+  well suited to being run manually after changing packaging scripts
 
-三者都**用完即报**（打印通过了几项、失败在哪一项），不是"没报错就算过"。
+All three **report on every run** (printing how many checks passed and which one failed) — they are not "no error means pass".
 
-**README 两张表**（「SQL 支持范围与限制」与「已知问题」）由 `ReadmeAudit` 逐条核对。
-它是个 `main` 程序而非测试（README 的每句话未必都能机械断言），
-但**走真实 HTTP 入口**，把"声称的行为"与"实际行为"并排打出来。怎么跑见类注释。
+**The README's two tables** ("SQL Support Scope and Limitations" and "Known Issues") are verified item by item by `ReadmeAudit`.
+It **goes through the real HTTP entry point**, printing "claimed behavior" and "actual behavior" side by side. See the class comment for how to run it.
 
-> **为什么要专门有这个工具**：2026-10 复核时发现 README 的【支持】表把
-> `select a as 别名` 写成"支持"，而实现从来没有过（已记为 2.1）。
-> 这个错误从 `8cc9c9f` 重写 README 起存在了很久，**没有任何测试因此变红**。
-> 本文件第四节的表格覆盖的是"限制"，而 README 覆盖的是"能力"——
-> 后者此前完全没人守。
+> **It used to be only a `main` program, and therefore never ran automatically** (fixed 2026-10-11):
+> the assertions had long been written, but the class name did not match surefire's default pattern,
+> so it only ran when someone remembered to run it by hand — a gatekeeper that does not fire on its own is no gatekeeper.
+> It is now driven by `ReadmeAuditTest` and runs in `mvn test`; `main` is kept for reading the detailed output while troubleshooting.
+> The assertions are written in exactly one place, `ReadmeAudit` — duplicating the list would just create a new drift surface.
 
-**这不是形式主义** —— 这个仓库真的漂移过：README 长期把 `in` / `between` / `is null`
-写成"支持"（其实从未实现），又把已经实现的「条件外层括号」写成"不支持"。
-**两个方向的错都有，而且存在了不止一个版本，没有任何测试因此变红。**
+> **Wiring it up exposed a false green inside the tool itself** (2026-10-11): the `group by` entry's fixture was
+> `select city, count(*) ... group by city`, which trips the "plain column mixed with aggregate" rule first and picks up
+> *that* rule's dedicated message — so it showed ✅, hiding the truth that **`group by` has no dedicated message at all**.
+> `DocumentedLimitationsTest` had two false greens of the same kind (limitation 1.1 and defect 2.4).
+> All three are corrected, and the "has a dedicated message" claim in the README and in NOTES 2.4 was corrected with them.
+> **A fixture must test only the one thing it claims to test** — incidentally exercising another rule hides the truth.
 
-所以改了行为之后，那些测试会红，改的人必须同时决定：是改结论（代码），还是改文档。
-两边都改完才算完成。
+> **The measuring instrument needs its own test**: the `garbageTableName` helper used to decide
+> "does the error mention a garbage table name" originally treated `group by` as a clause boundary and derived the table name
+> `sales` — while the real parser returns `sales group by city`. **The instrument was wrong for exactly the reason it exists to detect**
+> (the parser does not recognize `group by`). So `ReadmeAuditTest` has a self-check that compares against the real `SQLParser`
+> entry by entry, deriving the expected values on the spot rather than maintaining them from memory.
 
-**维护约定**：
+> **Why this tool exists at all**: during the 2026-10 review, the README's [Supported] table was found to list
+> `select a as 别名` as "supported" when the implementation had never had it (recorded as 2.1).
+> That error had been there for a long time, since the README was rewritten in `8cc9c9f`, and **no test ever went red because of it**.
+> Section 4 of this file covers "limitations", whereas the README covers "capabilities" —
+> and the latter had never been guarded by anything.
 
-| 情况 | 怎么做 |
+**This is not formalism** — this repository really has drifted: the README long listed `in` / `between` / `is null`
+as "supported" (they were never implemented), while listing the already-implemented "outer parentheses around conditions" as "not supported".
+**The errors went in both directions, and lasted more than one version, and no test ever went red because of it.**
+
+So after a behavior change those tests go red, and whoever made the change must decide at the same time: change the conclusion (the code), or change the documentation.
+Only when both are done is the work complete.
+
+**Maintenance conventions**:
+
+| Situation | What to do |
 |---|---|
-| 实现了某条限制 | 测试从「断言抛异常/断言垃圾表名」改成「断言正确行为」，**并删掉本文件的条目** |
-| 新增了限制 | 先在测试里加断言，再来写条目 |
-| 发现文档与实现不符 | 先跑 `DocumentedLimitationsTest` 确认哪个是对的，再改错的那一边 |
+| A limitation has been implemented | Change the test from "assert it throws / assert the garbage table name" to "assert the correct behavior", **and delete the entry from this file** |
+| A new limitation was added | Add the assertion to the test first, then write the entry |
+| Documentation and implementation disagree | Run `DocumentedLimitationsTest` first to establish which one is right, then fix the wrong side |
 
 ---
 
-## 五、改了代码之后怎么自查
+## 5. How to Self-Check After Changing Code
 
-1. **跑全量测试**：`mvn test`（需要先构建前端，见 README）
-2. **改了 SQL 解析或执行**：跑 `DocumentedLimitationsTest`，并同步 README 的
-   「SQL 支持范围与限制」表格与本文件
-3. **改了解析器**：确认本文件 2.1 / 2.2 两条的描述仍然准确
-4. **改了文案或 i18n**：按 `TinyQuery-Data/06-开发文档/i18n-术语表与风格规范.md` 的「改完怎么验」一节做
-5. **改完顺手跑一次 javadoc 引用检查**：
+1. **Run the full test suite**: `mvn test` (the frontend has to be built first, see README)
+2. **Changed SQL parsing or execution**: run `DocumentedLimitationsTest`, and sync the README's
+   "SQL Support Scope and Limitations" table and this file
+3. **Changed the parser**: confirm that the descriptions in 2.1 / 2.2 of this file are still accurate
+4. **Changed copy or i18n**: follow the "how to verify after changes" section of `TinyQuery-Data/06-开发文档/i18n-术语表与风格规范.md`
+5. **Run the javadoc reference check once after finishing**:
 
    ```
-   javadoc -Xdoclint:reference -quiet -d <临时目录> -classpath target/classes \
+   javadoc -Xdoclint:reference -quiet -d <temp dir> -classpath target/classes \
            -sourcepath src/main/java com.tinyquery.datasource.loader
    ```
 
-   **为什么单列一条**：`{@link}` 是 javadoc 的一部分，**不参与编译，`mvn test` 完全看不见它**。
-   指向 private 成员、或指向不存在的成员的链接会一直"看着没问题"，只有 IDE 和 javadoc 会报。
-   实测就这样漏掉过一处（`{@link XlsxReader#numberOrDate}`，对方是 private 方法）。
+   **Why it gets its own item**: `{@link}` is part of javadoc, **it does not participate in compilation, and `mvn test` cannot see it at all**.
+   Links pointing at private members, or at members that do not exist, will keep on "looking fine"; only the IDE and javadoc report them.
+   One such case was missed this way in practice (`{@link XlsxReader#numberOrDate}`, where the target is a private method).
 
-6. **重构之后清一遍残留**：删了某个字段/方法之后，确认没有"声明还在、传递还在、但没人读"的死代码。
-   实测漏过一次：判据从"表头是不是占位符"改成"整页有没有文字"之后，
-   `headersArePlaceholders` 的声明、构造参数、三处传递全留着，**注释还在描述已废弃的设计** ——
-   测试全绿，但下一个读代码的人会被注释误导。**测试全绿不等于代码干净。**
+6. **Clean up leftovers after refactoring**: after deleting a field or method, make sure there is no dead code that is "still declared, still passed around, but read by nobody".
+   One case was missed in practice: after the criterion changed from "is the header a placeholder" to "does the page have any text at all",
+   `headersArePlaceholders`'s declaration, constructor parameter, and three call sites were all left in place, **with the comment still describing the abandoned design** —
+   the tests were all green, but the next person to read the code would be misled by the comment. **All-green tests do not mean clean code.**
 
-7. **"改了怎么没生效" → 先看版本号，别先怀疑代码**。
+7. **"I changed it and nothing happened" → check the version number first, do not suspect the code first**.
 
-   程序启动后设置页底部会显示一行构建标识，如 `1.0.0 · e0dce58 · 2026-10-10 15:02`；
-   启动日志里也有一行「构建版本」。拿它与你**最近一次打包的时间**对一下：
+   After the program starts, the bottom of the settings page shows a build identity line such as `1.1.0 · e0dce58 · 2026-10-10 15:02`;
+   there is also a "build version" line in the startup log. Compare it against **the time of your most recent packaging run**:
 
-   - **一致** → 你看到的就是最新代码，问题在别处
-   - **是旧时间** → 你运行的不是刚打的那个包（旧进程没退、浏览器缓存、
-     或者跑的是 `mvn spring-boot:run` 而不是新 jar）
+   - **They match** → what you are looking at is the latest code; the problem is elsewhere
+   - **It is an old time** → you are not running the package you just built (an old process did not exit, browser cache,
+     or you are running `mvn spring-boot:run` instead of the new jar)
 
-   这条值得单列，是因为**在这一行出现之前，这个问题只能靠猜**：浏览器加载的旧 bundle
-   与新的长得一模一样，界面上没有任何东西能区分。实测为此白白排查过很久。
+   This deserves its own item because **before that line existed, this problem could only be guessed at**: an old bundle
+   loaded by the browser looks exactly like a new one, and nothing in the UI can tell them apart. A lot of time was wasted on exactly this in practice.
 
-   打包时间不显示（只有版本号）说明 `build-info.properties` 没生成 ——
-   检查 pom 里的 `generate-build-info` 有没有执行。
+   If the packaging time does not show (only the version number), `build-info.properties` was not generated —
+   check whether `generate-build-info` in the pom ran.
 
-8. **改了语言相关的代码，跑一遍真浏览器回归**：
+8. **Changed language-related code? Run the real-browser regression**:
 
    ```
    mvn package -DskipTests
    python tools/locale-e2e/run_all.py
    ```
 
-   覆盖 5 个场景（本地/服务端两份语言的优先级、跨启动跟随、切语言后重取后端文案）。
-   **为什么不能用单测替代**：它依赖 `localStorage` 的真实状态、真实启动时序、
-   以及 Vue 的响应式刷新 —— jsdom mock 掉之后测的就是 mock。
-   本项目踩过"夹具不能区分实现 → 假绿"的坑，所以这里用真浏览器。
-   详见 `tools/locale-e2e/README.md`。
+   Covers 5 scenarios (precedence of the local and server-side languages, following across restarts, re-fetching backend copy after a language switch).
+   **Why unit tests cannot substitute**: it depends on the real state of `localStorage`, the real startup sequence,
+   and Vue's reactive refresh — mocking jsdom away means testing the mock.
+   This project has been burned by "a fixture that cannot distinguish implementations → false green", so a real browser is used here.
+   See `tools/locale-e2e/README.md`.
 
-9. **改了打包脚本、或改动了 runtime 的模块清单，必须跑一遍产物验收**：
+9. **Changed packaging scripts, or changed the runtime module list? Artifact acceptance must be run**:
 
    ```
-   powershell -File packaging\package.ps1       # 或 ./packaging/package.sh
-   python packaging\verify-package.py           # 全链路
-   python packaging\verify-crypto.py            # 加密/编码/本地化
+   powershell -File packaging\package.ps1       # or ./packaging/package.sh
+   python packaging\verify-package.py           # full end-to-end
+   python packaging\verify-crypto.py            # crypto / encoding / localization
    ```
 
-   `verify-package.py` 跑的是**打包出来的启动器**（不是 `java -jar`），
-   所以只有它能验到自带的那个 runtime。详见本文件 1.8 与 1.9。
+   `verify-package.py` runs **the packaged launcher** (not `java -jar`),
+   so only it can verify the bundled runtime. See 1.8 and 1.9 of this file.
 
 ---
 
-## 六、本文件的维护约定
+## 6. Maintenance Conventions for This File
 
-- **位置**：仓库根目录 `NOTES.md`。开发者用的文档放仓库里，跟代码一起版本化
-- **新增条目**：先判断是"缺陷"还是"限制"，放对章节 —— 放错会让人按错误的预期去改
-- **修好之后**：**删掉条目**，不要留"已修复"的墓碑。历史在 git 里
-- **从限制变成缺陷**：如果某天认为它该工作了，把它从第一章挪到第二章，并写清为什么改主意
+- **Location**: `NOTES.md` in the repository root. Developer-facing docs live in the repository and are versioned with the code
+- **New entries**: decide first whether it is a "defect" or a "limitation", and put it in the right section — putting it in the wrong one makes people change things with the wrong expectation
+- **After fixing it**: **delete the entry**; do not leave a "fixed" tombstone behind. History is in git
+- **When a limitation becomes a defect**: if one day you decide it should work, move it from section 1 to section 2 and write down why you changed your mind
