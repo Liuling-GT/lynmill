@@ -43,7 +43,7 @@ final class WinCred {
 
     // ==================== 常量 ====================
 
-    /** 通用凭据类型。TinyQuery 存的是任意密码，不属于域/证书等专有类型 */
+    /** 通用凭据类型。LynMill 存的是任意密码，不属于域/证书等专有类型 */
     static final int CRED_TYPE_GENERIC = 1;
 
     /** 持久化到本机。随用户账户保存，重启后仍在 */
@@ -177,7 +177,7 @@ final class WinCred {
         cred.Flags = 0;
         cred.Type = CRED_TYPE_GENERIC;
         cred.TargetName = new WString(key);
-        cred.Comment = new WString("TinyQuery 数据源密码");
+        cred.Comment = new WString("LynMill 数据源密码");
         cred.CredentialBlobSize = blob.length;
         cred.CredentialBlob = blobMem;
         cred.Persist = CRED_PERSIST_LOCAL_MACHINE;

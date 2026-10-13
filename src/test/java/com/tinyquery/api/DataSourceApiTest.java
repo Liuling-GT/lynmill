@@ -46,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *  取舍看这一层到底有什么可测。）
  *
  * <p>令牌：{@link TokenFilter} 拦下所有 {@code /api/**} 请求，
- * 不带 {@code X-TinyQuery-Token} 一律 401。所以每个用例都要带上真实令牌 ——
+ * 不带 {@code X-LynMill-Token} 一律 401。所以每个用例都要带上真实令牌 ——
  * 用 {@link SecurityToken#value()} 而不是造假值，这样连过滤器一起走通了。
  */
 @DisplayName("API 层（DataSourceController / GlobalExceptionHandler）")

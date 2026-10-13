@@ -22,7 +22,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 /**
- * TinyQuery 的控制窗口 —— 一个极小的 Swing 窗口，是整个桌面外壳的主界面。
+ * LynMill 的控制窗口 —— 一个极小的 Swing 窗口，是整个桌面外壳的主界面。
  *
  * <p>它存在的首要理由是让用户能退出。这个应用没有控制台，用户关掉浏览器之后，
  * 后台的 java 进程仍在跑；只靠系统托盘不行，因为 Linux 的 GNOME 3 默认没有托盘区。
@@ -199,7 +199,7 @@ public class ControlWindow extends JFrame {
      * @param onExit         点「退出」或右上角 ✕ 时执行
      */
     public ControlWindow(String url, Runnable onOpenBrowser, Runnable onExit) {
-        super("TinyQuery");
+        super("LynMill");
 
         // 关闭动作交给我们自己处理，让 ✕ 走和「退出」按钮完全相同的优雅退出流程。
         // 刻意不做「最小化到托盘」—— 那会重新制造出「我明明关了它还在跑」的困惑，

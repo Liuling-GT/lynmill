@@ -12,7 +12,7 @@ r"""
 表现就是待办里反复提到的「双击了没反应」。
 
 【关键设计：跑 app-image，不是跑 jar】
-本脚本驱动的必须是 `jpackage-out\TinyQuery\TinyQuery.exe`（或 --runtime-image 精简后的那个），
+本脚本驱动的必须是 `jpackage-out\LynMill\LynMill.exe`（或 --runtime-image 精简后的那个），
 而不是 `java -jar`。只有前者才带自带的 runtime，才验证得了模块是否裁过头。
 用 jar 测等于没测 —— 那是拿开发机的完整 JDK 在跑。
 
@@ -124,9 +124,9 @@ class App:
 
     def start(self, timeout=120):
         env = dict(os.environ)
-        env["TINYQUERY_HOME"] = str(self.home)
+        env["LYNMILL_HOME"] = str(self.home)
         env["JAVA_TOOL_OPTIONS"] = ""
-        env.pop("TINYQUERY_LOCALE", None)
+        env.pop("LYNMILL_LOCALE", None)
         exe = self.launcher()
         # 关掉自动开浏览器。打包产物默认会开一个真的浏览器指向本实例，
         # 那个页面会带着 Edge 的遥测请求打到测试服务端上（实测日志里出现
@@ -197,7 +197,7 @@ class App:
 
     def api(self, path, payload=None):
         url = "http://127.0.0.1:%d%s" % (self.port, path)
-        headers = {"X-TinyQuery-Token": self.token or "",
+        headers = {"X-LynMill-Token": self.token or "",
                    "Content-Type": "application/json"}
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         req = urllib.request.Request(url, data=data, headers=headers,
@@ -433,7 +433,7 @@ def main():
     if a.app:
         app_dir = Path(a.app)
     else:
-        app_dir = ROOT / "jpackage-out" / "TinyQuery"
+        app_dir = ROOT / "jpackage-out" / "LynMill"
     if not app_dir.exists():
         print("  找不到 %s —— 先跑 packaging\\package.ps1" % app_dir)
         return 2

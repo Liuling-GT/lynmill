@@ -183,7 +183,7 @@ class DesktopThemeTest {
     void switchPersistsToFile() throws IOException {
         // 用真实的用户数据目录跑一次 switchTo，再读文件验证。
         // 目录由 pom 里的 surefire 配置指向 target/test-home，
-        // 不会碰开发者真实的 %APPDATA%\TinyQuery
+        // 不会碰开发者真实的 %APPDATA%\LynMill
         Path file = PathResolver.getDataDir().resolve(DesktopTheme.FILE_NAME);
         Files.deleteIfExists(file);
 

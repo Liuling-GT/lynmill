@@ -31,7 +31,7 @@ public class WindowsCredentialStore implements CredentialStore {
     private static final Logger log = LoggerFactory.getLogger(WindowsCredentialStore.class);
 
     /** 探测用的 key。写完立刻删掉，不留痕迹 */
-    private static final String PROBE_KEY = "TinyQuery/__availability_probe__";
+    private static final String PROBE_KEY = "LynMill/__availability_probe__";
 
     /** 平台名字是否匹配。false 时连尝试都不必 */
     private final boolean platformMatches;

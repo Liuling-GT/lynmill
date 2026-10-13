@@ -22,7 +22,7 @@ export default {
 
   // ==================== 应用外壳 ====================
   app: {
-    title: 'TinyQuery',
+    title: 'LynMill',
     subtitle: '本地查询引擎 · V1.1.0',
     nav: {
       query: '查询',
@@ -32,7 +32,7 @@ export default {
       settings: '设置',
     },
     exited: {
-      title: 'TinyQuery 已退出',
+      title: 'LynMill 已退出',
       text: '后台程序已经关闭，这个页面不会再响应任何操作。',
       text2: '现在可以关闭这个标签页了。',
       close: '关闭本页',

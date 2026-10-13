@@ -1,4 +1,4 @@
-# TinyQuery
+# LynMill
 
 **English** | [中文](README.zh-CN.md)
 
@@ -32,7 +32,7 @@ A single executable with a bundled runtime, so no JDK installation is required. 
 
 ## What Is This
 
-Say you want to query a CSV file. You either open it in Excel (which dies at a few hundred thousand rows) or install MySQL and import the data just to run one SQL statement. TinyQuery aims to shorten that to "double-click → drop in a file → write SQL."
+Say you want to query a CSV file. You either open it in Excel (which dies at a few hundred thousand rows) or install MySQL and import the data just to run one SQL statement. LynMill aims to shorten that to "double-click → drop in a file → write SQL."
 
 It does this by loading data into an in-memory **columnar store** and executing queries in a **vectorized** fashion. That makes scan-heavy queries (`count(*)`, filtering, aggregation) far faster than row-by-row processing.
 
@@ -70,7 +70,7 @@ It does this by loading data into an in-memory **columnar store** and executing 
 
 ### Why There Is No PDF Data Source
 
-TinyQuery **does not support PDF**. An early version read "bordered tables only," but after real-world testing that support was **deliberately removed**. The reasoning is worth spelling out, because "reads some of them" sounds better than "not supported" but isn't:
+LynMill **does not support PDF**. An early version read "bordered tables only," but after real-world testing that support was **deliberately removed**. The reasoning is worth spelling out, because "reads some of them" sounds better than "not supported" but isn't:
 
 **1. A PDF contains no "table," only lines and positioned text.** Reconstructing rows and columns from those is necessarily an **inference**, and inferences are sometimes wrong. The best open-source solution in the field (Camelot, built specifically for PDF tables) reaches only about **0.78** F1 on the established ICDAR-2013 benchmark — roughly one in five is wrong.
 
@@ -96,18 +96,21 @@ All the file says is "there is a character at this coordinate." **Nothing states
 
 ## Download and Run
 
+Grab the package for your platform from the **[Releases page](https://github.com/Liuling-GT/lynmill/releases/latest)**.
+Each release ships a `.sha256` / MD5 checksum alongside the files if you want to verify the download.
+
 The application is **portable**: unzip it and run — no need to install Java first (the runtime is bundled).
 
 ### Windows
 
-1. Unzip `TinyQuery-1.1.0-win.zip`
-2. Double-click `TinyQuery.exe` inside
+1. Unzip `LynMill-1.1.0-win.zip`
+2. Double-click `LynMill.exe` inside
 
-> Don't drag `TinyQuery.exe` out on its own — it needs the `app\` and `runtime\` directories alongside it to start.
+> Don't drag `LynMill.exe` out on its own — it needs the `app\` and `runtime\` directories alongside it to start.
 
 ### macOS
 
-1. Open `TinyQuery-1.1.0.dmg` and drag TinyQuery into Applications
+1. Open `LynMill-1.1.0.dmg` and drag LynMill into Applications
 2. For the first launch, see the workaround in the next section
 
 > The current build is for **Apple Silicon (M1–M4)**. On an Intel Mac, build from source or run the jar directly (see [Build from Source](#build-from-source)).
@@ -117,15 +120,15 @@ The application is **portable**: unzip it and run — no need to install Java fi
 **Option 1: Archive (recommended, works on all distributions)**
 
 ```bash
-tar -xzf TinyQuery-1.1.0-linux-x86_64.tar.gz
-./TinyQuery/bin/TinyQuery
+tar -xzf LynMill-1.1.0-linux-x86_64.tar.gz
+./LynMill/bin/LynMill
 ```
 
 **Option 2: Installer package**
 
 ```bash
-sudo dpkg -i tinyquery_1.1.0-1_amd64.deb     # Debian / Ubuntu
-sudo rpm -i tinyquery-1.1.0-1.x86_64.rpm     # Fedora / RHEL
+sudo dpkg -i lynmill_1.1.0-1_amd64.deb     # Debian / Ubuntu
+sudo rpm -i lynmill-1.1.0-1.x86_64.rpm     # Fedora / RHEL
 ```
 
 After installation, launch it from the application menu.
@@ -159,7 +162,7 @@ When it says the app "cannot be opened because the developer cannot be verified,
 - **Right-click the icon → choose "Open" → click "Open" again** (double-clicking directly won't work)
 - Or run this once:
   ```bash
-  xattr -dr com.apple.quarantine /Applications/TinyQuery.app
+  xattr -dr com.apple.quarantine /Applications/LynMill.app
   ```
 
 ### Linux
@@ -167,7 +170,7 @@ When it says the app "cannot be opened because the developer cannot be verified,
 Normally nothing blocks it. If you get a permission error:
 
 ```bash
-chmod +x TinyQuery/bin/TinyQuery
+chmod +x LynMill/bin/LynMill
 ```
 
 ---
@@ -251,9 +254,9 @@ The application's own files (data source config, logs, lock file) live in the **
 
 | Platform | Path |
 |---|---|
-| Windows | `%APPDATA%\TinyQuery\` |
-| macOS | `~/Library/Application Support/TinyQuery/` |
-| Linux | `~/.local/share/TinyQuery/` (respects `$XDG_DATA_HOME`) |
+| Windows | `%APPDATA%\LynMill\` |
+| macOS | `~/Library/Application Support/LynMill/` |
+| Linux | `~/.local/share/LynMill/` (respects `$XDG_DATA_HOME`) |
 
 Directory contents:
 
@@ -264,7 +267,7 @@ tinyquery.url        access URL of this instance
 logs/tinyquery.log   runtime log - check here first when something breaks
 ```
 
-The `TINYQUERY_HOME` environment variable overrides this entire directory (useful for portable deployments).
+The `LYNMILL_HOME` environment variable overrides this entire directory (useful for portable deployments).
 
 **Uninstalling does not delete this directory**, nor any saved passwords (see below).
 
@@ -274,16 +277,16 @@ The `TINYQUERY_HOME` environment variable overrides this entire directory (usefu
 
 - **Listens only on `127.0.0.1`**, unreachable from the LAN or the internet
 - **Every API requires a token**: generated randomly at process startup and injected into the home page; requests without a token get a 401
-  - Header: `X-TinyQuery-Token`
+  - Header: `X-LynMill-Token`
   - The token changes on every launch
 - All data stays in memory; apart from the files you explicitly register, nothing else is read or written
-- **Passwords**: when "Save password" is checked, they go into the system credential manager under the entry name `TinyQuery/<datasource name>`; **if unchecked, nothing is ever written to disk**
+- **Passwords**: when "Save password" is checked, they go into the system credential manager under the entry name `LynMill/<datasource name>`; **if unchecked, nothing is ever written to disk**
 
 > ⚠️ **Uninstalling does not clear saved passwords.** Delete them yourself:
-> - Windows: Control Panel → Credential Manager → Windows Credentials → find `TinyQuery/...`
-> - macOS: Keychain Access → search for `TinyQuery`
-> - Linux: search for `TinyQuery` in a keyring manager such as Passwords and Keys (seahorse), or run
->   `secret-tool clear key 'TinyQuery/<datasource name>'`
+> - Windows: Control Panel → Credential Manager → Windows Credentials → find `LynMill/...`
+> - macOS: Keychain Access → search for `LynMill`
+> - Linux: search for `LynMill` in a keyring manager such as Passwords and Keys (seahorse), or run
+>   `secret-tool clear key 'LynMill/<datasource name>'`
 
 ---
 
@@ -342,20 +345,20 @@ About 340 tests, some of them platform-specific (Windows and macOS each skip the
 | **Unsupported syntax reports "data source not found"** | Hard to diagnose | See [the note above](#-error-messages-can-be-misleading) |
 | **Linux needs a keyring to actually save passwords** | Passwords not saved | Secret Service (libsecret) support is implemented, but the **system must have a working keyring** (GNOME Keyring / KWallet). Server editions, minimal distributions, and bare window-manager setups often lack one or don't start it, in which case "save password" errors out and you must retype it every time. Install with: `sudo apt install gnome-keyring libsecret-1-0` |
 | **Menus show boxes when Linux lacks Chinese fonts** | Cosmetic | Install `fonts-wqy-microhei` (about 5MB) or `fonts-noto-cjk`. The `.deb` already declares `Recommends`, so `apt` usually installs one automatically |
-| **`.deb` can't be removed on very minimal systems** | Uninstall | Affects only minimal installs / WSL / headless servers. Regular desktop distributions are **unaffected** (confirmed by testing). Workaround: `sudo dpkg --purge --force-all tinyquery`. Details below |
+| **`.deb` can't be removed on very minimal systems** | Uninstall | Affects only minimal installs / WSL / headless servers. Regular desktop distributions are **unaffected** (confirmed by testing). Workaround: `sudo dpkg --purge --force-all lynmill`. Details below |
 | **Large package size** | About 180 MB | jpackage bundles the full JDK by default; jlink could later trim this to 60–80 MB |
 | **No installer for Intel Mac yet** | Build it yourself | You can run it via the jar |
 
 ### About `.deb` Removal Failures (Linux)
 
-> **The short version: regular desktop distributions don't hit this.** Verified on a real Ubuntu VM: `sudo dpkg -r tinyquery` completes normally and removes both the application files and the menu entry. What follows applies to **minimal installs** (servers, WSL, container images).
+> **The short version: regular desktop distributions don't hit this.** Verified on a real Ubuntu VM: `sudo dpkg -r lynmill` completes normally and removes both the application files and the menu entry. What follows applies to **minimal installs** (servers, WSL, container images).
 
-Symptom: on a minimal system, `sudo dpkg -r tinyquery` reports
+Symptom: on a minimal system, `sudo dpkg -r lynmill` reports
 
 ```
 xdg-desktop-menu: No writable system menu directory found.
-dpkg: error processing package tinyquery (--remove):
- installed tinyquery package pre-removal script subprocess returned error exit status 3
+dpkg: error processing package lynmill (--remove):
+ installed lynmill package pre-removal script subprocess returned error exit status 3
 ```
 
 Cause: the `prerm` script generated by jpackage uses `set -e` and calls `xdg-desktop-menu uninstall`. That command **also handles `*.directory` files**, and that code path requires `/usr/share/desktop-directories` to exist and be writable — minimal installs don't have it, so the command exits with status 3, `set -e` aborts the whole removal, and `/opt/tinyquery` is left untouched.
@@ -366,17 +369,17 @@ Workarounds (pick one):
 
 ```bash
 # 1) Force-remove
-sudo dpkg --purge --force-all tinyquery
+sudo dpkg --purge --force-all lynmill
 
 # 2) Or restore the missing directories, then uninstall normally
 sudo mkdir -p /usr/share/desktop-directories
-sudo dpkg -r tinyquery
+sudo dpkg -r lynmill
 ```
 
-**Also**: after `dpkg -r`, `dpkg -l tinyquery` shows status `rc`. That is **normal** — it means "removed, but dpkg still keeps the package record" (because the package includes the `/opt` directory entry). The application really is gone. To clear the record as well:
+**Also**: after `dpkg -r`, `dpkg -l lynmill` shows status `rc`. That is **normal** — it means "removed, but dpkg still keeps the package record" (because the package includes the `/opt` directory entry). The application really is gone. To clear the record as well:
 
 ```bash
-sudo dpkg --purge tinyquery
+sudo dpkg --purge lynmill
 ```
 
 ---
@@ -391,7 +394,7 @@ The complete dependency list, versions, and licenses (including notes on LGPL-cl
 
 ## About This Project
 
-TinyQuery is a personal learning project by a university student, written in spare time outside coursework, and built with heavy large language model assistance.
+LynMill is a personal learning project by a university student, written in spare time outside coursework, and built with heavy large language model assistance.
 
 **It is not a commercial product, and not production-grade software.** Please read this section before using it or contributing.
 
@@ -410,7 +413,7 @@ What the author does stand behind is the design, the direction, and the acceptan
 
 ### Disclaimer
 
-TinyQuery is provided **as is**, without warranty of any kind, express or implied.
+LynMill is provided **as is**, without warranty of any kind, express or implied.
 
 - The project has made a genuine effort to be **usable**, but makes **no guarantee that it is suitable for production use**.
 - **Evaluate the risk yourself before relying on it.** For anything important, verify the results independently.
@@ -424,7 +427,7 @@ Feedback is genuinely welcome. Two things to understand first:
 - **This is a personal project.** The author's priority is coursework, so maintenance time is limited and **responses may be slow**. Issues are not ignored — they are queued behind school.
 - **Check the docs first.** Before opening an issue, please read this README and the [Known Issues](#known-issues) section, and confirm the problem is not already documented.
 
-**Reporting a problem.** Open an issue. Useful reports include what you did, what you expected, and what actually happened; your operating system and how you ran TinyQuery (portable build or from source); the exact SQL and the data source type involved; and log excerpts if relevant — see [Where Data Is Stored](#where-data-is-stored) for log locations.
+**Reporting a problem.** Open an issue. Useful reports include what you did, what you expected, and what actually happened; your operating system and how you ran LynMill (portable build or from source); the exact SQL and the data source type involved; and log excerpts if relevant — see [Where Data Is Stored](#where-data-is-stored) for log locations.
 
 If the problem lies in a part of the code that was AI-assisted, that is still worth reporting. Pointing it out is helpful, and it will be fixed.
 
@@ -432,7 +435,7 @@ If the problem lies in a part of the code that was AI-assisted, that is still wo
 
 ### License
 
-TinyQuery is released under the **MIT License**. See [LICENSE](LICENSE) for the full text.
+LynMill is released under the **MIT License**. See [LICENSE](LICENSE) for the full text.
 
 In short: you may use, modify, and redistribute it, including commercially, provided the copyright notice and license text are kept. The software comes with no warranty.
 

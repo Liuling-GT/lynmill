@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# TinyQuery macOS 打包脚本 —— 用 jpackage 生成 .app 与 .dmg。
+# LynMill macOS 打包脚本 —— 用 jpackage 生成 .app 与 .dmg。
 #
 # 产物：
-#   jpackage-out/TinyQuery.app            ← 可直接双击的应用程序包
-#   jpackage-out/TinyQuery-<版本>.dmg     ← 发给别人用的磁盘映像
+#   jpackage-out/LynMill.app            ← 可直接双击的应用程序包
+#   jpackage-out/LynMill-<版本>.dmg     ← 发给别人用的磁盘映像
 #
 # 用法（在项目根目录执行）：
 #   bash packaging/package.sh
@@ -56,8 +56,8 @@ jar="$root/target/tinyquery-$appVersion.jar"
 icon="$root/packaging/tinyquery.icns"
 in="$root/target/jpackage-input"
 dest="$root/jpackage-out"
-app="$dest/TinyQuery.app"
-dmg="$dest/TinyQuery-$appVersion.dmg"
+app="$dest/LynMill.app"
+dmg="$dest/LynMill-$appVersion.dmg"
 
 # ---------- 1. 前置检查 ----------
 if ! command -v jpackage >/dev/null 2>&1; then
@@ -148,7 +148,7 @@ echo '正在生成 .app ...'
 jpackage \
     --type app-image \
     --input "$in" \
-    --name TinyQuery \
+    --name LynMill \
     --main-jar "tinyquery-$appVersion.jar" \
     --app-version "$appVersion" \
     --vendor "$vendor" \
@@ -166,7 +166,7 @@ jpackage \
 #      "code has no resources but signature indicates they must be present"
 #   ② Apple Silicon 的内核拒绝执行签名无效的二进制
 #   ③ 更糟：macOS 会把这个「已损坏」的 app 直接移走 —— 实测双击或直接运行后，
-#      整个 TinyQuery.app 从磁盘上消失，jpackage-out 里只剩 .dmg
+#      整个 LynMill.app 从磁盘上消失，jpackage-out 里只剩 .dmg
 # 加上 --force --deep --sign -（ad-hoc，不需要开发者证书）之后就正常了。
 #
 #    这不是正式签名：ad-hoc 没有开发者身份、不能公证，
@@ -181,7 +181,7 @@ codesign --verify --verbose=2 "$app" 2>&1 | sed 's/^/  /' || true
 echo '正在生成 .dmg ...'
 jpackage \
     --type dmg \
-    --name TinyQuery \
+    --name LynMill \
     --app-image "$app" \
     --app-version "$appVersion" \
     --vendor "$vendor" \
@@ -192,7 +192,7 @@ jpackage \
 # ---------- 5. 回报应用标识（不是只看「打包成功」）----------
 # 只报「打包成功」等于没验证：--app-version 传错了、bundle id 没生效，
 # 都要等发出去才发现。这里直接从产物里读回来核对。
-cfg="$app/Contents/app/TinyQuery.cfg"
+cfg="$app/Contents/app/LynMill.cfg"
 plist="$app/Contents/Info.plist"
 echo ''
 echo '产物内实际写入的应用标识：'
@@ -218,4 +218,4 @@ echo "  .app 体积：$(du -sh "$app" | cut -f1)"
 [ -f "$dmg" ] && echo "  .dmg 体积：$(du -sh "$dmg" | cut -f1)"
 echo ''
 echo "提示：本机未签名，首次打开会被 Gatekeeper 拦下（这是预期行为，不是打包失败）。"
-echo "      临时绕过：右键 → 打开；或 xattr -dr com.apple.quarantine /Applications/TinyQuery.app"
+echo "      临时绕过：右键 → 打开；或 xattr -dr com.apple.quarantine /Applications/LynMill.app"

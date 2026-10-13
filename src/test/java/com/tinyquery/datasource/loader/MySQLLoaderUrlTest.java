@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * MySQL / MariaDB 连接串的构造。
  *
  * <p>这个测试类的存在理由是一次真实的线上缺陷：连接参数里漏了
- * {@code allowPublicKeyRetrieval=true}，导致 TinyQuery 连不上任何一台
+ * {@code allowPublicKeyRetrieval=true}，导致 LynMill 连不上任何一台
  * 默认配置的 MySQL 8（认证插件 caching_sha2_password 在 useSSL=false 下
  * 必须允许公钥检索）。报错信息是 "Public Key Retrieval is not allowed"，
  * 看起来像账号密码问题，实际与凭据无关。</p>

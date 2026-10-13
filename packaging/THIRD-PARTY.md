@@ -1,8 +1,8 @@
 # Third-Party Dependencies and Licenses
 
-The TinyQuery distribution bundles a number of third-party components. This file lists what they are, which licenses they use, and what you need to do in different redistribution scenarios.
+The LynMill distribution bundles a number of third-party components. This file lists what they are, which licenses they use, and what you need to do in different redistribution scenarios.
 
-**Applies to: TinyQuery 1.1.0** | Last updated: 2026-10-04
+**Applies to: LynMill 1.1.0** | Last updated: 2026-10-04
 
 ---
 
@@ -126,7 +126,7 @@ The list above comes from three mutually corroborating sources, and you can repr
 **1. List the jars actually packaged into the distribution (the most reliable basis)**
 
 ```bash
-python -c "import zipfile;z=zipfile.ZipFile('jpackage-out/TinyQuery/app/tinyquery-1.1.0.jar');print('\n'.join(n for n in z.namelist() if n.startswith('BOOT-INF/lib/')))"
+python -c "import zipfile;z=zipfile.ZipFile('jpackage-out/LynMill/app/tinyquery-1.1.0.jar');print('\n'.join(n for n in z.namelist() if n.startswith('BOOT-INF/lib/')))"
 ```
 
 **2. Resolve the full dependency tree**

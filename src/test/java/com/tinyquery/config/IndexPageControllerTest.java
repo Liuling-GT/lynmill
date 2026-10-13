@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class IndexPageControllerTest {
 
     private static final String PAGE =
-            "<!DOCTYPE html><html><head><title>TinyQuery</title></head><body><div id=\"app\"></div></body></html>";
+            "<!DOCTYPE html><html><head><title>LynMill</title></head><body><div id=\"app\"></div></body></html>";
 
     // ==================== 注入位置 ====================
 
@@ -45,7 +45,7 @@ class IndexPageControllerTest {
 
         assertTrue(injected.startsWith("<!DOCTYPE html><html><head>"), injected);
         assertTrue(injected.endsWith("<body><div id=\"app\"></div></body></html>"), injected);
-        assertTrue(injected.contains("<title>TinyQuery</title>"), injected);
+        assertTrue(injected.contains("<title>LynMill</title>"), injected);
     }
 
     // ==================== 边界情况 ====================

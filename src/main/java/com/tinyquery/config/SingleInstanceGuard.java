@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 /**
- * 单实例守卫：保证同一时间只有一个 TinyQuery 在跑。
+ * 单实例守卫：保证同一时间只有一个 LynMill 在跑。
  *
  * <p>用户双击第二次时不该起第二个进程 —— 那会变成两个服务、两个浏览器标签、
  * 两份互相看不见的内存数据。正确行为是打开已在运行那个实例的页面，然后自己退出。</p>

@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("LinuxCredentialStore 凭据存储逻辑")
 class LinuxCredentialStoreTest {
 
-    private static final String KEY = "TinyQuery/demo";
+    private static final String KEY = "LynMill/demo";
 
     // ==================== 假原生层 ====================
 

@@ -100,7 +100,7 @@ class MacCredentialStoreTest {
         }
     }
 
-    private static final String KEY = "TinyQuery/e2etest";
+    private static final String KEY = "LynMill/e2etest";
 
     private static MacCredentialStore store(FakeBackend backend) {
         // platformMatches = true：让这些纯逻辑测试在任何平台上都真的跑起来

@@ -31,7 +31,7 @@ from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 APP = sys.argv[1] if len(sys.argv) > 1 else \
-    r"C:\Users\Lenovo\AppData\Local\Temp\tq\trim43\jpackage-out\TinyQuery"
+    str(Path(__file__).resolve().parent.parent / "jpackage-out" / "LynMill")
 
 # 直接调那个被裁过的 java，不经过应用 —— 这样能单独验加密栈，
 # 不受应用逻辑干扰
@@ -153,12 +153,14 @@ print()
 # 编译期用完整的 JDK 是合理的：裁的是【运行时】，不是开发工具链。
 javac = None
 for cand in (Path(os.environ.get("JAVA_HOME", "")) / "bin" / "javac.exe",
+             Path(r"C:\Program Files\Java\jdk-17\bin\javac.exe"),
              Path(r"D:\JDK\jdk-17\bin\javac.exe")):
     if cand.exists():
         javac = cand
         break
 if javac is None:
-    print("  找不到 javac —— 本脚本需要开发机上的 JDK 17 来编译探针")
+    print("  找不到 javac —— 本脚本需要开发机上的 JDK 17 来编译探针\n"
+          "  （请设置 JAVA_HOME 指向 JDK 17）")
     sys.exit(2)
 
 classes = work / "classes"

@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>网页的主题是纯前端的：换的是 {@code <html data-theme>} 属性，
  * 颜色由 {@code tokens.css} 里的变量块决定，服务端不参与。而桌面外壳
  * （控制窗口上「● 运行中」那行字、托盘菜单的悬停底色）由 Swing 绘制，
- * 读不到浏览器的 CSS 变量，也没有请求上下文可以跟着 {@code X-TinyQuery-*}
+ * 读不到浏览器的 CSS 变量，也没有请求上下文可以跟着 {@code X-LynMill-*}
  * 头走。网页切主题时要让它们一起变，只能由服务端记着一份。取值优先级、
  * 容错策略、版本号机制都与 {@link com.tinyquery.i18n.DesktopLocale} 相同。</p>
  *
@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@code ThemeTokensTest} 会解析 {@code tokens.css} 并逐个断言本类的
  * {@link #ACCENTS} 与 {@code --accent} 一致，改色时漏改一边测试即失败。</p>
  *
- * <p>取值优先级：环境变量 {@code TINYQUERY_THEME}（便于测试与 CI，不落盘）；
+ * <p>取值优先级：环境变量 {@code LYNMILL_THEME}（便于测试与 CI，不落盘）；
  * 数据目录下的 {@code theme.txt}（用户可编辑，跨重启保留）；
  * 都没有则用默认主题（紫罗兰）。</p>
  *
@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class DesktopTheme {
 
     /** 覆盖用环境变量。测试与 CI 用它，不必真的写文件 */
-    public static final String ENV = "TINYQUERY_THEME";
+    public static final String ENV = "LYNMILL_THEME";
 
     /** 数据目录下的文件名 */
     public static final String FILE_NAME = "theme.txt";

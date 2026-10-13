@@ -119,7 +119,7 @@ class DataSourceManagerCredentialTest {
 
         manager.register(cfg("db", "机密密码"), true);
 
-        assertEquals("机密密码", creds.saved.get("TinyQuery/db"), "应当存进凭据存储");
+        assertEquals("机密密码", creds.saved.get("LynMill/db"), "应当存进凭据存储");
         String json = java.nio.file.Files.readString(
                 dir.resolve("datasources.json"), java.nio.charset.StandardCharsets.UTF_8);
         assertFalse(json.contains("机密密码"), "密码绝不能出现在 JSON 文件里：" + json);
@@ -143,7 +143,7 @@ class DataSourceManagerCredentialTest {
         DataSourceManager manager = manager(creds);
 
         manager.register(cfg("db", "第一次"), true);
-        assertEquals("第一次", creds.saved.get("TinyQuery/db"));
+        assertEquals("第一次", creds.saved.get("LynMill/db"));
 
         manager.remove("db");
         manager.register(cfg("db", "第二次"), false);   // 这次不勾
@@ -210,7 +210,7 @@ class DataSourceManagerCredentialTest {
     @DisplayName("启动恢复：配置里没密码，但凭据存储里有 → 能加载成功")
     void restoreFillsPasswordFromStore() {
         FakeCredentialStore creds = new FakeCredentialStore();
-        creds.saved.put("TinyQuery/db", "之前存过的密码");
+        creds.saved.put("LynMill/db", "之前存过的密码");
         DataSourceManager manager = manager(creds);
 
         // 模拟从文件恢复：配置里没有 password 字段（落盘时被摘掉了）
@@ -239,7 +239,7 @@ class DataSourceManagerCredentialTest {
     @DisplayName("启动恢复：配置里已经有密码时，不用凭据存储里的值覆盖")
     void restoreKeepsExplicitPassword() {
         FakeCredentialStore creds = new FakeCredentialStore();
-        creds.saved.put("TinyQuery/db", "存储里的旧密码");
+        creds.saved.put("LynMill/db", "存储里的旧密码");
         DataSourceManager manager = manager(creds);
 
         boolean ok = manager.restore(cfg("db", "配置里的新密码"));
@@ -269,12 +269,12 @@ class DataSourceManagerCredentialTest {
     @DisplayName("启动恢复不能删掉已保存的凭据 —— 否则每次启动都丢密码")
     void restoreMustNotDeleteCredential() {
         FakeCredentialStore creds = new FakeCredentialStore();
-        creds.saved.put("TinyQuery/db", "用户的密码");
+        creds.saved.put("LynMill/db", "用户的密码");
         DataSourceManager manager = manager(creds);
 
         manager.restore(cfg("db", null));
 
-        assertEquals("用户的密码", creds.saved.get("TinyQuery/db"),
+        assertEquals("用户的密码", creds.saved.get("LynMill/db"),
                 "恢复只是读凭据，绝不能删。删了的后果是：用户勾了保存密码，"
                         + "第一次重启还能连上（读取发生在删除之前），第二次就报缺密码 —— "
                         + "这种「用一次就坏」的表现极难排查");
@@ -287,13 +287,13 @@ class DataSourceManagerCredentialTest {
         FakeCredentialStore creds = new FakeCredentialStore();
         DataSourceManager first = manager(creds);
         first.register(cfg("db", "持久密码"), true);
-        assertEquals("持久密码", creds.saved.get("TinyQuery/db"));
+        assertEquals("持久密码", creds.saved.get("LynMill/db"));
 
         // 连续恢复五次，模拟用户反复开关程序
         for (int i = 1; i <= 5; i++) {
             DataSourceManager restarted = manager(creds);
             assertTrue(restarted.restore(cfg("db", null)), "第 " + i + " 次恢复应当成功");
-            assertEquals("持久密码", creds.saved.get("TinyQuery/db"),
+            assertEquals("持久密码", creds.saved.get("LynMill/db"),
                     "第 " + i + " 次重启后凭据就不见了");
         }
         assertEquals(0, creds.deleteCount, "整个过程中不该发生任何删除");
@@ -303,7 +303,7 @@ class DataSourceManagerCredentialTest {
     @DisplayName("恢复后再次真正注册（用户点了注册且没勾保存）→ 才允许删凭据")
     void explicitRegisterWithoutSaveStillDeletes() {
         FakeCredentialStore creds = new FakeCredentialStore();
-        creds.saved.put("TinyQuery/db", "旧密码");
+        creds.saved.put("LynMill/db", "旧密码");
         DataSourceManager manager = manager(creds);
 
         // 用户主动注册、明确不勾保存 —— 这才是删除的正当理由
@@ -321,7 +321,7 @@ class DataSourceManagerCredentialTest {
         DataSourceManager manager = manager(creds);
 
         manager.register(cfg("db", "会被删掉的密码"), true);
-        assertEquals("会被删掉的密码", creds.saved.get("TinyQuery/db"));
+        assertEquals("会被删掉的密码", creds.saved.get("LynMill/db"));
 
         manager.remove("db");
 
@@ -340,7 +340,7 @@ class DataSourceManagerCredentialTest {
         assertTrue(manager.isUnavailable("db"), "缺密码应当进入「暂不可用」");
 
         // 之后用户又勾了保存（比如通过 retry 补上了密码），凭据里有了值
-        creds.saved.put("TinyQuery/db", "后来存进去的密码");
+        creds.saved.put("LynMill/db", "后来存进去的密码");
 
         manager.remove("db");
 
@@ -366,8 +366,8 @@ class DataSourceManagerCredentialTest {
     // ==================== 凭据 key 的格式 ====================
 
     @Test
-    @DisplayName("凭据 key 带 TinyQuery/ 前缀，便于用户在凭据管理器里辨认")
+    @DisplayName("凭据 key 带 LynMill/ 前缀，便于用户在凭据管理器里辨认")
     void credentialKeyHasPrefix() {
-        assertEquals("TinyQuery/my-db", DataSourceManager.credentialKey("my-db"));
+        assertEquals("LynMill/my-db", DataSourceManager.credentialKey("my-db"));
     }
 }

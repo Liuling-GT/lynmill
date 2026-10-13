@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("StartupFailureDialog 启动失败提示")
 class StartupFailureDialogTest {
 
-    private static final String HEADLINE = "TinyQuery 启动失败，无法继续运行。";
+    private static final String HEADLINE = "LynMill 启动失败，无法继续运行。";
 
     /**
      * 下面几条测试断言的是中文措辞（「原因：」「根本原因：」）。

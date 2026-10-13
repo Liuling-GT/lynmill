@@ -19,7 +19,7 @@ import java.io.IOException;
  * <p>没有请求头时用程序设置的语言（{@link Messages#desktopLocale()}），
  * 而不是硬编码回中文。理由是「一个程序一套语言设置」：用户在网页设置里选了英文，
  * 那个选择会被同步到服务端并落盘。这时如果某个请求没带
- * {@code X-TinyQuery-Locale} 头（curl 调试、Swagger、第三方脚本），
+ * {@code X-LynMill-Locale} 头（curl 调试、Swagger、第三方脚本），
  * 它拿到的应当同样是英文，否则同一个程序会同时存在两套语言，
  * 而「有没有带头」这种实现细节不该决定用户看到什么语言。带了头就仍然以头为准：
  * 那是调用方对这一次请求的明确要求，优先级高于程序设置。</p>

@@ -15,7 +15,7 @@ param(
 )
 
 <#
-  TinyQuery Windows 打包脚本 —— 用 jpackage 生成免安装的 app-image。
+  LynMill Windows 打包脚本 —— 用 jpackage 生成免安装的 app-image。
 
   本文件必须以「UTF-8 带 BOM」保存，不要去掉 BOM。
 
@@ -30,9 +30,9 @@ param(
       [System.IO.File]::ReadAllBytes($p)[0..2] 应为 239,187,191
   也可以直接跑 packaging\check-ps1-encoding.py 检查。
 
-  产物：jpackage-out\TinyQuery\
-        必须发整个文件夹，单独把 TinyQuery.exe 拖出来跑不起来
-        （启动器要靠同目录下的 app\TinyQuery.cfg 找 jar 和主类）。
+  产物：jpackage-out\LynMill\
+        必须发整个文件夹，单独把 LynMill.exe 拖出来跑不起来
+        （启动器要靠同目录下的 app\LynMill.cfg 找 jar 和主类）。
 
   用法（在项目根目录执行）：
       powershell -File packaging\package.ps1                # 精简 runtime（默认）
@@ -62,7 +62,7 @@ $jar  = Join-Path $root "target\tinyquery-$appVersion.jar"
 $icon = Join-Path $root 'packaging\tinyquery.ico'
 $in   = Join-Path $root 'target\jpackage-input'
 $dest = Join-Path $root 'jpackage-out'
-$app  = Join-Path $dest 'TinyQuery'
+$app  = Join-Path $dest 'LynMill'
 $runtime = Join-Path $root 'tinyquery-runtime'
 
 # ---------- 1. 前置检查 ----------
@@ -146,14 +146,14 @@ $runtimeArgs = @()
 
 # 先把还跑着的旧产物关掉。
 # 【为什么必须显式做】Windows 上文件被占用时删除直接抛 WinError 5，
-# 而占用者通常就是**上一次打包出来、被谁点开还没关的 TinyQuery**。
+# 而占用者通常就是**上一次打包出来、被谁点开还没关的 LynMill**。
 # 实测：连跑两次打包时第二次必然失败，报
-# 「删不掉 ...TinyQuery.exe（WinError 5）」—— 光靠重试等不到它自己释放，
+# 「删不掉 ...LynMill.exe（WinError 5）」—— 光靠重试等不到它自己释放，
 # 因为进程会一直活着。这里主动结束，把"再跑一次"变成真的可行。
 # 放在生成 runtime 之前：那一步最后要删旧的 jpackage-out
-$running = @(Get-Process TinyQuery -ErrorAction SilentlyContinue)
+$running = @(Get-Process LynMill -ErrorAction SilentlyContinue)
 if ($running.Count -gt 0) {
-    Write-Host ("关闭正在运行的旧 TinyQuery（{0} 个进程）" -f $running.Count)
+    Write-Host ("关闭正在运行的旧 LynMill（{0} 个进程）" -f $running.Count)
     $running | Stop-Process -Force -ErrorAction SilentlyContinue
     # 等句柄真正释放。Tomcat 线程池与 AWT 事件线程的收尾不是瞬时的
     Start-Sleep -Seconds 3
@@ -173,7 +173,7 @@ if ($FullRuntime) {
     Write-Host '正在生成精简 runtime...'
     # --runtime-only：只要 runtime，不要 make-runtime.py 顺手打的那个 app-image。
     # 下面第 4 步会自己调 jpackage（Windows 需要 --win-* 之类的选项）。
-    # 不加这个参数的话，这里会先打一个 app-image 到 jpackage-out\TinyQuery，
+    # 不加这个参数的话，这里会先打一个 app-image 到 jpackage-out\LynMill，
     # 紧接着又被下面「清掉旧的输出目录」删掉、重新打一遍 —— 白打一次，
     # 而且如果不是恰好删得掉（比如上次打出的程序还在运行占着文件），
     # 就会直接失败在 "目标目录已存在"。
@@ -193,7 +193,7 @@ Write-Host '正在打包...'
 & jpackage `
     --type app-image `
     --input $in `
-    --name TinyQuery `
+    --name LynMill `
     --main-jar "tinyquery-$appVersion.jar" `
     --app-version $appVersion `
     --vendor $vendor `
@@ -205,12 +205,12 @@ Write-Host '正在打包...'
 if ($LASTEXITCODE -ne 0) { throw "jpackage 失败，退出码 $LASTEXITCODE" }
 
 # ---------- 5. 回报应用标识（不是只看「打包成功」）----------
-$cfgFile = Join-Path $app 'app\TinyQuery.cfg'
+$cfgFile = Join-Path $app 'app\LynMill.cfg'
 if (Test-Path $cfgFile) {
     $verLine = Select-String -Path $cfgFile -Pattern 'jpackage\.app-version' -SimpleMatch
     Write-Host ''
     Write-Host '应用标识：'
-    Write-Host "  --name                 TinyQuery"
+    Write-Host "  --name                 LynMill"
     Write-Host "  --app-version          $appVersion"
     Write-Host "  --vendor               $vendor"
     if ($isMac) {
@@ -222,7 +222,7 @@ if (Test-Path $cfgFile) {
 }
 
 # ---------- 6. 汇报 ----------
-$exe  = Join-Path $app 'TinyQuery.exe'
+$exe  = Join-Path $app 'LynMill.exe'
 $size = (Get-ChildItem $app -Recurse -File | Measure-Object Length -Sum).Sum
 # app-image 的布局**按平台不同**，两个都要认：
 #   Windows：<app>\app 与 <app>\runtime（扁平）

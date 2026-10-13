@@ -8,7 +8,7 @@
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-dot" />
-          <span class="brand-name">TinyQuery</span>
+          <span class="brand-name">LynMill</span>
         </div>
 
         <nav class="nav">
@@ -321,7 +321,7 @@ const exporting = ref(false)
 // 后端下发的数据源类型描述，驱动配置表单动态渲染。
 //
 // 【里面的文案是会变的】类型名、字段名、字段说明都由后端按请求头
-// X-TinyQuery-Locale 下发，所以切换语言后必须重新取一次 —— 否则界面外壳
+// X-LynMill-Locale 下发，所以切换语言后必须重新取一次 —— 否则界面外壳
 // 变成英文了，这四处却还停在上一份（见下方的 watch）。
 // 曾经就是这样：切到英文再切回中文，配置项名字、问号提示、类型下拉、
 // 已注册数据源的类型名会一直显示英文。

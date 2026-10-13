@@ -12,7 +12,7 @@
   · tinyquery-frontend/src/App.vue 里与语言、types 相关的逻辑
   · tinyquery-frontend/src/main.js 的启动顺序
   · 后端 /api/preferences/locale、/api/preferences/theme、以及任何按
-    X-TinyQuery-Locale 下发文案的接口
+    X-LynMill-Locale 下发文案的接口
   · 后端 Messages / DesktopLocale / DesktopTheme
 
 【为什么要手动跑而不是接 CI】真浏览器 + 真实启动时序是这套检查的全部价值所在。

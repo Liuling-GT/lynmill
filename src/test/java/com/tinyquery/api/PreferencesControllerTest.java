@@ -155,7 +155,7 @@ class PreferencesControllerTest {
         // 必须真的调 switchTo，才测得到「到底有没有写」。
         //
         // 目录由 pom 里的 surefire 配置指向 target/test-home，
-        // 不会碰开发者真实的 %APPDATA%\TinyQuery
+        // 不会碰开发者真实的 %APPDATA%\LynMill
         Path file = PathResolver.getDataDir().resolve(DesktopLocale.FILE_NAME);
         Files.deleteIfExists(file);
 

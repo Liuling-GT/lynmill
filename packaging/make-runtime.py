@@ -38,8 +38,10 @@ def _find_jdk():
     if env and (Path(env) / "bin").is_dir():
         return Path(env)
     candidates = {
-        "nt": [r"D:\JDK\jdk-17", r"C:\Program Files\Java\jdk-17",
-               r"C:\Program Files\Eclipse Adoptium\jdk-17"],
+        "nt": [r"C:\Program Files\Java\jdk-17",
+               r"C:\Program Files\Eclipse Adoptium\jdk-17",
+               r"C:\Program Files\Microsoft\jdk-17*",
+               r"D:\JDK\jdk-17"],
         "posix": ["/usr/lib/jvm/java-17-openjdk-amd64", "/usr/lib/jvm/java-17-openjdk",
                   "/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home",
                   "/opt/homebrew/opt/openjdk@17"],
@@ -49,7 +51,7 @@ def _find_jdk():
             return Path(c)
     raise SystemExit(
         "  找不到 JDK 17。请设置 JAVA_HOME，或把 JDK 装到常见位置。\n"
-        "  （Windows 上还要注意：请用 D:\\JDK\\jdk-17 这类真实路径，"
+        "  （Windows 上还要注意：请用 D:\\JDK\\jdk-17 这类真实**目录**路径，"
         "不要用 PowerShell 的 Get-Command java 结果 —— 那是 .exe 不是目录）")
 
 
@@ -140,7 +142,7 @@ def dir_size(p):
 def rmtree_retry(p, tries=20, wait=2.5):
     """删目录，遇到只读文件先清掉只读位，遇到占用再重试。
 
-    【根因，别被 WinError 5 骗了】jpackage 产出的 {@code TinyQuery.exe}
+    【根因，别被 WinError 5 骗了】jpackage 产出的 {@code LynMill.exe}
     **自带只读属性**（实测 mode 0o555）。Python 的 {@code shutil.rmtree}
     在 Windows 上不会自动清只读位，删这种文件直接抛 WinError 5「拒绝访问」。
     而 PowerShell 的 {@code Remove-Item -Force} 会先清属性再删 —— 所以会出现
@@ -178,8 +180,8 @@ def rmtree_retry(p, tries=20, wait=2.5):
             time.sleep(wait)
     raise SystemExit(
         "  删不掉 %s（%s）。\n"
-        "  通常是上一次打包出来的 TinyQuery 还在运行。先关掉它，或执行：\n"
-        "      Get-Process TinyQuery -ErrorAction SilentlyContinue | Stop-Process -Force"
+        "  通常是上一次打包出来的 LynMill 还在运行。先关掉它，或执行：\n"
+        "      Get-Process LynMill -ErrorAction SilentlyContinue | Stop-Process -Force"
         % (p, last))
 
 
@@ -245,14 +247,14 @@ def main():
     shutil.copy2(jar, in_dir)
 
     # ---- 3. jpackage ----
-    app = dest / "TinyQuery"
+    app = dest / "LynMill"
     if app.exists():
         rmtree_retry(app)
     print("  [2/3] jpackage 打包（--runtime-image 指向刚生成的 runtime）")
     args = [JPACKAGE,
             "--type", "app-image",
             "--input", in_dir,
-            "--name", "TinyQuery",
+            "--name", "LynMill",
             "--main-jar", jar.name,
             "--app-version", a.version,
             "--vendor", "Liuling",

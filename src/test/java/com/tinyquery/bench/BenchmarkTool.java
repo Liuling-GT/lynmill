@@ -50,7 +50,7 @@ public class BenchmarkTool {
             return;
         }
 
-        System.out.println("== TinyQuery 性能测量 ==");
+        System.out.println("== LynMill 性能测量 ==");
         System.out.printf("数据文件 : %s%n", csv);
         System.out.printf("文件大小 : %.2f MB%n", Files.size(csv) / 1024.0 / 1024.0);
         System.out.printf("JDK      : %s (%s)%n",

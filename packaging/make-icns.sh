@@ -28,7 +28,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 src="$root/src/main/resources/icons"
 work="$(mktemp -d)"
-iconset="$work/TinyQuery.iconset"
+iconset="$work/LynMill.iconset"
 out="$root/packaging/tinyquery.icns"
 
 trap 'rm -rf "$work"' EXIT

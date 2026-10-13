@@ -190,7 +190,7 @@ public final class StartupFailureDialog {
      * <p>这是一个纯函数：不打日志、不碰文件系统。测试因此可以直接喂造出来的异常
      * 校验措辞，不需要真的制造一次启动失败 —— 那种事在自动化测试里既难做又不该做。</p>
      *
-     * @param headline   首句，例如「TinyQuery 启动失败，无法继续运行。」
+     * @param headline   首句，例如「LynMill 启动失败，无法继续运行。」
      * @param failure    失败原因，允许为 null
      * @param detailFile 完整堆栈所在的文件，允许为 null（表示没能留下文件）
      */

@@ -23,7 +23,7 @@ import java.util.Map;
  * 界面偏好设置：语言与主题。
  *
  * <p>网页上的偏好原本只存在浏览器里（localStorage），服务端不需要知道 ——
- * 语言每个请求都带 {@code X-TinyQuery-Locale} 头，服务端照着回就行；
+ * 语言每个请求都带 {@code X-LynMill-Locale} 头，服务端照着回就行；
  * 主题是纯 CSS 变量，服务端不参与渲染。但桌面外壳（托盘菜单、控制窗口）
  * 两者都拿不到：它的文案与颜色不在请求线程上取，也没有请求头可跟，
  * 只能在启动时读一次 {@code locale.txt} / {@code theme.txt}。

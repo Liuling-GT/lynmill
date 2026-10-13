@@ -25,7 +25,7 @@ class PathResolverTest {
     void windowsPrefersAppData() {
         Path actual = PathResolver.resolveDataDir("Windows 10", null, WIN_APPDATA, null, WIN_HOME);
 
-        assertEquals(Path.of(WIN_APPDATA).resolve("TinyQuery"), actual);
+        assertEquals(Path.of(WIN_APPDATA).resolve("LynMill"), actual);
     }
 
     @Test
@@ -33,7 +33,7 @@ class PathResolverTest {
     void windowsFallsBackWhenAppDataMissing() {
         Path actual = PathResolver.resolveDataDir("Windows 10", null, null, null, WIN_HOME);
 
-        assertEquals(Path.of(WIN_HOME).resolve("AppData/Roaming").resolve("TinyQuery"), actual);
+        assertEquals(Path.of(WIN_HOME).resolve("AppData/Roaming").resolve("LynMill"), actual);
     }
 
     @Test
@@ -41,7 +41,7 @@ class PathResolverTest {
     void blankAppDataTreatedAsMissing() {
         Path actual = PathResolver.resolveDataDir("Windows 10", null, "   ", null, WIN_HOME);
 
-        assertEquals(Path.of(WIN_HOME).resolve("AppData/Roaming").resolve("TinyQuery"), actual);
+        assertEquals(Path.of(WIN_HOME).resolve("AppData/Roaming").resolve("LynMill"), actual);
     }
 
     // ==================== macOS ====================
@@ -51,7 +51,7 @@ class PathResolverTest {
     void macUsesApplicationSupport() {
         Path actual = PathResolver.resolveDataDir("Mac OS X", null, null, null, MAC_HOME);
 
-        assertEquals(Path.of(MAC_HOME).resolve("Library/Application Support").resolve("TinyQuery"), actual);
+        assertEquals(Path.of(MAC_HOME).resolve("Library/Application Support").resolve("LynMill"), actual);
     }
 
     @Test
@@ -59,7 +59,7 @@ class PathResolverTest {
     void darwinRecognizedAsMac() {
         Path actual = PathResolver.resolveDataDir("Darwin", null, null, null, MAC_HOME);
 
-        assertEquals(Path.of(MAC_HOME).resolve("Library/Application Support").resolve("TinyQuery"), actual);
+        assertEquals(Path.of(MAC_HOME).resolve("Library/Application Support").resolve("LynMill"), actual);
     }
 
     // ==================== Linux ====================
@@ -69,7 +69,7 @@ class PathResolverTest {
     void linuxPrefersXdgDataHome() {
         Path actual = PathResolver.resolveDataDir("Linux", null, null, "/data/tester", UNIX_HOME);
 
-        assertEquals(Path.of("/data/tester").resolve("TinyQuery"), actual);
+        assertEquals(Path.of("/data/tester").resolve("LynMill"), actual);
     }
 
     @Test
@@ -77,7 +77,7 @@ class PathResolverTest {
     void linuxFallsBackToLocalShare() {
         Path actual = PathResolver.resolveDataDir("Linux", null, null, null, UNIX_HOME);
 
-        assertEquals(Path.of(UNIX_HOME).resolve(".local/share").resolve("TinyQuery"), actual);
+        assertEquals(Path.of(UNIX_HOME).resolve(".local/share").resolve("LynMill"), actual);
     }
 
     @Test
@@ -85,7 +85,7 @@ class PathResolverTest {
     void blankXdgTreatedAsUnset() {
         Path actual = PathResolver.resolveDataDir("Linux", null, null, "", UNIX_HOME);
 
-        assertEquals(Path.of(UNIX_HOME).resolve(".local/share").resolve("TinyQuery"), actual);
+        assertEquals(Path.of(UNIX_HOME).resolve(".local/share").resolve("LynMill"), actual);
     }
 
     // ==================== 未知系统 ====================
@@ -95,13 +95,13 @@ class PathResolverTest {
     void unknownOsFallsBackToLinuxLayout() {
         Path actual = PathResolver.resolveDataDir("FreeBSD", null, null, null, UNIX_HOME);
 
-        assertEquals(Path.of(UNIX_HOME).resolve(".local/share").resolve("TinyQuery"), actual);
+        assertEquals(Path.of(UNIX_HOME).resolve(".local/share").resolve("LynMill"), actual);
     }
 
-    // ==================== TINYQUERY_HOME 覆盖 ====================
+    // ==================== LYNMILL_HOME 覆盖 ====================
 
     @Test
-    @DisplayName("TINYQUERY_HOME 优先于平台规则，且不再追加 TinyQuery")
+    @DisplayName("LYNMILL_HOME 优先于平台规则，且不再追加 LynMill")
     void overrideWinsAndIsNotNested() {
         Path actual = PathResolver.resolveDataDir(
                 "Windows 10", "D:\\tinyquery-home", WIN_APPDATA, null, WIN_HOME);
@@ -110,25 +110,25 @@ class PathResolverTest {
     }
 
     @Test
-    @DisplayName("TINYQUERY_HOME 为空白串时视为未设置，回落到平台规则")
+    @DisplayName("LYNMILL_HOME 为空白串时视为未设置，回落到平台规则")
     void blankOverrideIsIgnored() {
         Path actual = PathResolver.resolveDataDir("Windows 10", "  ", WIN_APPDATA, null, WIN_HOME);
 
-        assertEquals(Path.of(WIN_APPDATA).resolve("TinyQuery"), actual);
+        assertEquals(Path.of(WIN_APPDATA).resolve("LynMill"), actual);
     }
 
     // ==================== 核心契约 ====================
 
     @Test
-    @DisplayName("三个平台解析出的目录名都叫 TinyQuery —— 这是日志与锁文件路径稳定的前提")
+    @DisplayName("三个平台解析出的目录名都叫 LynMill —— 这是日志与锁文件路径稳定的前提")
     void allPlatformsShareSameDirName() {
         Path win = PathResolver.resolveDataDir("Windows 10", null, WIN_APPDATA, null, WIN_HOME);
         Path mac = PathResolver.resolveDataDir("Mac OS X", null, null, null, MAC_HOME);
         Path linux = PathResolver.resolveDataDir("Linux", null, null, null, UNIX_HOME);
 
-        assertEquals("TinyQuery", win.getFileName().toString());
-        assertEquals("TinyQuery", mac.getFileName().toString());
-        assertEquals("TinyQuery", linux.getFileName().toString());
+        assertEquals("LynMill", win.getFileName().toString());
+        assertEquals("LynMill", mac.getFileName().toString());
+        assertEquals("LynMill", linux.getFileName().toString());
     }
 
     // ==================== 真实环境（唯一会写磁盘的测试） ====================
@@ -137,7 +137,7 @@ class PathResolverTest {
     @DisplayName("真实环境下 getDataDir 会创建目录，锁文件与日志目录都在其下")
     void realEnvironmentCreatesDataDir() {
         // 本用例刻意走生产路径（读真实环境变量 + 建目录），
-        // 因此会在当前用户的真实数据目录下创建 TinyQuery 与 TinyQuery/logs。
+        // 因此会在当前用户的真实数据目录下创建 LynMill 与 LynMill/logs。
         // 这是覆盖「环境变量读取 → 目录创建」这段接线的唯一方式：
         // 上面所有用例都只调纯函数，碰不到这部分
         Path dataDir = PathResolver.getDataDir();

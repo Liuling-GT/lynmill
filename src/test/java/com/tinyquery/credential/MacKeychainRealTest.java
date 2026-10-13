@@ -25,7 +25,7 @@ class MacKeychainRealTest {
 
     /** 随机后缀：避免并发跑测试互相干扰，也避免和用户真实数据撞名 */
     private static String key() {
-        return "TinyQuery/__test__/" + UUID.randomUUID();
+        return "LynMill/__test__/" + UUID.randomUUID();
     }
 
     /** 平台不支持时跳过，而不是判失败 —— 不可用是正确行为，不是缺陷 */

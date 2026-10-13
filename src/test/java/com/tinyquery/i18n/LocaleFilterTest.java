@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p>核心是一条容易写错、且错了很难发现的规则：没带语言头时，应当用程序设置的
  * 语言，而不是硬编码回中文。写错的后果很隐蔽：用户在网页上把语言切成英文、
- * 托盘菜单也跟着变了，但任何不带 {@code X-TinyQuery-Locale} 的请求
+ * 托盘菜单也跟着变了，但任何不带 {@code X-LynMill-Locale} 的请求
  * （curl 调试、Swagger、第三方脚本）仍然返回中文 —— 同一个程序两套语言。</p>
  */
 @DisplayName("LocaleFilter 请求语言解析")

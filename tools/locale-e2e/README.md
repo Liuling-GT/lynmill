@@ -33,7 +33,7 @@ Before a release, and after changing any of the following:
 | Locale- and `types`-related logic in `tinyquery-frontend/src/App.vue` | This is where defect 26 lives |
 | The startup order in `tinyquery-frontend/src/main.js` | `reconcileLocale` / `reconcileTheme` must run before mount |
 | `PreferencesController` / `DesktopSyncService` / `DesktopLocale` / `DesktopTheme` | The server-side preference |
-| Entries served by `Messages` based on `X-TinyQuery-Locale` | Type names and field descriptions |
+| Entries served by `Messages` based on `X-LynMill-Locale` | Type names and field descriptions |
 
 ## The seven scenarios
 
@@ -114,11 +114,11 @@ Worth recording, because both looked fine and both were blind:
 
 | Variable | Default | Description |
 |---|---|---|
-| `TINYQUERY_JAVA` | `D:\JDK\jdk-17\bin\java.exe` | The JDK 17 java |
-| `TINYQUERY_NODE` | `D:\Node.js\node.exe` | Node 18+ (uses its built-in `WebSocket`; no `npm install` needed) |
-| `TINYQUERY_BROWSER` | Auto-detects Edge/Chrome | Browser executable |
-| `TINYQUERY_ROOT` | Inferred from the script location | Project root |
-| `TINYQUERY_E2E_WORK` | System temp directory | Working directory (profile, logs, fake HOME) |
+| `LYNMILL_JAVA` | `$JAVA_HOME\bin\java.exe`, else a standard install path | The JDK 17 java |
+| `LYNMILL_NODE` | Standard Node install path | Node 18+ (uses its built-in `WebSocket`; no `npm install` needed) |
+| `LYNMILL_BROWSER` | Auto-detects Edge/Chrome | Browser executable |
+| `LYNMILL_ROOT` | Inferred from the script location | Project root |
+| `LYNMILL_E2E_WORK` | System temp directory | Working directory (profile, logs, fake HOME) |
 
 **No Python packages are required**; only the standard library.
 

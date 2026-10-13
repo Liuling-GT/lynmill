@@ -13,11 +13,11 @@
 
 import { i18n } from '../locales'
 
-export const TOKEN_HEADER = 'X-TinyQuery-Token'
+export const TOKEN_HEADER = 'X-LynMill-Token'
 
 // 语言请求头。后端据此决定错误消息用哪种语言。
 // 不用 Accept-Language：那个由浏览器按系统语言自动填，会盖掉用户在前端的选择
-export const LOCALE_HEADER = 'X-TinyQuery-Locale'
+export const LOCALE_HEADER = 'X-LynMill-Locale'
 
 export const getToken = () => window.__TINYQUERY_TOKEN__ || ''
 

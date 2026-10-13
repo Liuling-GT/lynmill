@@ -172,9 +172,9 @@ public class TinyQueryApplication {
             return;
         }
         if (BrowserOpener.open(url)) {
-            log.info("TinyQuery 已在运行，已打开其页面：{}", url);
+            log.info("LynMill 已在运行，已打开其页面：{}", url);
         } else {
-            log.warn("TinyQuery 已在运行，请手动访问：{}", url);
+            log.warn("LynMill 已在运行，请手动访问：{}", url);
         }
     }
 

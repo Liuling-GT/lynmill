@@ -114,28 +114,28 @@ class StartupConfigurationTest {
 
         assertAll(
                 () -> assertEqualsIgnoringSeparators(
-                        "C:/Users/x/AppData/Roaming/TinyQuery", win,
+                        "C:/Users/x/AppData/Roaming/LynMill", win,
                         "Windows 落到 APPDATA"),
                 () -> assertEqualsIgnoringSeparators(
-                        "/Users/x/Library/Application Support/TinyQuery", mac,
+                        "/Users/x/Library/Application Support/LynMill", mac,
                         "macOS 落到 Application Support"),
                 () -> assertEqualsIgnoringSeparators(
-                        "/home/x/.local/share/TinyQuery", linux,
+                        "/home/x/.local/share/LynMill", linux,
                         "Linux 落到 XDG_DATA_HOME"));
     }
 
     @Test
-    @DisplayName("限制 1.6：TINYQUERY_HOME 直接整体覆盖，且不再追加应用目录名")
+    @DisplayName("限制 1.6：LYNMILL_HOME 直接整体覆盖，且不再追加应用目录名")
     void overrideWinsWithoutAppendingAppName() {
         Path overridden = PathResolver.resolveDataDir(
                 "Windows 11", "D:/portable/tq", "C:/Users/x/AppData/Roaming", null, "C:/Users/x");
 
-        // 便携部署时用户指定的目录就是数据目录本身，不该再套一层 TinyQuery
+        // 便携部署时用户指定的目录就是数据目录本身，不该再套一层 LynMill
         assertEqualsIgnoringSeparators("D:/portable/tq", overridden, "覆盖值应原样采用");
 
         // 与上面 Windows 分支的结果做对照：同一个环境变量存在时，
         // 平台差异被完全绕过（这正是"整体覆盖"的含义）
-        assertFalse(overridden.toString().replace('\\', '/').endsWith("/TinyQuery"),
+        assertFalse(overridden.toString().replace('\\', '/').endsWith("/LynMill"),
                 "覆盖模式下不应追加应用目录名：" + overridden);
     }
 

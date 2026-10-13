@@ -177,7 +177,7 @@ public final class TrayIconInstaller {
             MenuPopup popup = new MenuPopup(url, () -> showWindow(window), onExit);
             activeMenu = popup;
 
-            TrayIcon icon = new TrayIcon(AppIcons.create(TRAY_ICON_SIZE), "TinyQuery");
+            TrayIcon icon = new TrayIcon(AppIcons.create(TRAY_ICON_SIZE), "LynMill");
             // 让操作系统按托盘实际尺寸缩放，避免高 DPI 下图标糊掉
             icon.setImageAutoSize(true);
             icon.addMouseListener(new MouseAdapter() {

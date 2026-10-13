@@ -6,7 +6,7 @@
  *
  * 语言仍以 localStorage 为主：它是首屏就能用的，不依赖后端是否已就绪。
  * 但切换时会额外同步一份到后端 —— 桌面外壳（托盘菜单、控制窗口）的文案
- * 不在请求线程上取，拿不到 X-TinyQuery-Locale 头，只能靠后端记着。
+ * 不在请求线程上取，拿不到 X-LynMill-Locale 头，只能靠后端记着。
  * 详见 api/preferences.js。
  */
 import { createI18n } from 'vue-i18n'

@@ -74,7 +74,7 @@ Excel formula cells are **not evaluated**; only the cached value computed the la
 
 ### 1.5b PDF data source: built, measured, then removed
 
-**Conclusion**: TinyQuery **does not offer a PDF data source**. A version that read "tables with ruled borders only" was once implemented (hand-written parsing, zero dependencies, about 3,100 lines of main code + 550 lines of tests) and was **deliberately deleted** after being measured against real files. Why is recorded here, because "it can read some of them" always sounds better than "unsupported" — it is not.
+**Conclusion**: LynMill **does not offer a PDF data source**. A version that read "tables with ruled borders only" was once implemented (hand-written parsing, zero dependencies, about 3,100 lines of main code + 550 lines of tests) and was **deliberately deleted** after being measured against real files. Why is recorded here, because "it can read some of them" always sounds better than "unsupported" — it is not.
 
 **1. There are no "tables" in a PDF, only lines and text with coordinates.**
 
@@ -372,11 +372,11 @@ The parsed table name is `t join t2 on t.姓名 = t2.姓名` — **the whole thi
 
 ### 3.1 After switching language, calls without the request header fall back to the desktop language
 
-The UI language has two paths: the `X-TinyQuery-Locale` request header (sent by the frontend on every request) and the desktop setting (tray menu / settings page).
+The UI language has two paths: the `X-LynMill-Locale` request header (sent by the frontend on every request) and the desktop setting (tray menu / settings page).
 
 **With no request header** (for example calling the API directly with curl), the **desktop setting** applies — not Chinese, and not a hardcoded English. So "I did not send a locale header, why is it returning English?" usually means the language was switched to English in the tray.
 
-Precedence: `TINYQUERY_LOCALE` environment variable > `locale.txt` in the data directory > Chinese.
+Precedence: `LYNMILL_LOCALE` environment variable > `locale.txt` in the data directory > Chinese.
 
 ### 3.2 Chinese is still visible in English mode
 
@@ -393,7 +393,7 @@ How to tell: replace the user data with placeholders and see whether the **templ
 
 **Symptom**: after switching from Chinese to English and back to Chinese, the "Data source type" dropdown, the configuration item names, the question-mark tooltips next to those names, and the group headings of registered data sources **all stay in English**. A cold start straight into Chinese is entirely normal.
 
-**Cause**: the copy in these four places is **not a frontend string entry**; it is type metadata the backend serves according to the `X-TinyQuery-Locale` request header. The frontend fetches it once at startup into `types`, and switching language only changes the i18n locale, **without re-fetching**. So the UI shell follows along while these four places stay on the copy from before the switch.
+**Cause**: the copy in these four places is **not a frontend string entry**; it is type metadata the backend serves according to the `X-LynMill-Locale` request header. The frontend fetches it once at startup into `types`, and switching language only changes the i18n locale, **without re-fetching**. So the UI shell follows along while these four places stay on the copy from before the switch.
 
 **Why it is hard to spot**: it looks like "this part was not translated", when in fact it is "this part was translated, it simply was not refreshed". And **testing only one direction will miss it** — the original acceptance test only covered "no Chinese in English mode" (which did pass) and never tested "Chinese in Chinese mode". **Checking one direction only is as good as not checking.**
 
@@ -478,7 +478,7 @@ Export honors the current `limit` / `offset`. Also, aggregate results (such as `
 **Symptom**: after installing the program on Linux, the Chinese in the tray menu turns into little boxes (tofu).
 
 **Cause**: Windows / macOS ship Chinese fonts with the system; Linux **does not guarantee** them.
-TinyQuery's tray menu uses `SansSerif`, which fontconfig maps to some actual font;
+LynMill's tray menu uses `SansSerif`, which fontconfig maps to some actual font;
 if the system has no font containing CJK glyphs at all, the mapping result cannot draw Han characters.
 
 **This is not a program bug**, it is a missing font. Installing one is enough:

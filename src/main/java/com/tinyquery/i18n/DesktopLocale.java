@@ -10,7 +10,7 @@ import java.nio.file.Path;
 /**
  * 桌面端语言的来源：一个落在用户数据目录里的小文件。
  *
- * <p>用文件而不是环境变量：环境变量（{@code TINYQUERY_LOCALE=en}）只对
+ * <p>用文件而不是环境变量：环境变量（{@code LYNMILL_LOCALE=en}）只对
  * 「从命令行启动」有效，而本产品的主要入口是双击桌面图标，那种启动方式继承的是
  * 系统环境，用户没法方便地改。写一个文件则哪种启动方式都认，用户也能直接编辑。</p>
  *
@@ -20,7 +20,7 @@ import java.nio.file.Path;
  * 而托盘菜单只在右键时出现，用户切完语言后本来就多半看不见它，重启即生效的代价
  * 可以接受。详见 {@link Messages} 的类注释。</p>
  *
- * <p>取值优先级：环境变量 {@code TINYQUERY_LOCALE}（便于测试与 CI，不落盘）；
+ * <p>取值优先级：环境变量 {@code LYNMILL_LOCALE}（便于测试与 CI，不落盘）；
  * 数据目录下的 {@code locale.txt}（用户可编辑，跨重启保留）；都没有则用中文。</p>
  *
  * <p>任何读取失败都不抛异常：语言取不到只是文案语言不对，不该让程序起不来。
@@ -29,7 +29,7 @@ import java.nio.file.Path;
 public final class DesktopLocale {
 
     /** 覆盖用环境变量。测试与 CI 用它，不必真的写文件 */
-    public static final String ENV = "TINYQUERY_LOCALE";
+    public static final String ENV = "LYNMILL_LOCALE";
 
     /** 数据目录下的文件名 */
     public static final String FILE_NAME = "locale.txt";

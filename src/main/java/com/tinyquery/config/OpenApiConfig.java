@@ -12,7 +12,7 @@ public class OpenApiConfig {
     public OpenAPI tinyQueryOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("TinyQuery API")
+                        .title("LynMill API")
                         .description("轻量级本地查询引擎")
                         .version("1.1.0"));
     }

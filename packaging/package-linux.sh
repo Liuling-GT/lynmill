@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# TinyQuery Linux 打包脚本 —— 用 jpackage 生成免安装的 app-image，并压成 tar.gz。
+# LynMill Linux 打包脚本 —— 用 jpackage 生成免安装的 app-image，并压成 tar.gz。
 #
 # 用法（在项目根目录执行）：
 #   bash packaging/package-linux.sh            # 只出 tar.gz（默认，最省事）
@@ -15,10 +15,10 @@
 #   4. 系统必须装了中文字体（见下面「中文字体」一节）
 #
 # 产物（都在 jpackage-out/ 下）：
-#   TinyQuery/                                 app-image 目录，解压即用
-#   TinyQuery-1.1.0-linux-x86_64.tar.gz        可直接分发的压缩包
-#   TinyQuery-1.1.0-1.x86_64.deb               仅在传了 --deb 时
-#   TinyQuery-1.1.0-1.x86_64.rpm               仅在传了 --rpm 时
+#   LynMill/                                 app-image 目录，解压即用
+#   LynMill-1.1.0-linux-x86_64.tar.gz        可直接分发的压缩包
+#   LynMill-1.1.0-1.x86_64.deb               仅在传了 --deb 时
+#   LynMill-1.1.0-1.x86_64.rpm               仅在传了 --rpm 时
 #
 # ---------- 为什么默认只出 tar.gz，不出 deb/rpm ----------
 # Linux 桌面环境碎片化严重：.deb 只能在 Debian/Ubuntu 系装，.rpm 只能在
@@ -66,13 +66,13 @@ appVersion='1.1.0'
 # --vendor 会写进 deb/rpm 的维护者字段与 .desktop 里
 vendor='Liuling'
 # 桌面环境里显示的菜单名与图标名。全小写、无空格是 Linux 的惯例
-packageName='tinyquery'
+packageName='lynmill'
 # deb 的 Maintainer 字段。jpackage 的 --linux-deb-maintainer 只接受**邮箱地址**——
 # 它会自己拿 --vendor 拼成「厂商 <邮箱>」。所以这里只能写邮箱：
 # 写成「Liuling <noreply@example.com>」会被拼成
 # 「Liuling <Liuling <noreply@example.com>>」这种畸形值（实测踩过，dpkg-deb -f 能看到）。
-# 正式分发前应换成真实联系方式，example.com 只是占位。
-debMaintainer='noreply@example.com'
+# 用 GitHub 的隐私邮箱：能联系到人，又不暴露真实邮箱。
+debMaintainer='2026383244+Liuling-GT@users.noreply.github.com'
 # rpm 的 License 字段。必须与仓库根的 LICENSE 一致（MIT）。
 # SPDX 标识符，rpm 认这个写法；下文 jpackage 调用处的注释有更多说明。
 rpmLicense='MIT'
@@ -81,7 +81,7 @@ jar="$root/target/tinyquery-$appVersion.jar"
 icon="$root/src/main/resources/icons/tinyquery-512.png"
 in="$root/target/jpackage-input"
 dest="$root/jpackage-out"
-app="$dest/TinyQuery"
+app="$dest/LynMill"
 
 arch="$(uname -m)"
 
@@ -190,7 +190,7 @@ fi
 # 这是「有元素才展开」的惯用法，bash 3.2 也认。
 commonArgs=(
     --input "$in"
-    --name TinyQuery
+    --name LynMill
     --main-jar "tinyquery-$appVersion.jar"
     --app-version "$appVersion"
     --vendor "$vendor"
@@ -222,15 +222,15 @@ echo '正在打包 app-image...'
 jpackage --type app-image "${commonArgs[@]}"
 
 # ---------- 6. 压成 tar.gz ----------
-# 包内顶层就是 TinyQuery/，用户解压即可得到一个完整目录。
-tarball="$dest/TinyQuery-$appVersion-linux-$arch.tar.gz"
+# 包内顶层就是 LynMill/，用户解压即可得到一个完整目录。
+tarball="$dest/LynMill-$appVersion-linux-$arch.tar.gz"
 rm -f "$tarball"
 echo '正在压缩 tar.gz...'
-tar -czf "$tarball" -C "$dest" TinyQuery
+tar -czf "$tarball" -C "$dest" LynMill
 
 # ---------- 6.5 给 deb/rpm 补上「建议安装中文字体」 ----------
 #
-# 为什么需要：TinyQuery 的托盘菜单有中文。Windows / macOS 系统自带中文字体，
+# 为什么需要：LynMill 的托盘菜单有中文。Windows / macOS 系统自带中文字体，
 # Linux 则不保证 —— 最小化的 Ubuntu 上 fontconfig 可能一个含 CJK 字形的字体都没有，
 # 于是 SansSerif 映射到无中文字形的字体，菜单中文全变成方块。
 # （这不是猜测：本项目的 TrayIconInstallerTest 就会在那种环境下失败，
@@ -348,7 +348,7 @@ if [ "$wantDeb" = 1 ]; then
     jpackage --type deb "${commonArgs[@]}" "${packageArgs[@]}" \
         --linux-deb-maintainer "$debMaintainer"
     # 【踩过的坑，很隐蔽】文件名按 --linux-package-name 来，也就是**小写**的
-    # tinyquery_1.1.0-1_amd64.deb（下划线）。原来这里写的是 TinyQuery-1.1.0-1.*.deb
+    # lynmill_1.1.0-1_amd64.deb（下划线）。原来这里写的是 TinyQuery-1.1.0-1.*.deb
     # （大写 T、连字符），glob 一个都匹配不上 —— for 循环体一次都没执行，
     # Recommends 静默地没加上，而且外面看不出任何异常。
     # 教训：glob 匹配不到【不报错】，必须显式断言至少处理了一个文件。
@@ -384,9 +384,9 @@ echo "打包完成。构建设施："
 printf '  %-24s %s\n' '架构' "$arch"
 printf '  %-24s %s\n' 'jpackage' "$(jpackage --version 2>/dev/null || echo '?')"
 printf '  %-24s %s\n' 'glibc' "$(ldd --version 2>/dev/null | head -1 | awk '{print $NF}')"
-printf '  %-24s %s\n' '应用标识' "TinyQuery $appVersion / $vendor"
+printf '  %-24s %s\n' '应用标识' "LynMill $appVersion / $vendor"
 
-cfg="$app/lib/app/TinyQuery.cfg"
+cfg="$app/lib/app/LynMill.cfg"
 if [ -f "$cfg" ]; then
     # 用 grep 取【所有】java-options 行，不是 -m1 只取第一行 ——
     # .cfg 里每个 java-options 占一行，只取第一行会把后面设的堆上限藏起来，
@@ -407,7 +407,7 @@ echo "产物："
 printf '  %-56s %8s\n' "${app#$root/}" "$(du -sh "$app" | cut -f1)"
 printf '  %-56s %8s\n' "${tarball#$root/}" "$(du -h "$tarball" | cut -f1)"
 # 【踩过的坑】glob 的大小写/分隔符必须与 --linux-package-name 一致：
-# deb 是 tinyquery_1.1.0-1_amd64.deb（小写下划线），rpm 是 tinyquery-1.1.0-1.x86_64.rpm。
+# deb 是 lynmill_1.1.0-1_amd64.deb（小写下划线），rpm 是 lynmill-1.1.0-1.x86_64.rpm。
 # 原来写成 TinyQuery-1.1.0-1.*.deb，一个都匹配不到 —— 产物明明打出来了，
 # 汇报里却不显示（同时也导致 Recommends 没被加上，见上面第 7 节）
 for f in "$dest"/"$packageName"_"$appVersion"-1_*.deb "$dest"/"$packageName"-"$appVersion"-1.*.rpm; do
@@ -416,7 +416,7 @@ done
 
 echo
 echo "分发说明："
-echo "  tar.gz 解压后直接运行 TinyQuery/bin/TinyQuery（tar 会保留可执行位）"
+echo "  tar.gz 解压后直接运行 LynMill/bin/LynMill（tar 会保留可执行位）"
 if [ "$wantDeb" = 1 ] || [ "$wantRpm" = 1 ]; then
     echo "  deb/rpm 安装后可从应用菜单启动（--linux-shortcut 会生成 .desktop）"
 fi

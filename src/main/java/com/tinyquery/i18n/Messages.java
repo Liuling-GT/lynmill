@@ -28,7 +28,7 @@ public final class Messages {
 
     /** 前端传语言的请求头。用自定义头而不是 Accept-Language：
      *  Accept-Language 由浏览器按系统语言自动填，会把用户在前端的选择盖掉 */
-    public static final String LOCALE_HEADER = "X-TinyQuery-Locale";
+    public static final String LOCALE_HEADER = "X-LynMill-Locale";
 
     private static final ThreadLocal<String> CURRENT = new ThreadLocal<>();
 
@@ -570,11 +570,11 @@ public final class Messages {
         en("hint.didYouMean", "Did you mean \"{0}\"?");
 
         // ---------- 安全过滤器 ----------
-        zh("security.tokenRejected", "缺少或无效的访问令牌。请从 TinyQuery 控制窗口点「打开界面」重新进入");
-        en("security.tokenRejected", "Missing or invalid access token. Reopen the interface from the TinyQuery control window");
+        zh("security.tokenRejected", "缺少或无效的访问令牌。请从 LynMill 控制窗口点「打开界面」重新进入");
+        en("security.tokenRejected", "Missing or invalid access token. Reopen the interface from the LynMill control window");
 
-        zh("security.hostRejected", "请求的地址不是本机。TinyQuery 只服务于 127.0.0.1 与 localhost");
-        en("security.hostRejected", "The request address is not local. TinyQuery only serves 127.0.0.1 and localhost");
+        zh("security.hostRejected", "请求的地址不是本机。LynMill 只服务于 127.0.0.1 与 localhost");
+        en("security.hostRejected", "The request address is not local. LynMill only serves 127.0.0.1 and localhost");
 
         zh("error.internal", "服务内部错误，请查看后端日志");
         en("error.internal", "Internal server error; check the backend logs");
@@ -622,11 +622,11 @@ public final class Messages {
         // ---------- 桌面端：启动失败对话框 ----------
         // 注意：这个对话框在启动失败时弹出，那一刻 Spring 上下文可能都没起来。
         // 它的文案必须有兜底 —— 见 StartupFailureDialog 里的注释
-        zh("desktop.failure.title", "TinyQuery 启动失败");
-        en("desktop.failure.title", "TinyQuery Failed to Start");
+        zh("desktop.failure.title", "LynMill 启动失败");
+        en("desktop.failure.title", "LynMill Failed to Start");
 
-        zh("desktop.failure.headline", "TinyQuery 启动失败，无法继续运行。");
-        en("desktop.failure.headline", "TinyQuery failed to start and cannot continue.");
+        zh("desktop.failure.headline", "LynMill 启动失败，无法继续运行。");
+        en("desktop.failure.headline", "LynMill failed to start and cannot continue.");
 
         zh("desktop.failure.openLogs", "打开日志文件夹");
         en("desktop.failure.openLogs", "Open Log Folder");
@@ -654,17 +654,17 @@ public final class Messages {
         en("desktop.failure.stderr", "standard error output");
 
         // ---------- 桌面端：第二实例提示 ----------
-        zh("desktop.duplicate.title", "TinyQuery 已在运行");
-        en("desktop.duplicate.title", "TinyQuery Is Already Running");
+        zh("desktop.duplicate.title", "LynMill 已在运行");
+        en("desktop.duplicate.title", "LynMill Is Already Running");
 
-        zh("desktop.duplicate.body", "TinyQuery 已经有一个实例在运行，但没能取得它的访问地址。");
-        en("desktop.duplicate.body", "Another TinyQuery instance is already running, "
+        zh("desktop.duplicate.body", "LynMill 已经有一个实例在运行，但没能取得它的访问地址。");
+        en("desktop.duplicate.body", "Another LynMill instance is already running, "
                 + "but its access address could not be obtained.");
 
         zh("desktop.duplicate.advice", "第二个实例没能从运行地址文件中读到有效地址；"
-                + "打开正在运行的 TinyQuery 窗口，或先退出它再重试");
+                + "打开正在运行的 LynMill 窗口，或先退出它再重试");
         en("desktop.duplicate.advice", "The second instance could not read a valid address "
-                + "from the running-address file; open the running TinyQuery window, "
+                + "from the running-address file; open the running LynMill window, "
                 + "or exit it and try again");
 
         zh("parse.mixedSelectColumns", "聚合查询中不能混用普通列：{0}。聚合结果只有一行，"

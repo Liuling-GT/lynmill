@@ -1,4 +1,4 @@
-# TinyQuery
+# LynMill
 
 **中文** | [English](README.md)
 
@@ -32,7 +32,7 @@
 
 ## 这是什么
 
-平时想查一个 CSV 文件，要么用 Excel 打开（几十万行就卡死），要么为了跑一句 SQL 去装 MySQL 再导数据。TinyQuery 想做的是把这件事缩短到"双击 → 拖文件 → 写 SQL"。
+平时想查一个 CSV 文件，要么用 Excel 打开（几十万行就卡死），要么为了跑一句 SQL 去装 MySQL 再导数据。LynMill 想做的是把这件事缩短到"双击 → 拖文件 → 写 SQL"。
 
 它的做法是把数据加载进内存里的**列式存储**，用**向量化**方式执行查询。所以对扫描类查询（`count(*)`、条件过滤、聚合）比逐行处理快得多。
 
@@ -70,7 +70,7 @@
 
 ### 为什么没有 PDF 数据源
 
-TinyQuery **不支持 PDF**。早期版本做过"只读带框线表格"的一版，实测后**主动撤除**了。原因值得说清楚，因为"能读一部分"听起来比"不支持"更好，实际上不是：
+LynMill **不支持 PDF**。早期版本做过"只读带框线表格"的一版，实测后**主动撤除**了。原因值得说清楚，因为"能读一部分"听起来比"不支持"更好，实际上不是：
 
 **一、PDF 里没有"表格"，只有线和带坐标的文字。** 从这些还原行列必然是**推断**，而推断就会错。业界最好的开源方案（Camelot，专为 PDF 表格而生）在公认基准 ICDAR-2013 上的 F1 也只有约 **0.78**，两成左右是错的。
 
@@ -96,18 +96,21 @@ TinyQuery **不支持 PDF**。早期版本做过"只读带框线表格"的一版
 
 ## 下载与运行
 
+到 **[Releases 页面](https://github.com/Liuling-GT/lynmill/releases/latest)** 下载对应平台的包。
+每个版本都会附上 `.sha256` / MD5 校验值，想核对下载是否完整可以用它。
+
 程序是**免安装**的：解压出来直接运行，不需要预先装 Java（运行时已经打包在里面）。
 
 ### Windows
 
-1. 解压 `TinyQuery-1.1.0-win.zip`
-2. 双击里面的 `TinyQuery.exe`
+1. 解压 `LynMill-1.1.0-win.zip`
+2. 双击里面的 `LynMill.exe`
 
-> 不要只把 `TinyQuery.exe` 单独拖出来 —— 它要靠同目录下的 `app\` 和 `runtime\` 才能启动。
+> 不要只把 `LynMill.exe` 单独拖出来 —— 它要靠同目录下的 `app\` 和 `runtime\` 才能启动。
 
 ### macOS
 
-1. 打开 `TinyQuery-1.1.0.dmg`，把 TinyQuery 拖进「应用程序」
+1. 打开 `LynMill-1.1.0.dmg`，把 LynMill 拖进「应用程序」
 2. 首次打开见下一节的放行方法
 
 > 当前提供的是 **Apple Silicon（M1~M4）** 版本。Intel Mac 请从源码构建，或用 jar 直接运行（见[从源码构建](#从源码构建)）。
@@ -117,15 +120,15 @@ TinyQuery **不支持 PDF**。早期版本做过"只读带框线表格"的一版
 **方式一：压缩包（推荐，所有发行版通用）**
 
 ```bash
-tar -xzf TinyQuery-1.1.0-linux-x86_64.tar.gz
-./TinyQuery/bin/TinyQuery
+tar -xzf LynMill-1.1.0-linux-x86_64.tar.gz
+./LynMill/bin/LynMill
 ```
 
 **方式二：安装包**
 
 ```bash
-sudo dpkg -i tinyquery_1.1.0-1_amd64.deb     # Debian / Ubuntu 系
-sudo rpm -i tinyquery-1.1.0-1.x86_64.rpm     # Fedora / RHEL 系
+sudo dpkg -i lynmill_1.1.0-1_amd64.deb     # Debian / Ubuntu 系
+sudo rpm -i lynmill-1.1.0-1.x86_64.rpm     # Fedora / RHEL 系
 ```
 
 装完可以从应用菜单启动。
@@ -159,7 +162,7 @@ sudo rpm -i tinyquery-1.1.0-1.x86_64.rpm     # Fedora / RHEL 系
 - **右键点图标 → 选「打开」→ 再点「打开」**（直接双击不行）
 - 或执行一次：
   ```bash
-  xattr -dr com.apple.quarantine /Applications/TinyQuery.app
+  xattr -dr com.apple.quarantine /Applications/LynMill.app
   ```
 
 ### Linux
@@ -167,7 +170,7 @@ sudo rpm -i tinyquery-1.1.0-1.x86_64.rpm     # Fedora / RHEL 系
 一般不会拦。若提示权限不足：
 
 ```bash
-chmod +x TinyQuery/bin/TinyQuery
+chmod +x LynMill/bin/LynMill
 ```
 
 ---
@@ -251,9 +254,9 @@ select * from sample join other on sample.id = other.id
 
 | 平台 | 路径 |
 |---|---|
-| Windows | `%APPDATA%\TinyQuery\` |
-| macOS | `~/Library/Application Support/TinyQuery/` |
-| Linux | `~/.local/share/TinyQuery/`（遵循 `$XDG_DATA_HOME`） |
+| Windows | `%APPDATA%\LynMill\` |
+| macOS | `~/Library/Application Support/LynMill/` |
+| Linux | `~/.local/share/LynMill/`（遵循 `$XDG_DATA_HOME`） |
 
 目录内容：
 
@@ -264,7 +267,7 @@ tinyquery.url        当前实例的访问地址
 logs/tinyquery.log   运行日志 —— 出问题先看这里
 ```
 
-可用环境变量 `TINYQUERY_HOME` 整体覆盖这个目录（便携部署用）。
+可用环境变量 `LYNMILL_HOME` 整体覆盖这个目录（便携部署用）。
 
 **卸载程序不会删除这个目录**，也不会删除已保存的密码（见下）。
 
@@ -274,16 +277,16 @@ logs/tinyquery.log   运行日志 —— 出问题先看这里
 
 - **只监听 `127.0.0.1`**，局域网/公网无法访问
 - **所有 API 需要令牌**：进程启动时随机生成，注入到首页；不带令牌的请求一律 401
-  - 请求头：`X-TinyQuery-Token`
+  - 请求头：`X-LynMill-Token`
   - 每次启动令牌都会变
 - 数据全部在内存里，除了你主动注册的文件，不读写别的东西
-- **密码**：勾选「保存密码」后存进系统凭据管理器，条目标名为 `TinyQuery/<数据源名>`；**不勾选则完全不落盘**
+- **密码**：勾选「保存密码」后存进系统凭据管理器，条目标名为 `LynMill/<数据源名>`；**不勾选则完全不落盘**
 
 > ⚠️ **卸载程序不会清除已保存的密码。** 需要自己删：
-> - Windows：控制面板 → 凭据管理器 → Windows 凭据 → 找 `TinyQuery/...`
-> - macOS：钥匙串访问 → 搜 `TinyQuery`
-> - Linux：用「密码和密钥」（seahorse）之类的钥匙串管理工具搜 `TinyQuery`，或执行
->   `secret-tool clear key 'TinyQuery/<数据源名>'`
+> - Windows：控制面板 → 凭据管理器 → Windows 凭据 → 找 `LynMill/...`
+> - macOS：钥匙串访问 → 搜 `LynMill`
+> - Linux：用「密码和密钥」（seahorse）之类的钥匙串管理工具搜 `LynMill`，或执行
+>   `secret-tool clear key 'LynMill/<数据源名>'`
 
 ---
 
@@ -342,20 +345,20 @@ mvn test
 | **不支持的语法报"数据源不存在"** | 排查困难 | 见[上方说明](#-报错信息可能误导) |
 | **Linux 需要 keyring 才能真正保存密码** | 存不上 | 已实现 Secret Service（libsecret）支持，但**系统里得有可用的 keyring**（GNOME Keyring / KWallet）。服务器版、精简发行版、纯窗口管理器环境往往没装或没启动，此时"保存密码"会报错、每次仍需手输。装法：`sudo apt install gnome-keyring libsecret-1-0` |
 | **Linux 缺中文字体时菜单显示方块** | 观感 | 装 `fonts-wqy-microhei`（约 5MB）或 `fonts-noto-cjk` 即可。`.deb` 已带 `Recommends`，用 `apt` 安装时通常自动装上 |
-| **`.deb` 在极简系统上卸不掉** | 卸载 | 仅影响最小化安装 / WSL / 纯服务器。带桌面的常规发行版**不受影响**（已实测确认）。变通：`sudo dpkg --purge --force-all tinyquery`。详见下方 |
+| **`.deb` 在极简系统上卸不掉** | 卸载 | 仅影响最小化安装 / WSL / 纯服务器。带桌面的常规发行版**不受影响**（已实测确认）。变通：`sudo dpkg --purge --force-all lynmill`。详见下方 |
 | **打包体积偏大** | 约 180 MB | jpackage 默认带完整 JDK；后续可用 jlink 裁剪到 60~80 MB |
 | **Intel Mac 暂无安装包** | 需自行构建 | 可用 jar 方式运行 |
 
 ### 关于 `.deb` 卸载失败（Linux）
 
-> **先给结论：带桌面的常规发行版不会遇到这个问题。** 已在真实的 Ubuntu 虚拟机上实测：`sudo dpkg -r tinyquery` 正常完成，程序文件与菜单项都清除干净。下面说的是**最小化安装**（服务器、WSL、容器镜像）才会碰到的情况。
+> **先给结论：带桌面的常规发行版不会遇到这个问题。** 已在真实的 Ubuntu 虚拟机上实测：`sudo dpkg -r lynmill` 正常完成，程序文件与菜单项都清除干净。下面说的是**最小化安装**（服务器、WSL、容器镜像）才会碰到的情况。
 
-现象：在极简系统上执行 `sudo dpkg -r tinyquery` 会报
+现象：在极简系统上执行 `sudo dpkg -r lynmill` 会报
 
 ```
 xdg-desktop-menu: No writable system menu directory found.
-dpkg: error processing package tinyquery (--remove):
- installed tinyquery package pre-removal script subprocess returned error exit status 3
+dpkg: error processing package lynmill (--remove):
+ installed lynmill package pre-removal script subprocess returned error exit status 3
 ```
 
 原因：jpackage 生成的 `prerm` 脚本带 `set -e`，其中调用了 `xdg-desktop-menu uninstall`。该命令会**顺带处理 `*.directory` 文件**，而那条路径要求系统的 `/usr/share/desktop-directories` 存在且可写 —— 最小化安装上没有这个目录，于是命令以 3 退出，`set -e` 中止整个卸载，`/opt/tinyquery` 原封不动留着。
@@ -366,17 +369,17 @@ dpkg: error processing package tinyquery (--remove):
 
 ```bash
 # 1) 强制卸载
-sudo dpkg --purge --force-all tinyquery
+sudo dpkg --purge --force-all lynmill
 
 # 2) 或先补上缺失的目录再正常卸载
 sudo mkdir -p /usr/share/desktop-directories
-sudo dpkg -r tinyquery
+sudo dpkg -r lynmill
 ```
 
-**另外**：`dpkg -r` 之后 `dpkg -l tinyquery` 会显示状态 `rc`，这是**正常的**，意思是「已卸载，但 dpkg 还保留着包的记录」（因为包里带了 `/opt` 这个目录条目）。程序确实已经删掉了。想连记录一起清掉：
+**另外**：`dpkg -r` 之后 `dpkg -l lynmill` 会显示状态 `rc`，这是**正常的**，意思是「已卸载，但 dpkg 还保留着包的记录」（因为包里带了 `/opt` 这个目录条目）。程序确实已经删掉了。想连记录一起清掉：
 
 ```bash
-sudo dpkg --purge tinyquery
+sudo dpkg --purge lynmill
 ```
 
 ---
@@ -391,7 +394,7 @@ sudo dpkg --purge tinyquery
 
 ## 关于本项目
 
-TinyQuery 是一名本科生在课余时间独立开发的项目，开发过程中大量借助大语言模型。
+LynMill 是一名本科生在课余时间独立开发的项目，开发过程中大量借助大语言模型。
 
 **它不是商业产品，也不是生产级工具。** 使用或参与贡献之前请先读这一节。
 
@@ -410,7 +413,7 @@ TinyQuery 是一名本科生在课余时间独立开发的项目，开发过程�
 
 ### 免责声明
 
-TinyQuery 按**现状**提供，不附带任何明示或暗示的保证。
+LynMill 按**现状**提供，不附带任何明示或暗示的保证。
 
 - 项目已尽力保证**可用性**，但**不保证适用于生产环境**。
 - **使用前请自行评估风险。** 用于重要事项时，请独立核实结果。
@@ -424,7 +427,7 @@ TinyQuery 按**现状**提供，不附带任何明示或暗示的保证。
 - **这是个人项目。** 作者的重心在学业，维护时间有限，**响应可能较慢**。issue 不会被无视，只是排在学业后面。
 - **先查文档。** 提 issue 之前请先读本 README 及其[已知问题](#已知问题)一节，确认不是已知问题。
 
-**报告问题。** 请提 issue。有用的报告包含：你做了什么、期望什么、实际发生了什么；你的操作系统，以及是怎么运行 TinyQuery 的（便携版还是从源码构建）；具体的 SQL，以及涉及的数据源类型；相关时附上日志片段 —— 日志位置见[数据存放位置](#数据存放位置)。
+**报告问题。** 请提 issue。有用的报告包含：你做了什么、期望什么、实际发生了什么；你的操作系统，以及是怎么运行 LynMill 的（便携版还是从源码构建）；具体的 SQL，以及涉及的数据源类型；相关时附上日志片段 —— 日志位置见[数据存放位置](#数据存放位置)。
 
 如果问题出在 AI 协助编写的代码部分，同样值得报告。欢迎指正，我会认真修。
 
@@ -432,7 +435,7 @@ TinyQuery 按**现状**提供，不附带任何明示或暗示的保证。
 
 ### 许可证
 
-TinyQuery 采用 **MIT 许可证**。完整条款见 [LICENSE](LICENSE)。
+LynMill 采用 **MIT 许可证**。完整条款见 [LICENSE](LICENSE)。
 
 简单说：可以自由使用、修改、再分发（含商业用途），只要保留著作权声明与许可证原文即可。软件不附带任何保证。
 

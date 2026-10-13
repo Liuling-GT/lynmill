@@ -40,7 +40,7 @@ public interface CredentialStore {
      *
      * <p>同一个 key 重复保存应当覆盖而不是报错 —— 用户改密码后重新注册是常规操作。</p>
      *
-     * @param key      凭据标识，需全局唯一（本项目中用「TinyQuery/数据源名」）
+     * @param key      凭据标识，需全局唯一（本项目中用「LynMill/数据源名」）
      * @param username 一并保存的用户名；可为 null
      * @param password 要保存的密码；null 视为空串
      */

@@ -8,10 +8,10 @@ import java.util.Base64;
 /**
  * 本进程的访问令牌。
  *
- * <p>要防的是 CSRF：TinyQuery 是个监听本地端口的 Web 服务，于是任何网页都能向
+ * <p>要防的是 CSRF：LynMill 是个监听本地端口的 Web 服务，于是任何网页都能向
  * {@code http://localhost:8080} 发请求，其中「简单请求」（比如不带自定义头的 POST）
  * 连预检都不会触发，浏览器会老老实实把请求发出去。也就是说：在浏览器里打开一个
- * 恶意网站，那个网站的脚本就能指挥本机的 TinyQuery 干活。</p>
+ * 恶意网站，那个网站的脚本就能指挥本机的 LynMill 干活。</p>
  *
  * <p>光靠 CORS 挡不住这件事：CORS 限制的是「读响应」，不限制「发请求」。所以还需要
  * 一个对方猜不到的东西 —— 就是这个令牌：请求必须带上它，而恶意网页拿不到
@@ -30,7 +30,7 @@ import java.util.Base64;
 public final class SecurityToken {
 
     /** 携带令牌的请求头名。前后端必须一致 */
-    public static final String HEADER_NAME = "X-TinyQuery-Token";
+    public static final String HEADER_NAME = "X-LynMill-Token";
 
     /**
      * 取令牌的接口路径。

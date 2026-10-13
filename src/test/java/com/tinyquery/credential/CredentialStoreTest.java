@@ -15,7 +15,7 @@ class CredentialStoreTest {
 
     /** 唯一的 key，避免并发跑测试时互相干扰，也避免污染真实凭据管理器 */
     private static String key() {
-        return "TinyQuery/__test__/" + UUID.randomUUID();
+        return "LynMill/__test__/" + UUID.randomUUID();
     }
 
     // ==================== 空实现（不依赖平台，任何机器上都能跑） ====================

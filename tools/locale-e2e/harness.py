@@ -34,14 +34,15 @@ from pathlib import Path
 
 # ---------------------------------------------------------------- 工具位置
 # 全部可用环境变量覆盖，便于换机器 / 接 CI。
-# 默认值是本机实测可用的位置（Windows 开发机）。
-JAVA = os.environ.get("TINYQUERY_JAVA", r"D:\JDK\jdk-17\bin\java.exe")
-NODE = os.environ.get("TINYQUERY_NODE", r"D:\Node.js\node.exe")
-ROOT = Path(os.environ.get("TINYQUERY_ROOT", Path(__file__).resolve().parents[2]))
+# 默认值优先取 JAVA_HOME，取不到才退回常见安装位置。
+JAVA = os.environ.get("LYNMILL_JAVA") or str(
+    Path(os.environ.get("JAVA_HOME", r"C:\Program Files\Java\jdk-17")) / "bin" / "java.exe")
+NODE = os.environ.get("LYNMILL_NODE", r"C:\Program Files\nodejs\node.exe")
+ROOT = Path(os.environ.get("LYNMILL_ROOT", Path(__file__).resolve().parents[2]))
 
 # 浏览器候选：优先 Edge，其次 Chrome。找到一个可用的即可
 BROWSER_CANDIDATES = [
-    os.environ.get("TINYQUERY_BROWSER", ""),
+    os.environ.get("LYNMILL_BROWSER", ""),
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -54,7 +55,7 @@ BROWSER_CANDIDATES = [
 JAR = ROOT / "target" / "tinyquery-1.1.0.jar"
 
 # 工作目录。默认放系统临时目录，退出时清理
-WORK = Path(os.environ.get("TINYQUERY_E2E_WORK", Path(os.environ.get("TEMP", "/tmp")) / "tq-locale-e2e"))
+WORK = Path(os.environ.get("LYNMILL_E2E_WORK", Path(os.environ.get("TEMP", "/tmp")) / "tq-locale-e2e"))
 
 
 # 本次进程已经发出去过的端口。
@@ -117,7 +118,7 @@ def find_browser():
         if path and Path(path).exists():
             return path
     raise HarnessError(
-        "找不到浏览器。设 TINYQUERY_BROWSER 指向 msedge.exe / chrome.exe，"
+        "找不到浏览器。设 LYNMILL_BROWSER 指向 msedge.exe / chrome.exe，"
         "或安装 Edge / Chrome。")
 
 
@@ -434,7 +435,7 @@ def _kill_by_profile(profile_dir):
 
 
 class AppServer:
-    """一个跑在指定端口上的 TinyQuery 实例，带独立的 TINYQUERY_HOME。
+    """一个跑在指定端口上的 LynMill 实例，带独立的 LYNMILL_HOME。
 
     独立 HOME 是为了让 `locale.txt` / `theme.txt`（服务端的界面偏好）可控 ——
     场景要靠它们分别构造"服务端是中文/英文"、"服务端是紫罗兰/咖啡色"两种起点。
@@ -451,18 +452,18 @@ class AppServer:
             (self.home / "theme.txt").write_text(theme, encoding="utf-8")
 
         env = dict(os.environ)
-        env["TINYQUERY_HOME"] = str(self.home)
+        env["LYNMILL_HOME"] = str(self.home)
         # 本机若设了 JAVA_TOOL_OPTIONS，会在每次 java 启动时打印干扰信息，
         # 甚至在部分环境让进程挂住。这里显式清掉
         env["JAVA_TOOL_OPTIONS"] = ""
-        # 环境变量 TINYQUERY_LOCALE / TINYQUERY_THEME 的优先级【高于】对应的
+        # 环境变量 LYNMILL_LOCALE / LYNMILL_THEME 的优先级【高于】对应的
         # 文本文件（见 DesktopLocale.resolve / DesktopTheme.resolve），
         # 本机若设了它们，场景通过文件指定的偏好就会被无视。
         # 移除它们，保证"服务端偏好"只由文件决定。
         # 【踩过】编号 51 之前只 pop 了 LOCALE —— 那时还没有 THEME 这个变量，
         # 加了主题之后不 pop 就是一个静默的泄漏口
-        env.pop("TINYQUERY_LOCALE", None)
-        env.pop("TINYQUERY_THEME", None)
+        env.pop("LYNMILL_LOCALE", None)
+        env.pop("LYNMILL_THEME", None)
 
         self.proc = subprocess.Popen(
             [JAVA, "-Dfile.encoding=UTF-8", "-jar", str(JAR),
@@ -511,7 +512,7 @@ class AppServer:
     def server_locale(self):
         req = urllib.request.Request(
             "http://127.0.0.1:%d/api/preferences/locale" % self.port,
-            headers={"X-TinyQuery-Token": self._token()})
+            headers={"X-LynMill-Token": self._token()})
         body = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
         return body["data"]["locale"]
 
@@ -520,7 +521,7 @@ class AppServer:
             "http://127.0.0.1:%d/api/preferences/locale" % self.port,
             data=json.dumps({"locale": locale}).encode("utf-8"),
             headers={"Content-Type": "application/json",
-                     "X-TinyQuery-Token": self._token()})
+                     "X-LynMill-Token": self._token()})
         urllib.request.urlopen(req, timeout=10).read()
 
     def assert_theme_settled(self, expected):
@@ -545,7 +546,7 @@ class AppServer:
     def server_theme(self):
         req = urllib.request.Request(
             "http://127.0.0.1:%d/api/preferences/theme" % self.port,
-            headers={"X-TinyQuery-Token": self._token()})
+            headers={"X-LynMill-Token": self._token()})
         body = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
         return body["data"]["theme"]
 
@@ -554,14 +555,14 @@ class AppServer:
             "http://127.0.0.1:%d/api/preferences/theme" % self.port,
             data=json.dumps({"theme": theme}).encode("utf-8"),
             headers={"Content-Type": "application/json",
-                     "X-TinyQuery-Token": self._token()})
+                     "X-LynMill-Token": self._token()})
         urllib.request.urlopen(req, timeout=10).read()
 
     def supported_themes(self):
         """服务端认得的主题清单（value + accent），顺序即展示顺序。"""
         req = urllib.request.Request(
             "http://127.0.0.1:%d/api/preferences/themes" % self.port,
-            headers={"X-TinyQuery-Token": self._token()})
+            headers={"X-LynMill-Token": self._token()})
         body = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
         return body["data"]
 

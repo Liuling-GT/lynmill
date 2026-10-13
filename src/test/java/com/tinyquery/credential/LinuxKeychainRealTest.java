@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class LinuxKeychainRealTest {
 
     /** 所有测试 key 都带这个前缀，便于清理与识别 */
-    private static final String PREFIX = "TinyQuery/__selftest__";
+    private static final String PREFIX = "LynMill/__selftest__";
 
     private LinuxCredentialStore store;
     private final List<String> created = new ArrayList<>();

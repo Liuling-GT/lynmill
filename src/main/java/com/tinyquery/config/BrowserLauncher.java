@@ -8,7 +8,7 @@ import org.springframework.context.ApplicationListener;
 import org.springframework.stereotype.Component;
 
 /**
- * 启动完成后自动用系统默认浏览器打开 TinyQuery 界面。
+ * 启动完成后自动用系统默认浏览器打开 LynMill 界面。
  *
  * <p>时机选在 {@code ApplicationReadyEvent}：此时 Web 服务器已在监听、
  * {@link ServerPortHolder} 也已写入实际端口，打开浏览器不会落到还没起来的端口上。</p>

@@ -37,7 +37,7 @@ interface LinuxKeychainBackend {
     /**
      * 保存密码。是 upsert 语义：同 key 已存在则原地更新，不存在则新建。
      *
-     * @param key      凭据标识（本项目用「TinyQuery/数据源名」）
+     * @param key      凭据标识（本项目用「LynMill/数据源名」）
      * @param label    在钥匙串界面里给人看的名字
      * @param password 密码
      * @return 成功返回 null，失败返回原因

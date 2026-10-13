@@ -24,7 +24,7 @@ export default {
 
   // ==================== App shell ====================
   app: {
-    title: 'TinyQuery',
+    title: 'LynMill',
     subtitle: 'Local Query Engine · V1.1.0',
     nav: {
       query: 'Query',
@@ -34,7 +34,7 @@ export default {
       settings: 'Settings',
     },
     exited: {
-      title: 'TinyQuery has exited',
+      title: 'LynMill has exited',
       text: 'The background service has stopped. This page no longer responds to any action.',
       text2: 'You can close this tab now.',
       close: 'Close Tab',

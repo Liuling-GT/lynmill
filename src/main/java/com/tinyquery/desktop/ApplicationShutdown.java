@@ -45,7 +45,7 @@ public class ApplicationShutdown {
             return;
         }
 
-        log.info("正在退出 TinyQuery…");
+        log.info("正在退出 LynMill…");
 
         // 先收起可能还弹着的托盘菜单。下面走完 Spring 关闭就 System.exit 了，
         // 菜单若还留在屏幕上，用户看到的就是「程序都退了，菜单还浮在那儿」。

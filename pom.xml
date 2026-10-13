@@ -17,11 +17,11 @@
     <version>1.1.0</version>
     <packaging>jar</packaging>
 
-    <name>TinyQuery</name>
+    <name>LynMill</name>
     <description>本地零运维的多数据源 SQL 查询引擎：把 CSV / Excel、MySQL、PostgreSQL、SQLite 加载进列式存储，直接用 SQL 查询</description>
 
-    <!-- 作者是个人的学习项目，不是公司产品。
-         这里不写 <url> —— 目前没有远端仓库；等有仓库地址了再补。 -->
+    <!-- 作者是个人的学习项目，不是公司产品。 -->
+    <url>https://github.com/Liuling-GT/lynmill</url>
     <licenses>
         <license>
             <name>MIT License</name>
@@ -39,6 +39,13 @@
             </roles>
         </developer>
     </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/Liuling-GT/lynmill.git</connection>
+        <developerConnection>scm:git:https://github.com/Liuling-GT/lynmill.git</developerConnection>
+        <url>https://github.com/Liuling-GT/lynmill</url>
+        <tag>v1.1.0</tag>
+    </scm>
 
     <properties>
         <java.version>17</java.version>
@@ -289,18 +296,18 @@
             Spring Boot 会自动把 classpath:/static/ 下的 index.html
             作为欢迎页返回，所以访问 / 就能看到前端，不需要额外配置-->
         <!-- 测试运行时的环境隔离。
-             必须把 TINYQUERY_HOME 指到 target 下：普通测试里没人在意，
+             必须把 LYNMILL_HOME 指到 target 下：普通测试里没人在意，
              但语言落盘（DesktopLocale.switchTo）与数据源持久化都会调
              PathResolver.getDataDir()，不给它一个隔离目录就会写进开发者
-             真实的 %APPDATA%\TinyQuery —— 跑一次测试就把人家的语言和数据源改了 -->
+             真实的 %APPDATA%\LynMill —— 跑一次测试就把人家的语言和数据源改了 -->
         <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
                 <environmentVariables>
-                    <TINYQUERY_HOME>${project.build.directory}/test-home</TINYQUERY_HOME>
+                    <LYNMILL_HOME>${project.build.directory}/test-home</LYNMILL_HOME>
                 </environmentVariables>
-                <!-- 环境变量 TINYQUERY_LOCALE 优先级高于 locale.txt。
+                <!-- 环境变量 LYNMILL_LOCALE 优先级高于 locale.txt。
                      如果开发者本机恰好设过它，语言相关的测试会跟着变 —— 显式清掉 -->
                 <argLine>-Dfile.encoding=UTF-8</argLine>
             </configuration>

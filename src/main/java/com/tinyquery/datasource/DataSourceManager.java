@@ -295,7 +295,7 @@ public class DataSourceManager {
      * 而且万一将来要清理，也能按前缀批量识别，不会误删别的软件凭据。</p>
      */
     static String credentialKey(String dataSourceName) {
-        return "TinyQuery/" + dataSourceName;
+        return "LynMill/" + dataSourceName;
     }
 
     /** 系统凭据存储是否可用。界面据此决定「保存密码」勾选框是否可点 */
@@ -544,7 +544,7 @@ public class DataSourceManager {
      *
      * <p>密码一类的字段绝不写进文件。当前版本不提供「保存密码」，
      * 因此落盘时必须把它们摘掉 —— 否则用户没勾任何选项，密码却已经躺在
-     * {@code %APPDATA%\TinyQuery\datasources.json} 里了，而且没人知道。</p>
+     * {@code %APPDATA%\LynMill\datasources.json} 里了，而且没人知道。</p>
      *
      * <p>摘哪些字段由对应 loader 的 {@code fields()} 声明，与
      * {@link #toInfo} 的脱敏口径完全一致 —— 同一份声明，两处使用，

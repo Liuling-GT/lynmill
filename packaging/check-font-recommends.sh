@@ -73,12 +73,12 @@ set -uo pipefail
 cd "$2" || exit 1
 rm -rf ft && mkdir -p ft/DEBIAN ft/usr/share/doc/tq
 cat > ft/DEBIAN/control <<'CTL'
-Package: tinyquery
+Package: lynmill
 Version: 1.1.0
 Architecture: amd64
 Maintainer: Liuling <x@y.com>
 Depends: libx11-6, libasound2
-Description: TinyQuery test package
+Description: LynMill test package
 CTL
 echo x > ft/usr/share/doc/tq/readme
 dpkg-deb -b ft fakedeb.deb >/dev/null 2>&1 || { echo "RESULT=FAIL 造不出假 deb"; exit 0; }
