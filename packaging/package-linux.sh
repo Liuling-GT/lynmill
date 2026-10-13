@@ -72,7 +72,7 @@ packageName='lynmill'
 # 写成「Liuling <noreply@example.com>」会被拼成
 # 「Liuling <Liuling <noreply@example.com>>」这种畸形值（实测踩过，dpkg-deb -f 能看到）。
 # 用 GitHub 的隐私邮箱：能联系到人，又不暴露真实邮箱。
-debMaintainer='2026383244+Liuling-GT@users.noreply.github.com'
+debMaintainer='326133214+Liuling-GT@users.noreply.github.com'
 # rpm 的 License 字段。必须与仓库根的 LICENSE 一致（MIT）。
 # SPDX 标识符，rpm 认这个写法；下文 jpackage 调用处的注释有更多说明。
 rpmLicense='MIT'
