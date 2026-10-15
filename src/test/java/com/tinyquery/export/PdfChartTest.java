@@ -213,15 +213,18 @@ class PdfChartTest {
 
     @Test
     void 坐标轴刻度取整数感步长() {
-        // 步长规整到 1 / 2 / 2.5 / 5 / 10 × 10^k。
+        // 步长规整到 1 / 2 / 2.5 / 5 / 7.5 / 10 × 10^k。
         // 最初是把范围四等分，会算出 106.4、79.8 这种刻度，
-        // 读图的人得心算才能估计柱高 —— 这是可读性问题，不是审美问题
+        // 读图的人得心算才能估计柱高 —— 这是可读性问题，不是审美问题。
+        // 7.5 这一档是后加的：没有它，raw 略超 5 就跳到 10，
+        // 轴顶被抬高整整一倍（2191 的轴顶会从 2250 变成 3000），
+        // 柱子显得矮，导出的图与界面上的对不上
         assertEquals(1.0, PdfChart.niceStep(0.9), 1e-9);
         assertEquals(1.0, PdfChart.niceStep(1.0), 1e-9);
         assertEquals(2.0, PdfChart.niceStep(1.7), 1e-9);
         assertEquals(2.5, PdfChart.niceStep(2.4), 1e-9);
         assertEquals(5.0, PdfChart.niceStep(4.0), 1e-9);
-        assertEquals(10.0, PdfChart.niceStep(7.0), 1e-9);
+        assertEquals(7.5, PdfChart.niceStep(7.0), 1e-9);
         assertEquals(10.0, PdfChart.niceStep(9.9), 1e-9);
         assertEquals(100.0, PdfChart.niceStep(80.0), 1e-9);
         assertEquals(0.5, PdfChart.niceStep(0.4), 1e-9);

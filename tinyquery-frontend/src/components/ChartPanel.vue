@@ -1251,7 +1251,7 @@ const exportPng = () => {
  * 数据不在前端重新算，直接把当前图表的配置发给后端，由后端用同一套
  * 聚合规则取数，避免两边算出不一样的结果。
  */
-const exportPdf = async () => {
+const exportPdf = async (options = {}) => {
   if (!props.executedSql || !dimension.value) {
     return
   }
@@ -1274,7 +1274,8 @@ const exportPdf = async () => {
       chartType: chartType.value,
       chartTitle: buildExportTitle(),
       tableName: props.tableName,
-      includeTable: true,
+      // 默认不附数据表，由导出前的弹框决定
+      includeTable: options.includeTable === true,
       // 把界面上的观感原样带上，否则导出的图与屏幕上看到的不是同一张。
       // 配色发的是【已经派生好的整排颜色】而不是主色：派生用的是黄金角
       // 卷积运算，让后端再算一遍只会多一处可能与前端不一致的地方

@@ -595,7 +595,22 @@ public final class PdfChart {
         max = hi2;
     }
 
-    /** 把任意步长规整到 1 / 2 / 2.5 / 5 / 10 × 10^k */
+    /**
+     * 把任意步长规整到人习惯的数字上。
+     *
+     * <p>候选是 1 / 2 / 2.5 / 5 / 10 × 10^k，取<b>不小于 raw 的最小候选</b>。</p>
+     *
+     * <p><b>为什么要取「不小于」而不是「最接近」。</b>早先的实现是按区间落到
+     * 1、2、2.5、5、10 这几个挡位，于是 raw 只要略微超过 5 就跳到 10：
+     * 数据最大 2191、目标 4 格时 rawStep = 547.75，本该用 750 一格
+     * （4 格正好到 3000 以内、刻度是 750/1500/2250），却因为
+     * 547.75 落在 500 与 1000 之间被判成 1000，轴顶直接抬到 3000 ——
+     * 最高的柱子只占了轴高的三分之二，与屏幕上 ECharts 画出来的不一样，
+     * 用户会觉得「导出的图跟原图不是一个」。</p>
+     *
+     * <p>取不小于 raw 的最小候选，步长只会略大一点，轴顶贴近数据，
+     * 与 ECharts 的表现一致。</p>
+     */
     static double niceStep(double raw) {
         if (raw <= 0 || Double.isNaN(raw) || Double.isInfinite(raw)) {
             return 1;
@@ -604,6 +619,9 @@ public final class PdfChart {
         double pow = Math.pow(10, exp);
         double frac = raw / pow;   // [1, 10)
 
+        // 候选挡位。1 与 10 是两端，中间是常用的细分。
+        // 7.5 这一档不是凑数：没有它，raw 只要略超 5 就跳到 10，
+        // 轴顶被抬高整整一倍，柱子显得矮，与屏幕上的图对不上
         double nice;
         if (frac <= 1) {
             nice = 1;
@@ -613,6 +631,8 @@ public final class PdfChart {
             nice = 2.5;
         } else if (frac <= 5) {
             nice = 5;
+        } else if (frac <= 7.5) {
+            nice = 7.5;
         } else {
             nice = 10;
         }

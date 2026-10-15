@@ -208,7 +208,6 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="png">{{ t('chart.exportPng') }}</el-dropdown-item>
-                <!-- PDF 是矢量重绘，放大不糊；PNG 是截图，放大会马赛克 -->
                 <el-dropdown-item command="pdf">{{ t('chart.exportPdf') }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -310,6 +309,32 @@
       <template #footer>
         <el-button @click="layoutDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="exporting" @click="confirmLayoutExport">
+          {{ t('result.layoutConfirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!--
+      图表导出 PDF 的少量选项。
+      只有一项：要不要在图下面附数据表。默认不附 —— 图本身已经表达了数据，
+      附上表格会把图挤到上半页，多数人还得自己裁掉。
+      没有做成下拉菜单里的开关，是因为 el-dropdown-item 点了就关菜单，
+      放复选框既难点中也看不出当前状态。
+    -->
+    <el-dialog
+      v-model="chartPdfDialogVisible"
+      :title="t('chart.exportPdfTitle')"
+      width="420px"
+      append-to-body
+    >
+      <el-checkbox v-model="chartPdfIncludeTable" class="chart-pdf-option">
+        {{ t('chart.includeTable') }}
+      </el-checkbox>
+      <p class="chart-pdf-hint">{{ t('chart.includeTableHint') }}</p>
+
+      <template #footer>
+        <el-button @click="chartPdfDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="exporting" @click="confirmChartPdf">
           {{ t('result.layoutConfirm') }}
         </el-button>
       </template>
@@ -764,9 +789,22 @@ const handleExportChart = (command) => {
     return
   }
   if (command === 'pdf') {
-    chartPanelRef.value.exportPdf()
+    // 先让用户决定要不要附数据表，再导出
+    chartPdfDialogVisible.value = true
   } else {
     chartPanelRef.value.exportPng()
+  }
+}
+
+// 图表 PDF 的选项。默认不附数据表 —— 图已经表达了数据，
+// 附上表格会把图挤到上半页，多数人还得自己裁掉
+const chartPdfDialogVisible = ref(false)
+const chartPdfIncludeTable = ref(false)
+
+const confirmChartPdf = () => {
+  chartPdfDialogVisible.value = false
+  if (chartPanelRef.value) {
+    chartPanelRef.value.exportPdf({ includeTable: chartPdfIncludeTable.value })
   }
 }
 
@@ -1343,7 +1381,6 @@ const resolveFileName = (disposition) => {
 .layout-option {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   height: auto;
   padding: var(--sp-2) var(--sp-3);
   margin: 0;
@@ -1357,15 +1394,22 @@ const resolveFileName = (disposition) => {
   background: var(--el-color-success-light-9);
 }
 
-/* el-radio 默认把内容包在 .el-radio__label 里，这里让它铺满整行 */
-.layout-option :deep(.el-radio__label) {
+/*
+  el-radio 把内容包在 .el-radio__label 里，三栏排布要落在这一层。
+  注意这里【不能写 :deep()】—— 本文件的 <style> 没有 scoped，
+  :deep() 是 scoped 样式专用的伪类，在全局样式里是无效选择器，
+  浏览器会整条规则丢弃，排布就会退回到默认的行内流。
+  之前正是这样：档位名、「推荐」标签、结果三段各自换行叠在一起。
+*/
+.layout-option .el-radio__label {
   display: grid;
-  /* 三列：档位名定宽、推荐标签定宽、结果靠右。
+  /* 三列：档位名 / 推荐标签 / 结果靠右。
      用 grid 而不是 flex + space-between，是为了让所有行的三列都对齐 ——
      flex 下每行各算各的，长短不一时右边那列会参差不齐 */
-  grid-template-columns: 150px 56px 1fr;
+  grid-template-columns: 160px 64px 1fr;
   align-items: center;
   width: 100%;
+  padding-left: var(--sp-2);
 }
 
 /* 三列统一字号，避免大小字混排显得杂乱 */
@@ -1394,5 +1438,16 @@ const resolveFileName = (disposition) => {
 
 .layout-cell-state.is-warn {
   color: var(--el-color-warning);
+}
+
+.chart-pdf-option {
+  font-size: 13px;
+}
+
+.chart-pdf-hint {
+  margin: var(--sp-2) 0 0 24px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
 }
 </style>

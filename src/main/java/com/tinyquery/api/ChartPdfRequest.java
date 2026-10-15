@@ -25,8 +25,8 @@ import java.util.Map;
  * @param chartType    bar / line / pie，其余值按 bar 处理
  * @param chartTitle   画在图上的标题，留空则自动用「维度 — 系列名」兜一个
  * @param tableName    报表标题与文件名，用数据源表名
- * @param includeTable 是否在图下面附数据表，null 视作 true。
- *                     图看趋势、表看精确值，默认都给
+ * @param includeTable 是否在图下面附数据表。默认不附 —— 图已经表达了数据，
+ *                     多数时候只要那张图；要精确数值时由用户在导出菜单里勾选。
  * @param palettes     每个系列一整排已派生好的颜色，下标 = 系列下标。
  *                     柱状/折线只用每排的第 0 个；饼图按分类下标取模使用。
  *                     缺省时后端退回自己的默认配色
@@ -89,8 +89,15 @@ public record ChartPdfRequest(String sql,
     }
 
     /** 是否在图下附数据表，默认附 */
+    /**
+     * 是否在图下面附数据表。
+     *
+     * <p>默认<b>不附</b>。图本身已经表达了数据，多数情况下用户只要那张图；
+     * 表格放在后面会把图挤到上半页，还得自己裁掉。需要看具体数值时，
+     * 界面上的导出菜单里有开关可以勾上。</p>
+     */
     public boolean isIncludeTable() {
-        return !Boolean.FALSE.equals(includeTable);
+        return Boolean.TRUE.equals(includeTable);
     }
 
     /**
