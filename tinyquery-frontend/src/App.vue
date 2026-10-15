@@ -1390,8 +1390,13 @@ const resolveFileName = (disposition) => {
   width: 100%;
   white-space: normal;
   align-items: center;
-  height: auto;
-  padding: var(--sp-2) var(--sp-3);
+  /*
+    行高写死。六行里只有第 5 行有「推荐」标签，而 el-tag 自带
+    height:24px + margin:2px 0，会把那一行撑高几个像素，
+    导致后一行文字错位。固定行高后，行内有什么都不影响六行对齐。
+  */
+  height: 40px;
+  padding: 0 var(--sp-3);
   margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -1434,10 +1439,22 @@ const resolveFileName = (disposition) => {
   color: var(--ink);
 }
 
+/*
+  推荐标签那一列。
+  这列必须【固定高度】并把 el-tag 的外边距清零：
+  el-tag 自带 height:24px 与 margin:2px 0，比纯文字行高出几个像素，
+  于是带标签的第 5 行整体比别的行高，第 6 行的文字就跟着错位。
+  六行等高，右边那列才能真正对齐。
+*/
 .layout-cell-tag {
-  /* 没标签时这一列也占位，保证各行的结果列起点一致 */
   display: flex;
   align-items: center;
+  height: 22px;
+}
+
+.layout-cell-tag .el-tag {
+  height: 20px;
+  margin: 0;
 }
 
 .layout-cell-state {

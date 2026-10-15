@@ -41,6 +41,11 @@ import java.util.Map;
  * @param keepFullPrecision 数据标签是否显示完整精度。false = 固定两位小数
  * @param landscape    是否横向，null 视作纵向
  * @param scale        字号缩放，null 视作 1.0
+ * @param axisRanges   界面上 ECharts 实际算出的 Y 轴范围，每个元素是 [min, max]，
+ *                     下标与系列对应。传了就直接用，不再自己算 ——
+ *                     两边各算一套取整算法，同一组数据会给出 18000 与 20000
+ *                     两个轴顶，柱子高度差一大截，导出图与屏幕图就不是一张。
+ *                     null 或长度不足时，缺的那根轴退回自己的算法
  */
 public record ChartPdfRequest(String sql,
                               String dimension,
@@ -58,7 +63,38 @@ public record ChartPdfRequest(String sql,
                               Boolean unifyScale,
                               Boolean keepFullPrecision,
                               Boolean landscape,
-                              Float scale) {
+                              Float scale,
+                              List<List<Double>> axisRanges) {
+
+    /**
+     * 取第 index 根轴的范围，没有就返回 null。
+     *
+     * <p>只接受 [min, max] 或 [min, max, ticks] 这种形状、前两个值都是有限数、
+     * 且 max &gt; min 的输入。界面上的值经 JSON 往返可能变成 null 或 NaN，
+     * 脏数据一律当作没传，而不是让整张图崩掉。</p>
+     */
+    public double[] axisRangeAt(int index) {
+        if (axisRanges == null || index < 0 || index >= axisRanges.size()) {
+            return null;
+        }
+        List<Double> range = axisRanges.get(index);
+        if (range == null || range.size() < 2) {
+            return null;
+        }
+        Double lo = range.get(0);
+        Double hi = range.get(1);
+        if (lo == null || hi == null || !Double.isFinite(lo) || !Double.isFinite(hi) || hi <= lo) {
+            return null;
+        }
+        // 第三个值是格数，缺省用 5（ECharts 的默认 splitNumber）；
+        // 夹在 2~12 之间，防止界面传来离谱的值把网格线画成一片糊
+        int ticks = 5;
+        if (range.size() >= 3 && range.get(2) != null && Double.isFinite(range.get(2))) {
+            ticks = (int) Math.round(range.get(2));
+        }
+        ticks = Math.max(2, Math.min(12, ticks));
+        return new double[]{lo, hi, ticks};
+    }
 
     /** 是否横向，默认纵向 */
     public boolean isLandscape() {

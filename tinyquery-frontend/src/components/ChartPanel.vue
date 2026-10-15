@@ -1276,6 +1276,8 @@ const exportPdf = async (options = {}) => {
       tableName: props.tableName,
       // 默认不附数据表，由导出前的弹框决定
       includeTable: options.includeTable === true,
+      // 界面 ECharts 实际算出的 Y 轴范围与格数，让 PDF 的轴与屏幕完全一致
+      axisRanges: exportAxisRange(),
       // 把界面上的观感原样带上，否则导出的图与屏幕上看到的不是同一张。
       // 配色发的是【已经派生好的整排颜色】而不是主色：派生用的是黄金角
       // 卷积运算，让后端再算一遍只会多一处可能与前端不一致的地方
@@ -1313,6 +1315,44 @@ const seriesCount = computed(() => {
   }
   return [measure.value, measure2.value].filter(Boolean).length || 1
 })
+
+/**
+ * 读界面上 ECharts 实际算出来的 Y 轴范围，交给后端照用。
+ *
+ * 为什么不发原始数据、让后端自己算轴范围：后端算出来的和 ECharts 算出来的
+ * 不是同一个数。ECharts 为了让刻度落在整数上会挑自己的步长，
+ * 同一组数据它给 18000 封顶、后端给 20000，柱子高度差一大截，
+ * 导出图与屏幕图摆在一起就是两张图 —— 而这正是用户反复反馈的点。
+ *
+ * 与其在后端复刻 ECharts 的取整算法（那是一份会随 ECharts 版本变化的实现细节，
+ * 复刻得再像也只是逼近），不如直接把界面的结果发过去。
+ * 「所见即所得」里，屏幕才是那个「所见」。
+ *
+ * 读不到就返回 null，后端退回自己的算法 —— 拿不到不该让导出失败。
+ */
+const exportAxisRange = () => {
+  if (!chart) {
+    return null
+  }
+  try {
+    const models = chart.getModel().getComponents('yAxis') || []
+    const ranges = []
+    for (const model of models) {
+      const scale = model.coordinateSystem && model.coordinateSystem.scale
+      if (!scale || !Number.isFinite(scale.min) || !Number.isFinite(scale.max)) {
+        continue
+      }
+      // 连格数一起发：轴范围相同、格数不同时网格线位置还是不一样。
+      // 18000 分 6 格是每 3000 一条线，分 4 格就成了每 4500 一条
+      const ticks = Number.isFinite(scale.splitNumber) ? scale.splitNumber : 5
+      ranges.push([scale.min, scale.max, ticks])
+    }
+    return ranges.length ? ranges : null
+  } catch (e) {
+    // 拿不到就算了，别因为它让整个导出挂掉
+    return null
+  }
+}
 
 // 导出用的图标题：维度 + 聚合方式，让脱离界面看 PDF 的人知道这张图在讲什么
 const buildExportTitle = () => {

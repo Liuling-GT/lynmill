@@ -74,11 +74,55 @@ public final class PdfChart {
                         boolean highlightMode,
                         List<String> highlighted,
                         boolean unifyScale,
-                        boolean fullPrecision) {
+                        boolean fullPrecision,
+                        List<List<Double>> axisRanges) {
 
-        /** 界面默认观感：不统一轴、两位小数、不高亮 */
+        /** 界面默认观感：不统一轴、两位小数、不高亮、轴范围自己算 */
         public static Style defaults() {
-            return new Style(null, null, false, List.of(), false, false);
+            return new Style(null, null, false, List.of(), false, false, null);
+        }
+
+        /**
+         * 不带轴范围的写法，轴范围由后端自己算。
+         *
+         * <p>留这个重载是因为六个参数的组合已经很常见，而轴范围属于可选的
+         * 「所见即所得」增强 —— 不传时行为与从前完全一致。</p>
+         */
+        public Style(List<String> seriesColors,
+                     java.util.Map<String, String> sectorColors,
+                     boolean highlightMode,
+                     List<String> highlighted,
+                     boolean unifyScale,
+                     boolean fullPrecision) {
+            this(seriesColors, sectorColors, highlightMode, highlighted,
+                    unifyScale, fullPrecision, null);
+        }
+
+        /**
+         * 取第 index 根轴的指定范围，没有则返回 null 由调用方自己算。
+         *
+         * <p>返回 [min, max] 或 [min, max, ticks]，来自界面上的 ECharts，
+         * 见 ChartPdfRequest#axisRangeAt。</p>
+         */
+        double[] axisRangeAt(int index) {
+            if (axisRanges == null || index < 0 || index >= axisRanges.size()) {
+                return null;
+            }
+            List<Double> r = axisRanges.get(index);
+            if (r == null || r.size() < 2) {
+                return null;
+            }
+            Double lo = r.get(0);
+            Double hi = r.get(1);
+            if (lo == null || hi == null || !Double.isFinite(lo) || !Double.isFinite(hi)
+                    || hi <= lo) {
+                return null;
+            }
+            double ticks = 0;
+            if (r.size() >= 3 && r.get(2) != null && Double.isFinite(r.get(2))) {
+                ticks = r.get(2);
+            }
+            return new double[]{lo, hi, ticks};
         }
 
         /** 取第 index 个系列的颜色，缺省返回 null 由调用方兜底 */
@@ -189,20 +233,20 @@ public final class PdfChart {
         // 统一刻度时按两个系列的整体范围取刻度；分开时各自算各自的
         double[] axisMin = new double[2];
         double[] axisMax = new double[2];
-        valueRange(dual ? List.of(series.get(0)) : series);
+        valueRange(dual ? List.of(series.get(0)) : series, 0);
         axisMin[0] = min;
         axisMax[0] = max;
         if (dual) {
-            valueRange(List.of(series.get(1)));
+            valueRange(List.of(series.get(1)), 1);
             axisMin[1] = min;
             axisMax[1] = max;
         }
 
-        // 刻度用「整数感」的步长（1/2/2.5/5/10 × 10^k），而不是把范围四等分。
+        // 刻度用「整数感」的步长（1/2/2.5/5/7.5/10 × 10^k），而不是把范围四等分。
         // 四等分会算出 106.4、79.8 这种刻度，读图的人得心算才能估计柱高 ——
         // 正规图表的坐标轴都是整数刻度，这是可读性问题不是审美问题。
-        // 双轴时刻度画左轴的（左轴是系列 0），右轴只在轴线上标出范围
-        int ticks = 4;
+        // 界面传了范围就照用它的格数，这样网格线与屏幕上一一对应
+        int ticks = uiTicks > 0 ? uiTicks : 4;
         min = axisMin[0];
         max = axisMax[0];
         for (int i = 0; i <= ticks; i++) {
@@ -540,6 +584,29 @@ public final class PdfChart {
     // 让网格线上的数字是 0 / 50 / 100 / 150 / 200 这种，而不是 106.4 / 79.8
     private double min = 0;
     private double max = 1;
+
+    /**
+     * 定轴范围。优先用界面传过来的，没有才自己算。
+     *
+     * @param series 这根轴要画的系列
+     * @param axisIndex 轴下标，用来取界面对应的那根轴的范围
+     */
+    private void valueRange(List<Series> series, int axisIndex) {
+        double[] fromUi = style.axisRangeAt(axisIndex);
+        if (fromUi != null) {
+            min = fromUi[0];
+            max = fromUi[1];
+            // 第三项是界面上的格数。轴范围相同、格数不同时网格线位置仍不一样，
+            // 所以连它一起照用；缺省 4，与下面自己算时的默认保持一致
+            uiTicks = fromUi.length >= 3 ? (int) Math.round(fromUi[2]) : 4;
+            return;
+        }
+        uiTicks = 0;   // 0 表示没有界面值，用默认格数
+        valueRange(series);
+    }
+
+    /** 界面传来的格数；0 表示没有，走自己的默认值 */
+    private int uiTicks = 0;
 
     private void valueRange(List<Series> series) {
         double lo = Double.MAX_VALUE;

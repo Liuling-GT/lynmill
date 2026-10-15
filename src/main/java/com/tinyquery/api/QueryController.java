@@ -468,7 +468,8 @@ public class QueryController {
                     request.isHighlightMode(),
                     request.highlighted() == null ? List.of() : request.highlighted(),
                     request.isUnifyScale(),
-                    request.isKeepFullPrecision()));
+                    request.isKeepFullPrecision(),
+                    request.axisRanges()));
             c.draw(chartType, categories, series);
 
             // 附上数据表。图看趋势、表看精确值，两者都要 ——
