@@ -4,6 +4,8 @@ import com.tinyquery.executor.ChartResult;
 import com.tinyquery.executor.ColumnStore;
 import com.tinyquery.executor.QueryEngine;
 import com.tinyquery.executor.QueryResult;
+import com.tinyquery.export.PdfFonts;
+import com.tinyquery.export.PdfWriter;
 import com.tinyquery.export.XlsxWriter;
 import com.tinyquery.parser.NameSuggester;
 import com.tinyquery.parser.QueryHintException;
@@ -272,9 +274,86 @@ public class QueryController {
     }
 
     /**
+     * 导出查询结果为 PDF。
+     *
+     * <p>与 CSV / Excel 导出的区别：PDF 是「给人看的」，所以还会带上标题与
+     * 「数据源 / 行数 / 导出时间」这行元信息，并自动分页、每页重复表头。</p>
+     *
+     * <p>中文字体内嵌在 jar 里（见 resources/fonts），换台电脑打开不会缺字 ——
+     * 这是「导出报告发给别人」场景的硬要求。</p>
+     */
+    @Operation(summary = "Export Query Result as PDF",
+            description = "Render the full result set as a paginated A4 PDF with embedded CJK font")
+    @PostMapping("/query/export/pdf")
+    public void exportPdf(@RequestBody QueryRequest request, HttpServletResponse response) throws IOException {
+        ExportPlan plan = planExport(request, response);
+        if (plan == null) {
+            return;
+        }
+
+        String fileName = exportFileName(plan.tableName(), "pdf");
+
+        response.setContentType("application/pdf");
+        setDownloadHeaders(response, fileName);
+
+        // 判断每列是否数值：决定 PDF 里左对齐还是右对齐。
+        // 只采样前若干行即可 —— 一列里混着数字和文本时，按多数决定
+        List<String[]> rows = new ArrayList<>();
+        for (int idx : plan.indexes()) {
+            rows.add(toStrings(plan.engine().projectRowTyped(plan.stmt(), plan.cols(), idx)));
+        }
+        boolean[] numeric = detectNumericColumns(plan.cols().names().length, rows);
+
+        try (PdfWriter writer = new PdfWriter(PdfFonts.open())) {
+            writer.setHeader(plan.tableName(),
+                    Messages.get("pdf.subtitle", rows.size(), plan.columnCount()));
+            writer.writeTable(plan.cols().names(), numeric, rows);
+            response.getOutputStream().write(writer.finish());
+        }
+    }
+
+    // Object[] 转 String[]，供 PDF 使用（PDF 里一切都是文本）
+    private static String[] toStrings(Object[] row) {
+        String[] out = new String[row.length];
+        for (int i = 0; i < row.length; i++) {
+            out[i] = row[i] == null ? "" : String.valueOf(row[i]);
+        }
+        return out;
+    }
+
+    // 采样判断每列是否为数值列。数字右对齐才看得清量级
+    private static boolean[] detectNumericColumns(int columns, List<String[]> rows) {
+        boolean[] numeric = new boolean[columns];
+        int sample = Math.min(rows.size(), 50);
+        for (int c = 0; c < columns; c++) {
+            int total = 0;
+            int num = 0;
+            for (int r = 0; r < sample; r++) {
+                String[] row = rows.get(r);
+                if (c >= row.length) {
+                    continue;
+                }
+                String v = row[c];
+                if (v == null || v.isEmpty()) {
+                    continue;
+                }
+                total++;
+                try {
+                    Double.parseDouble(v.trim());
+                    num++;
+                } catch (NumberFormatException ignored) {
+                    // 不是数字
+                }
+            }
+            numeric[c] = total > 0 && num * 2 >= total;
+        }
+        return numeric;
+    }
+
+    /**
      * 导出前的公共准备：解析、取列、算行序。
      *
-     * <p>CSV 与 Excel 两个导出共用，避免两处各写一遍解析逻辑而慢慢长歪。
+     * <p>CSV / Excel / PDF 三个导出共用，避免各处各写一遍解析逻辑而慢慢长歪。
      * 失败时本方法已经把 JSON 错误写进响应并返回 {@code null}，调用方直接 return 即可。</p>
      */
     private ExportPlan planExport(QueryRequest request, HttpServletResponse response) throws IOException {
@@ -303,13 +382,54 @@ public class QueryController {
     private record ExportPlan(QueryStatement stmt, QueryEngine engine,
                               QueryEngine.ProjectionColumns cols,
                               List<Integer> indexes, String tableName) {
+
+        /** 列数。PDF 的元信息行要用 */
+        int columnCount() {
+            return cols.names().length;
+        }
     }
 
-    // 下载响应头。文件名同时给 ASCII 与 UTF-8 两种写法，兼容老浏览器
+    /**
+     * 下载响应头。
+     *
+     * <p>文件名要同时给两种写法，兼容不同浏览器：</p>
+     * <ul>
+     *   <li>{@code filename=} 只能是 ASCII。HTTP 头是 ISO-8859-1 编码的，
+     *       直接塞中文会让 Tomcat 判定为非法头并<b>把整个头丢掉</b> ——
+     *       表现是前端拿不到文件名，只能退化成默认名。所以这里对非 ASCII
+     *       做百分号转义，并把空格转成 %20 而不是 +（{@code URLEncoder} 在
+     *       form 语义下会把空格编成 +，那是错的）</li>
+     *   <li>{@code filename*=UTF-8''} 是 RFC 5987 的写法，现代浏览器优先用它，
+     *       这里能保留完整中文名</li>
+     * </ul>
+     */
     private void setDownloadHeaders(HttpServletResponse response, String fileName) {
         response.setHeader("Content-Disposition",
-                "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
-                        + URLEncoder.encode(fileName, StandardCharsets.UTF_8));
+                "attachment; filename=\"" + asciiFileName(fileName) + "\""
+                        + "; filename*=UTF-8''" + rfc5987Encode(fileName));
+    }
+
+    // 把文件名压成纯 ASCII：非 ASCII 字符按 UTF-8 逐字节做百分号转义。
+    // 这样中文名在只认 ASCII 的浏览器里至少是个可读的转义串，而不是把响应头弄丢
+    private String asciiFileName(String fileName) {
+        StringBuilder sb = new StringBuilder(fileName.length());
+        for (byte b : fileName.getBytes(StandardCharsets.UTF_8)) {
+            int c = b & 0xFF;
+            if (c < 0x80 && c != '"' && c != '\\' && c >= 0x20) {
+                sb.append((char) c);
+            } else if (c == ' ') {
+                sb.append("%20");
+            } else {
+                sb.append('%').append(String.format("%02X", c));
+            }
+        }
+        return sb.toString();
+    }
+
+    // RFC 5987 的 attr-char 允许集比普通 URL 编码更严：空格必须写成 %20
+    private String rfc5987Encode(String fileName) {
+        return URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+                .replace("+", "%20");
     }
 
     // 把一行拼成 CSV 并写出。值中含逗号、引号或换行时按 RFC 4180 用引号包裹

@@ -140,6 +140,7 @@ export default {
     export: '导出',
     exportCsv: '导出 CSV',
     exportXlsx: '导出 Excel (.xlsx)',
+    exportPdf: '导出 PDF',
     exporting: '导出中…',
     exportFailed: '导出失败',
     exportHttpError: '导出失败：服务端返回 {status}',

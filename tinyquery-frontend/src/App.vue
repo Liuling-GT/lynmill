@@ -128,6 +128,7 @@
               <el-dropdown-menu>
                 <el-dropdown-item command="csv">{{ t('result.exportCsv') }}</el-dropdown-item>
                 <el-dropdown-item command="xlsx">{{ t('result.exportXlsx') }}</el-dropdown-item>
+                <el-dropdown-item command="pdf">{{ t('result.exportPdf') }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -710,8 +711,11 @@ const exportQuery = async (format = 'csv') => {
   errorHint.value = ''
 
   try {
-    // CSV 与 Excel 两个端点的差别只在 URL，其余流程完全一致
-    const endpoint = format === 'xlsx' ? '/api/query/export/xlsx' : '/api/query/export'
+    // CSV / Excel / PDF 三个端点的差别只在 URL，其余流程完全一致
+    const endpoint =
+      format === 'xlsx' ? '/api/query/export/xlsx'
+      : format === 'pdf' ? '/api/query/export/pdf'
+      : '/api/query/export'
     const response = await fetch(endpoint, {
       method: 'POST',
       // 导出走原生 fetch 而不是 axios，所以令牌得自己带上 ——

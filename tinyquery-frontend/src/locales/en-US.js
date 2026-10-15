@@ -142,6 +142,7 @@ export default {
     export: 'Export',
     exportCsv: 'Export CSV',
     exportXlsx: 'Export Excel (.xlsx)',
+    exportPdf: 'Export PDF',
     exporting: 'Exporting...',
     exportFailed: 'Export failed',
     exportHttpError: 'Export failed: server returned {status}',

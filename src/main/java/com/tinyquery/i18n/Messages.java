@@ -484,6 +484,10 @@ public final class Messages {
         zh("error.exportNotSupported", "聚合查询不支持导出，请导出明细数据");
         en("error.exportNotSupported", "Aggregate queries cannot be exported; export row data instead");
 
+        // PDF 导出时写在标题下方的那行元信息
+        zh("pdf.subtitle", "共 {0} 行 · {1} 列 · 导出自 LynMill");
+        en("pdf.subtitle", "{0} rows · {1} columns · exported from LynMill");
+
         // ---------- SQL 解析错误 ----------
         // 这批原来直接写在 SQLParser / QueryStatement / QueryEngine 里，
         // 而且中英混杂（"error:Missing keyword SELECT" 与 "error:WHERE 后面缺少条件表达式" 并存）。
