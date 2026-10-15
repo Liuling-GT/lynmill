@@ -73,6 +73,23 @@ public class DataSourceController {
         return DataSourceResponse.success(manager.test(config));
     }
 
+    /**
+     * 探测配置项的可选值，供表单把它渲染成下拉框。
+     *
+     * <p>典型用途：Excel 数据源点「探测」按钮列出所有工作表名。
+     * 请求体与 {@code /test} 相同（已填到一半的配置），返回
+     * 「字段名 → 可选值列表」。</p>
+     *
+     * <p>后端不认识任何具体数据源类型 —— 由各加载器自己实现
+     * {@code probeOptions}，没有可探测内容的类型返回空 map。</p>
+     */
+    @Operation(summary = "Probe Field Options",
+            description = "Return selectable values for config fields, e.g. worksheet names for an Excel file")
+    @PostMapping("/probe")
+    public DataSourceResponse<Map<String, List<String>>> probe(@RequestBody DataSourceConfig config) {
+        return DataSourceResponse.success(manager.probeOptions(config));
+    }
+
     // 列出所有数据源（敏感字段已脱敏）
     @Operation(summary = "Enumerate Data Sources", description = "Return the list of registered data sources with sensitive fields masked")
     @GetMapping

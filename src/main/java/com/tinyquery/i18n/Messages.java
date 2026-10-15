@@ -488,6 +488,12 @@ public final class Messages {
         zh("pdf.subtitle", "共 {0} 行 · {1} 列 · 导出自 LynMill");
         en("pdf.subtitle", "{0} rows · {1} columns · exported from LynMill");
 
+        // 图表导出 PDF 时的副标题与默认标题
+        zh("pdf.chartSubtitle", "{0} 个分类 · {1} 个系列 · 导出自 LynMill");
+        en("pdf.chartSubtitle", "{0} categories · {1} series · exported from LynMill");
+        zh("chart.exportTitle", "图表报告");
+        en("chart.exportTitle", "Chart Report");
+
         // ---------- SQL 解析错误 ----------
         // 这批原来直接写在 SQLParser / QueryStatement / QueryEngine 里，
         // 而且中英混杂（"error:Missing keyword SELECT" 与 "error:WHERE 后面缺少条件表达式" 并存）。

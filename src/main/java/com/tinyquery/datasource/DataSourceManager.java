@@ -437,6 +437,21 @@ public class DataSourceManager {
         return loader.test(config);
     }
 
+    /**
+     * 探测配置项的可选值，供表单渲染下拉框。
+     *
+     * <p>与 {@link #test} 一样按 type 分发，Manager 不感知任何具体数据源类型 ——
+     * 类型不支持时返回空 map 而不是抛异常，因为探测是表单里的辅助动作：
+     * 用户刚把类型切成 xlsx、还没填路径就点一下，不该弹一个红框出来。</p>
+     */
+    public Map<String, List<String>> probeOptions(DataSourceConfig config) {
+        DataLoader loader = loaders.get(config.type());
+        if (loader == null) {
+            return Map.of();
+        }
+        return loader.probeOptions(config);
+    }
+
     // 按精确名称获取数据，合法性已接受注册校验
     public ColumnStore get(String name) {
         return findEntry(name).store();

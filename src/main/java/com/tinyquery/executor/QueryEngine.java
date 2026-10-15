@@ -270,9 +270,17 @@ public record QueryEngine(ColumnStore store) {
     }
 
     /**
-     * 从样本推断列类型
-     * ValueNormalizer 只产出 Integer / BigDecimal / String 三种，
-     * 因此非数值一律视为字符串。遇到第一个「有值」的单元格即可定论
+     * 从样本推断列类型。遇到第一个「有值」的单元格即可定论。
+     *
+     * <p><b>为什么用 {@code instanceof Number} 而不是列举具体类型。</b>
+     * 这里原先写的是「是 Integer 或 BigDecimal 就是 number」，依据是本类早期
+     * 只有 MySQL 一个数据源、值都经 ValueNormalizer 归一成这两种类型。
+     * 但 Excel 加载器（XlsxReader）直接产出 Long 与 Double ——
+     * 于是 Excel 的每一个数值列都被判成 string，症状是图表里选不到度量、
+     * 数值维度也不分桶，而同一份数据用 CSV 导入却完全正常。</p>
+     *
+     * <p>教训：判定「是不是数值」应该按语义（Number）而不是按某条上游路径的
+     * 具体产出类型。上游换了实现，这里不该跟着坏。</p>
      *
      * <p>「有值」的判定统一走 isPresent：null、空串、纯空格串都算无值。
      * 早先这里只跳过 null，于是列首的一个空串就把整列钉成 string ——
@@ -285,7 +293,7 @@ public record QueryEngine(ColumnStore store) {
             if (!isPresent(value)) {
                 continue;
             }
-            return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
+            return value instanceof Number ? "number" : "string";
         }
 
         // 样本里全是空值。退回扫描整列，避免因为头部空值把数值列误判成 empty
@@ -294,7 +302,7 @@ public record QueryEngine(ColumnStore store) {
             if (!isPresent(value)) {
                 continue;
             }
-            return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
+            return value instanceof Number ? "number" : "string";
         }
         return "empty";
     }

@@ -87,7 +87,13 @@ class XlsxLoaderTest {
 
         assertEquals(List.of("姓名", "年龄"), store.getColumnNames());
         assertEquals(List.of("张三", "李四"), store.getColumns("姓名"));
-        assertEquals(List.of(30L, 25L), store.getColumns("年龄"));
+        // 数值归一成 Integer，与 CSV / MySQL 走同一个 ValueNormalizer。
+        // 这里原来断言的是 Long —— 也就是 XlsxReader 的原始产出，
+        // 等于把「Excel 的值类型与别处不一致」这个缺陷当成了预期行为。
+        // 那个不一致的后果是 Excel 的数值列在图表里被判成文本、数值维度不分桶。
+        assertEquals(List.of(30, 25), store.getColumns("年龄"));
+        assertEquals(Integer.class, store.getColumns("年龄").get(0).getClass(),
+                "Excel 数值列必须归一成 Integer，不能把 Long 泄漏给查询引擎");
     }
 
     @Test

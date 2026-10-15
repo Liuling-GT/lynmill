@@ -65,6 +65,43 @@
         style="width: 100%"
       />
 
+      <!--
+        可探测字段（如 Excel 的工作表名）：
+        探测前是普通输入框（可以手输），点过探测按钮后变成下拉框。
+        这样既保留了「选项要打开文件才知道」的灵活性，
+        又不强迫用户必须先探测 —— 直接手打表名同样可用。
+      -->
+      <div v-else-if="field.probeable" class="probe-row">
+        <el-select
+          v-if="probedOptions[field.name]"
+          v-model="form.properties[field.name]"
+          clearable
+          :placeholder="t('form.sheetAutoHint')"
+          class="probe-control"
+        >
+          <el-option
+            v-for="opt in probedOptions[field.name]"
+            :key="opt"
+            :label="opt"
+            :value="opt"
+          />
+        </el-select>
+        <el-input
+          v-else
+          v-model="form.properties[field.name]"
+          :placeholder="field.placeholder"
+          class="probe-control"
+        />
+        <el-button
+          class="probe-button"
+          :loading="probing === field.name"
+          :title="t('form.probeHint')"
+          @click="handleProbe(field)"
+        >
+          {{ t('form.probe') }}
+        </el-button>
+      </div>
+
       <!-- STRING：sensitive 只决定是否掩码，与值类型无关 -->
       <el-input
         v-else
@@ -126,6 +163,7 @@ import {
   listDataSources,
   registerDataSource,
   testDataSource,
+  probeDataSource,
   getCredentialStatus,
 } from '../api/datasource'
 
@@ -147,6 +185,12 @@ const submitting = ref(false)
 const testing = ref(false)
 // 测试结果：null 表示尚未测试
 const testResult = ref(null)
+
+// 探测到的可选项：字段名 → 选项列表。
+// 探测前是空对象，对应字段渲染成普通输入框；探测后渲染成下拉框
+const probedOptions = ref({})
+// 正在探测的字段名，用于给按钮转圈。同一时刻只可能有一个
+const probing = ref('')
 
 // 凭据存储可用性。默认不可用 —— 在拿到后端答复之前把勾选框置灰，
 // 比先让用户勾上、提交后才发现存不了要好
@@ -305,6 +349,9 @@ const handleTypeChange = () => {
   form.value.properties = {}
   // 换类型时重置勾选：上一个类型可能没有密码字段，把这个选择带过去没有意义
   form.value.savePassword = false
+  // 探测结果同样要清掉：上一个数据源探测出的选项（比如另一个文件的工作表名）
+  // 与当前类型毫无关系，留着会让下拉框里出现莫名其妙的条目
+  probedOptions.value = {}
 
   for (const field of currentFields.value) {
     if (field.valueType === 'ENUM' && field.options.length > 0) {
@@ -319,6 +366,8 @@ const handleTypeChange = () => {
 
 const handleReset = () => {
   form.value = { name: '', type: '', properties: {}, savePassword: false }
+  // 重置要连探测结果一起清掉，否则下拉框还显示着上次的选项，而输入框已清空
+  probedOptions.value = {}
 
   // 重置后同样补上枚举默认值，保持与刚选中类型时一致的状态
   for (const field of currentFields.value) {
@@ -347,6 +396,50 @@ const validateProperties = async () => {
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * 探测可选项（如 Excel 的工作表名）。
+ *
+ * <p>把当前表单已填的内容整个发过去 —— 探测通常依赖某个字段（xlsx 要看 path），
+ * 后端自己知道该读哪一个，前端不必也不该知道。</p>
+ *
+ * <p>拿不到选项时只给一条轻提示，不改动用户已填的内容：用户可能已经手打了
+ * 正确的表名，探测只是「想看看有哪些」，失败不该把一个填好的表单弄坏。
+ * 需要明确的失败原因时用「连接测试」。</p>
+ */
+const handleProbe = async (field) => {
+  if (!form.value.type) {
+    ElMessage.warning(t('form.error.typeRequired'))
+    return
+  }
+
+  probing.value = field.name
+  try {
+    const result = await probeDataSource({
+      name: form.value.name || 'probe',
+      type: form.value.type,
+      properties: form.value.properties,
+    })
+    const options = result && result[field.name]
+
+    if (Array.isArray(options) && options.length > 0) {
+      probedOptions.value = { ...probedOptions.value, [field.name]: options }
+      // 当前值为空时自动选中第一项，省一次点击。
+      // 已经有值时不动 —— 用户自己填的优先
+      const current = form.value.properties[field.name]
+      if (!current) {
+        form.value.properties[field.name] = options[0]
+      }
+      ElMessage.success(t('form.probeFound', { count: options.length }))
+    } else {
+      ElMessage.warning(t('form.probeEmpty'))
+    }
+  } catch (error) {
+    ElMessage.warning(error.message)
+  } finally {
+    probing.value = ''
   }
 }
 
@@ -431,6 +524,24 @@ const handleSubmit = async () => {
   flex-direction: column;
   gap: 2px;
   line-height: 1.4;
+}
+
+/* 可探测字段：输入控件 + 右侧探测按钮。
+   控件用 flex:1 吃掉剩余宽度，按钮固定宽度不随语言变长而挤压输入框 */
+.probe-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.probe-control {
+  flex: 1;
+  min-width: 0;
+}
+
+.probe-button {
+  flex: none;
 }
 
 .save-password-hint {

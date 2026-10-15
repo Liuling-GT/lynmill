@@ -1,10 +1,13 @@
 package com.tinyquery.api;
 
 import com.tinyquery.executor.ChartResult;
+import com.tinyquery.executor.ChartSeries;
 import com.tinyquery.executor.ColumnStore;
 import com.tinyquery.executor.QueryEngine;
 import com.tinyquery.executor.QueryResult;
+import com.tinyquery.export.PdfChart;
 import com.tinyquery.export.PdfFonts;
+import com.tinyquery.export.PdfLayout;
 import com.tinyquery.export.PdfWriter;
 import com.tinyquery.export.XlsxWriter;
 import com.tinyquery.parser.NameSuggester;
@@ -46,6 +49,11 @@ public class QueryController {
     // 图表最多支持的度量个数。三种图里两个系列还能分清，
     // 再多柱子会挤成一团，双 Y 轴也没法分
     private static final int MAX_CHART_MEASURES = 2;
+
+    // 版面预估里最多回报几个「会被截断的列名」。
+    // 全给出来弹框会被撑爆，而用户只需要知道大概有多少列有问题，
+    // 具体是哪几列看导出结果比看列表直观
+    private static final int TRUNCATED_NAMES_LIMIT = 6;
 
     private final DataSourceManager manager;
     private final SQLParser parser = new SQLParser();
@@ -305,11 +313,271 @@ public class QueryController {
         boolean[] numeric = detectNumericColumns(plan.cols().names().length, rows);
 
         try (PdfWriter writer = new PdfWriter(PdfFonts.open())) {
+            // 先定方向与字号，再写任何内容 —— 页码与分页位置都依赖页高，
+            // 中途改会让已经放上页的内容错位
+            writer.setLandscape(request.isLandscape());
+            writer.setScale(request.scaleOrDefault());
+
             writer.setHeader(plan.tableName(),
                     Messages.get("pdf.subtitle", rows.size(), plan.columnCount()));
             writer.writeTable(plan.cols().names(), numeric, rows);
             response.getOutputStream().write(writer.finish());
         }
+    }
+
+    /**
+     * 导出前的版面预估：这张表导出来会不会被截断。
+     *
+     * <p>为什么要有这个接口：A4 纵向可用宽度 515 点，16 列每列只分到 32 点
+     * （约 3.6 个中文字），于是每列被截成「帖… 发… 内…」，连列名都认不出来。
+     * 用户导完打开才发现没法看，只能换一次设置重导 —— 而换什么设置本来是可以
+     * 提前算出来的。</p>
+     *
+     * <p>这里把 6 个档位（纵向/横向 × 3 档字号）一次全算出来给前端，
+     * 由前端标出推荐档位。一次算完而不是让前端逐档来问，是因为每次请求都要
+     * 重新取数与度量，来回六次纯属浪费。</p>
+     *
+     * <p>不返回数据本身，只返回「放不放得下」—— 弹框里不需要看数据，
+     * 只需要一个明确的结论。</p>
+     */
+    @Operation(summary = "Preview PDF Layout",
+            description = "Estimate whether the result set fits on the page, for each orientation and font size")
+    @PostMapping("/query/export/pdf-preview")
+    public PdfLayoutResponse previewPdf(@RequestBody QueryRequest request) {
+        try {
+            ExportPlan plan = planExport(request, null);
+            if (plan == null) {
+                // planExport 在 response 为 null 时无法回写错误，直接给一个空结果，
+                // 前端据此不显示预览而不是显示一个假结论
+                return new PdfLayoutResponse(0, 0, List.of(), -1);
+            }
+
+            List<String[]> rows = new ArrayList<>();
+            for (int idx : plan.indexes()) {
+                rows.add(toStrings(plan.engine().projectRowTyped(plan.stmt(), plan.cols(), idx)));
+            }
+
+            String[] names = plan.cols().names();
+            List<PdfLayoutResponse.Option> options = new ArrayList<>();
+            int best = -1;
+
+            // 一次量完 6 个档位。度量器用的是 PDF 里真实嵌入的那套字形宽度，
+            // 所以预估与最终版面对得上 —— 两边各写一套的话，
+            // 预估说放得下、实际却截断了，比不预估还糟
+            try (PdfWriter meter = new PdfWriter(PdfFonts.open())) {
+                for (PdfLayout.Estimate e : PdfLayout.estimateAll(meter::measure, names, rows)) {
+                    List<String> truncatedNames = new ArrayList<>();
+                    for (PdfLayout.ColumnFit fit : e.truncated()) {
+                        if (truncatedNames.size() < TRUNCATED_NAMES_LIMIT) {
+                            truncatedNames.add(fit.columnName());
+                        }
+                    }
+                    options.add(new PdfLayoutResponse.Option(
+                            e.landscape(), e.scale(), e.totalWidth(),
+                            e.truncatedCount(), truncatedNames, e.allFit()));
+                }
+            }
+
+            // 推荐档位：优先挑「能全部放下」里代价最小的那个（列表本身就是
+            // 按代价从低到高排的，所以第一个全放下的就是最优解）。
+            // 一个都放不下时，退而在横向档位里挑放不下最少的 ——
+            // 与其推荐一个纵向的残缺方案，不如推荐横向里最好的那个
+            for (int i = 0; i < options.size(); i++) {
+                if (options.get(i).fits()) {
+                    best = i;
+                    break;
+                }
+            }
+            if (best < 0) {
+                int fewest = Integer.MAX_VALUE;
+                for (int i = 0; i < options.size(); i++) {
+                    PdfLayoutResponse.Option o = options.get(i);
+                    if (o.landscape() && o.truncatedCount() < fewest) {
+                        fewest = o.truncatedCount();
+                        best = i;
+                    }
+                }
+            }
+
+            return new PdfLayoutResponse(names.length, rows.size(), options, best);
+        } catch (Exception e) {
+            // 预估失败不该挡住导出 —— 它只是「提前知情」的辅助，
+            // 前端拿不到结论就照常导出即可
+            return new PdfLayoutResponse(0, 0, List.of(), -1);
+        }
+    }
+
+    /**
+     * 图表导出为 PDF。
+     *
+     * <p>图表用<b>矢量</b>方式画进 PDF，而不是把界面上那张 canvas 截图塞进去：
+     * PDF 的价值就在于放大不糊，一张报表可能被投到会议室大屏或打印成 A3，
+     * 塞位图进去放大就是马赛克，那还不如直接发 PNG。</p>
+     *
+     * <p>数据来自与界面完全相同的那次聚合（同一套 normalize 规则），
+     * 所以导出的图与屏幕上看到的一致。默认还会附上底下的数据表 ——
+     * 光有图看不出精确值，报表里图和数都要有。</p>
+     */
+    @PostMapping("/query/export/chart-pdf")
+    public void exportChartPdf(@RequestBody ChartPdfRequest request, HttpServletResponse response)
+            throws IOException {
+        ChartResponse chart;
+        try {
+            chart = chart(new ChartRequest(request.sql(), request.dimension(),
+                    request.measures(), request.aggregation(), request.topN()));
+        } catch (Exception e) {
+            writeJsonError(response, e.getMessage());
+            return;
+        }
+
+        if (chart.code() != 0) {
+            writeJsonError(response, chart.message());
+            return;
+        }
+
+        String fileName = exportFileName(request.tableName(), "pdf");
+        response.setContentType("application/pdf");
+        setDownloadHeaders(response, fileName);
+
+        List<PdfChart.Series> series = toChartSeries(chart.series());
+        List<String> categories = chart.categories() == null ? List.of() : chart.categories();
+        String chartType = normalizeChartType(request.chartType());
+
+        try (PdfWriter writer = new PdfWriter(PdfFonts.open())) {
+            writer.setLandscape(request.isLandscape());
+            writer.setScale(request.scaleOrDefault());
+
+            String title = request.tableName() == null || request.tableName().isBlank()
+                    ? Messages.get("chart.exportTitle")
+                    : request.tableName();
+            writer.setHeader(title, Messages.get("pdf.chartSubtitle",
+                    categories.size(), series.size()));
+            // 先把标题块写出来。writeTable 自己也会调它，但「只要图不要表」时
+            // 没有 writeTable 可依赖，标题就永远不会画出来，
+            // 报表顶端会是一片空白。重复调用是安全的
+            writer.writeHeader();
+
+            // 图表占页面上部；高度按 16:9 左右给，太扁的图看不出趋势
+            float blockH = 330f;
+            PdfChart c = writer.chartBlock(blockH, chartHeadline(request, series));
+            // 把界面上的配色、高亮、双轴、精度原样带上 ——
+            // 少带任何一项，导出的图就不是用户屏幕上那张
+            c.setStyle(new PdfChart.Style(
+                    seriesColors(request, series.size()),
+                    request.sectorColors(),
+                    request.isHighlightMode(),
+                    request.highlighted() == null ? List.of() : request.highlighted(),
+                    request.isUnifyScale(),
+                    request.isKeepFullPrecision()));
+            c.draw(chartType, categories, series);
+
+            // 附上数据表。图看趋势、表看精确值，两者都要 ——
+            // 而且只给图的话，用户想核对数字还得回去再查一次
+            if (request.isIncludeTable()) {
+                writer.gap(12f);
+                writer.separator();
+                writer.gap(10f);
+
+                String[] names = new String[1 + series.size()];
+                boolean[] numeric = new boolean[names.length];
+                names[0] = request.dimension() == null ? "" : request.dimension();
+                numeric[0] = false;
+                for (int i = 0; i < series.size(); i++) {
+                    names[i + 1] = series.get(i).name();
+                    numeric[i + 1] = true;
+                }
+
+                List<String[]> rows = new ArrayList<>();
+                for (int r = 0; r < categories.size(); r++) {
+                    String[] row = new String[names.length];
+                    row[0] = categories.get(r);
+                    for (int s = 0; s < series.size(); s++) {
+                        List<Double> vals = series.get(s).values();
+                        Double v = r < vals.size() ? vals.get(r) : null;
+                        // 表里的精度跟着图上的开关走，否则同一份 PDF 里
+                        // 图上写 59043.49、表里写 59043.4873，自相矛盾
+                        row[s + 1] = v == null ? ""
+                                : PdfChart.formatValue(v, request.isKeepFullPrecision());
+                    }
+                    rows.add(row);
+                }
+                writer.writeTable(names, numeric, rows);
+            }
+
+            response.getOutputStream().write(writer.finish());
+        }
+    }
+
+    /**
+     * 取出每个系列在界面上的主色。
+     *
+     * <p>界面把派生好的整排颜色发过来（一排 10 个），柱状/折线只用每排的第 0 个 ——
+     * 与界面 {@code paletteOf(i)[0]} 的用法一致。饼图用整排，由 PdfChart 自己按下标取模。</p>
+     */
+    private static List<String> seriesColors(ChartPdfRequest request, int count) {
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            // colorAt(i, 0) 取第 i 排的第 0 个；没给就放 null，由 PdfChart 用默认色
+            out.add(request.colorAt(i, 0));
+        }
+        return out;
+    }
+
+    // BigDecimal → double。图表只需要画图用的精度，转成 double 后
+    // 绘图代码不必到处处理 BigDecimal
+    private static List<PdfChart.Series> toChartSeries(List<ChartSeries> raw) {
+        List<PdfChart.Series> out = new ArrayList<>();
+        if (raw == null) {
+            return out;
+        }
+        for (ChartSeries s : raw) {
+            List<Double> vals = new ArrayList<>();
+            if (s.values() != null) {
+                for (java.math.BigDecimal v : s.values()) {
+                    vals.add(v == null ? null : v.doubleValue());
+                }
+            }
+            out.add(new PdfChart.Series(s.name(), vals));
+        }
+        return out;
+    }
+
+    // 只认三种图，其余一律按柱状处理 —— 与前端下拉框的可选值保持一致
+    private static String normalizeChartType(String raw) {
+        if ("line".equals(raw) || "pie".equals(raw)) {
+            return raw;
+        }
+        return "bar";
+    }
+
+    /**
+     * 图上方那行小标题。
+     *
+     * <p>前端会传「维度 — 聚合(度量)」，但接口不该依赖前端一定传 ——
+     * 直接调接口（脚本、将来的报告功能）时不传标题，图上方就会空着一块，
+     * 看图的人不知道这根柱子是什么。所以这里用维度与系列名兜一个出来。</p>
+     */
+    private static String chartHeadline(ChartPdfRequest request, List<PdfChart.Series> series) {
+        if (request.chartTitle() != null && !request.chartTitle().isBlank()) {
+            return request.chartTitle();
+        }
+        String dim = request.dimension() == null || request.dimension().isBlank()
+                ? Messages.get("chart.exportTitle")
+                : request.dimension();
+        if (series.isEmpty()) {
+            return dim;
+        }
+        // 系列名就是聚合表达式（如 sum(销售额)），拿它拼一个能自解释的标题
+        return dim + " — " + series.get(0).name();
+    }
+
+    // 导出失败时把原因当 JSON 写回去。
+    // 不能只设 HTTP 状态码：前端拿到的响应体若不是 JSON，就没法把话说清楚
+    private void writeJsonError(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("application/json;charset=UTF-8");
+        String safe = message == null ? "" : message.replace("\\", "\\\\").replace("\"", "\\\"");
+        response.getWriter().write("{\"code\":1,\"message\":\"" + safe + "\"}");
     }
 
     // Object[] 转 String[]，供 PDF 使用（PDF 里一切都是文本）
@@ -377,6 +645,7 @@ public class QueryController {
             return null;
         }
     }
+
 
     // 两个导出共用的中间结果
     private record ExportPlan(QueryStatement stmt, QueryEngine engine,
@@ -468,6 +737,11 @@ public class QueryController {
 
     // 写出 JSON 错误体。仅在响应头尚未发出时可用
     private void writeError(HttpServletResponse response, String message) throws IOException {
+        // 预估接口没有响应对象可写（它走的是返回值而不是直接写流），
+        // 传 null 表示「不用回写」—— 调用方拿到 null 自己决定怎么表达失败
+        if (response == null) {
+            return;
+        }
         response.setContentType("application/json; charset=UTF-8");
         response.setStatus(HttpServletResponse.SC_OK);
         // 与 QueryResponse 的失败形态保持一致，前端拦截器可统一处理

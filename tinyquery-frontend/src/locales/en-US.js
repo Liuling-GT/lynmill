@@ -115,6 +115,11 @@ export default {
     testPassed: 'Test Passed',
     testFailed: 'Test Failed',
     registered: 'Data source registered: {name}',
+    probe: 'Detect',
+    probeHint: 'List available options based on the file path entered',
+    probeFound: 'Found {count} option(s)',
+    probeEmpty: 'Nothing detected — enter a file path first',
+    sheetAutoHint: 'Leave empty to use the first worksheet',
     error: {
       typeRequired: 'Select a data source type',
       nameRequired: 'Enter a data source name',
@@ -146,13 +151,26 @@ export default {
     exporting: 'Exporting...',
     exportFailed: 'Export failed',
     exportHttpError: 'Export failed: server returned {status}',
+
+    layoutTitle: 'PDF page layout',
+    layoutSummary: 'This result has {columns} columns and {rows} rows. With many columns, portrait layout truncates column names — pick a layout here.',
+    layoutPortrait: 'Portrait',
+    layoutLandscape: 'Landscape',
+    layoutWithScale: '{direction} · font {percent}%',
+    layoutFits: 'All columns fit',
+    layoutTruncated: '{count} columns truncated',
+    layoutRecommended: 'Recommended',
+    layoutConfirm: 'Export with this layout',
   },
 
   // ==================== Chart ====================
   chart: {
     title: 'Chart',
     subtitle: 'Aggregated by dimension over the full result set, unaffected by table pagination',
+    export: 'Export',
     exportPng: 'Export PNG',
+    exportPdf: 'Export PDF',
+    exported: 'Exported',
     emptyHint: 'Run a query first; the chart is drawn from that result',
     loading: 'Aggregating...',
     dimension: 'Dimension',

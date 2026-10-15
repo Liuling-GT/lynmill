@@ -197,9 +197,22 @@
           </div>
 
           <!-- 能否导出由 ChartPanel 算好后传上来 —— 动画途中会截到半张图 -->
-          <el-button size="small" :disabled="!chartCanExport" @click="handleExportChart">
-            {{ t('chart.exportPng') }}
-          </el-button>
+          <el-dropdown
+            trigger="click"
+            :disabled="!chartCanExport"
+            @command="handleExportChart"
+          >
+            <el-button size="small" :disabled="!chartCanExport">
+              {{ t('chart.export') }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="png">{{ t('chart.exportPng') }}</el-dropdown-item>
+                <!-- PDF 是矢量重绘，放大不糊；PNG 是截图，放大会马赛克 -->
+                <el-dropdown-item command="pdf">{{ t('chart.exportPdf') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </header>
 
         <ChartPanel
@@ -207,6 +220,7 @@
           :executed-sql="executedSql"
           :columns="columns"
           :column-types="columnTypes"
+          :table-name="activeTableName"
           @can-export="chartCanExport = $event"
         />
       </section>
@@ -245,6 +259,61 @@
       </div>
     </div>
     </div>
+
+    <!--
+      导出 PDF 前的版面选择。
+      为什么非要有这一步：A4 纵向可用宽度只有 515 点，16 列的表每列只分到
+      32 点（约 3.6 个中文字），列名会被截成「帖… 发… 内…」，连是什么列都
+      认不出来。以前是导完打开才发现，只能改设置重导一次。
+      这里的每个档位都标出「放不下几列」，并列出一个推荐档位 ——
+      让用户在点导出之前就知道结果。
+    -->
+    <el-dialog
+      v-model="layoutDialogVisible"
+      :title="t('result.layoutTitle')"
+      width="520px"
+      append-to-body
+    >
+      <div v-loading="layoutLoading" class="layout-body">
+        <p class="layout-summary">
+          {{ t('result.layoutSummary', { columns: layoutData.columns, rows: layoutData.rows }) }}
+        </p>
+
+        <el-radio-group v-model="selectedLayout" class="layout-options">
+          <el-radio
+            v-for="(option, index) in layoutData.options"
+            :key="index"
+            :value="index"
+            :class="['layout-option', { 'is-best': index === layoutData.best }]"
+          >
+            <!--
+              三段式：左边档位名（固定宽度对齐）、中间推荐标签、右边结果。
+              原先只有两段，推荐标签和「全部放得下」挤在同一侧，
+              看起来像连在一起的一个词。现在各占一列，中间靠列宽自然留白
+            -->
+            <span class="layout-cell layout-cell-name">{{ orientationLabel(option) }}</span>
+            <span class="layout-cell layout-cell-tag">
+              <el-tag v-if="index === layoutData.best" size="small" type="success">
+                {{ t('result.layoutRecommended') }}
+              </el-tag>
+            </span>
+            <span
+              class="layout-cell layout-cell-state"
+              :class="option.fits ? 'is-ok' : 'is-warn'"
+            >
+              {{ option.fits ? t('result.layoutFits') : t('result.layoutTruncated', { count: option.truncatedCount }) }}
+            </span>
+          </el-radio>
+        </el-radio-group>
+      </div>
+
+      <template #footer>
+        <el-button @click="layoutDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="exporting" @click="confirmLayoutExport">
+          {{ t('result.layoutConfirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </el-config-provider>
 </template>
 
@@ -262,7 +331,7 @@ import DataSourcePanel from './components/DataSourcePanel.vue'
 import ChartPanel from './components/ChartPanel.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import { listDataSourceTypes, listDataSources } from './api/datasource'
-import { queryTable, stripErrorPrefix } from './api/query'
+import { previewPdfLayout, queryTable, stripErrorPrefix } from './api/query'
 import { requestHeaders } from './api/token'
 import { closeShortcutHint, tryCloseTab, watchForShutdown } from './api/lifecycle'
 
@@ -322,6 +391,18 @@ const activeTab = ref('table')
 // 避免文本框改动后图表、表格、导出三者对不上
 const executedSql = ref('')
 
+/*
+ * 当前查询的表名，从已执行的 SQL 里取 FROM 后面那个词。
+ *
+ * 只用来给导出的 PDF 当标题和文件名，所以刻意做得很克制：
+ * 不去完整解析 SQL（后端已经解析过一次了），识别不了就返回空串，
+ * 由调用方退回一个默认标题。真正的 SQL 解析只有后端那一份。
+ */
+const activeTableName = computed(() => {
+  const m = /\bfrom\s+([`"[]?)([\w\u4e00-\u9fa5.$-]+)\1/i.exec(executedSql.value || '')
+  return m ? m[2] : ''
+})
+
 // 后端分页状态
 const currentPage = ref(1)
 const pageSize = ref(50)
@@ -329,6 +410,13 @@ const pageSize = ref(50)
 // 执行中 / 导出中
 const querying = ref(false)
 const exporting = ref(false)
+
+// 导出 PDF 的版面选择
+const layoutDialogVisible = ref(false)
+const layoutLoading = ref(false)
+const selectedLayout = ref(0)
+// 预估结果。默认给一份空结构，避免弹框首帧读到 undefined
+const layoutData = ref({ columns: 0, rows: 0, options: [], best: -1 })
 
 // 后端下发的数据源类型描述，驱动配置表单动态渲染。
 //
@@ -669,9 +757,15 @@ const resetResult = () => {
   hasMore.value = false
 }
 
-// 导出图表 PNG。真正的绘制在 ChartPanel 里，这里只负责转发点击
-const handleExportChart = () => {
-  if (chartPanelRef.value) {
+// 导出图表。真正的绘制在 ChartPanel 里，这里只负责转发点击。
+// PNG 是前端截图，PDF 要回后端用矢量重绘，所以两条路都从组件走
+const handleExportChart = (command) => {
+  if (!chartPanelRef.value) {
+    return
+  }
+  if (command === 'pdf') {
+    chartPanelRef.value.exportPdf()
+  } else {
     chartPanelRef.value.exportPng()
   }
 }
@@ -705,6 +799,72 @@ const exportQuery = async (format = 'csv') => {
     return
   }
 
+  // PDF 先问一次版面：列多了在 A4 纵向下每列只剩两三个字的宽度，
+  // 先让用户选方向与字号，别等导完才发现看不清
+  if (format === 'pdf') {
+    await openLayoutDialog(targetSql)
+    return
+  }
+
+  await runExport(format, targetSql, {})
+}
+
+/**
+ * 打开版面选择弹框，并取回各档位的预估。
+ *
+ * 预估失败不拦着导出：它只是「提前知情」的辅助，拿不到结论就按默认纵向导，
+ * 与加这个功能之前的行为一致，不会让用户反而导不出来。
+ */
+const openLayoutDialog = async (targetSql) => {
+  layoutDialogVisible.value = true
+  layoutLoading.value = true
+  try {
+    const res = await previewPdfLayout({ sql: targetSql })
+    const data = res.data || res
+    if (data && data.options && data.options.length) {
+      layoutData.value = data
+      // 默认选中推荐档位；没有推荐（全部放不下）时退回第一项
+      selectedLayout.value = data.best >= 0 ? data.best : 0
+    } else {
+      // 取不到预估就直接按默认档导出
+      layoutDialogVisible.value = false
+      await runExport('pdf', targetSql, {})
+    }
+  } catch {
+    layoutDialogVisible.value = false
+    await runExport('pdf', targetSql, {})
+  } finally {
+    layoutLoading.value = false
+  }
+}
+
+// 档位文案：「横向 · 字号 85%」
+const orientationLabel = (option) => {
+  const direction = option.landscape ? t('result.layoutLandscape') : t('result.layoutPortrait')
+  const percent = Math.round(option.scale * 100)
+  return percent === 100
+    ? direction
+    : t('result.layoutWithScale', { direction, percent })
+}
+
+// 按用户选中的档位导出
+const confirmLayoutExport = async () => {
+  const option = layoutData.value.options[selectedLayout.value]
+  layoutDialogVisible.value = false
+  await runExport('pdf', executedSql.value, {
+    landscape: !!(option && option.landscape),
+    scale: option ? option.scale : 1,
+  })
+}
+
+/**
+ * 真正执行导出。
+ *
+ * @param format  csv / xlsx / pdf
+ * @param targetSql 要导出那条 SQL
+ * @param layout 排版选项，仅 PDF 用得上
+ */
+const runExport = async (format, targetSql, layout = {}) => {
   exporting.value = true
   // 导出错误一律走右上角气泡，不写进 queryError ——
   // 写进去会让 hasResult 变 false，整张表连同已查出的数据一起消失
@@ -721,7 +881,7 @@ const exportQuery = async (format = 'csv') => {
       // 导出走原生 fetch 而不是 axios，所以令牌得自己带上 ——
       // 这是三处 API 调用里最容易漏掉的一处
       headers: requestHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ sql: targetSql }),
+      body: JSON.stringify({ sql: targetSql, ...layout }),
     })
 
     // 网关或容器返回的 4xx/5xx 不带 CSV 的 Content-Type，也不会走后端的
@@ -1156,5 +1316,83 @@ const resolveFileName = (disposition) => {
   background: var(--el-fill-color-light);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
+}
+
+/* ---------- 导出 PDF 的版面选择 ---------- */
+
+.layout-body {
+  min-height: 120px;
+}
+
+.layout-summary {
+  margin: 0 0 var(--sp-3);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+/* 每个档位占一行，整行都可点 —— 一行只有一个单选框、文案长短不一，
+   竖排比横排好读，也不会因为中文长短不同而参差不齐 */
+.layout-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+}
+
+.layout-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: auto;
+  padding: var(--sp-2) var(--sp-3);
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+/* 推荐档位描个边。不做得太醒目 —— 它只是建议，用户仍可自选 */
+.layout-option.is-best {
+  border-color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+}
+
+/* el-radio 默认把内容包在 .el-radio__label 里，这里让它铺满整行 */
+.layout-option :deep(.el-radio__label) {
+  display: grid;
+  /* 三列：档位名定宽、推荐标签定宽、结果靠右。
+     用 grid 而不是 flex + space-between，是为了让所有行的三列都对齐 ——
+     flex 下每行各算各的，长短不一时右边那列会参差不齐 */
+  grid-template-columns: 150px 56px 1fr;
+  align-items: center;
+  width: 100%;
+}
+
+/* 三列统一字号，避免大小字混排显得杂乱 */
+.layout-cell {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.layout-cell-name {
+  color: var(--ink);
+}
+
+.layout-cell-tag {
+  /* 没标签时这一列也占位，保证各行的结果列起点一致 */
+  display: flex;
+  align-items: center;
+}
+
+.layout-cell-state {
+  text-align: right;
+}
+
+.layout-cell-state.is-ok {
+  color: var(--el-color-success);
+}
+
+.layout-cell-state.is-warn {
+  color: var(--el-color-warning);
 }
 </style>

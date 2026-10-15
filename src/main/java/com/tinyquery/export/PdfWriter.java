@@ -38,21 +38,37 @@ import java.util.Map;
  */
 public class PdfWriter implements AutoCloseable {
 
-    // A4 尺寸，单位是 PDF 的点（1 点 = 1/72 英寸）
-    private static final float PAGE_W = 595f;
-    private static final float PAGE_H = 842f;
+    // A4 尺寸，单位是 PDF 的点（1 点 = 1/72 英寸）。
+    // 公开是为了让导出前的「预览」能算出「这么宽的表要几页」，
+    // 而不必自己再抄一份尺寸常量 —— 抄一份迟早会与这里不一致
+    public static final float A4_WIDTH = 595f;
+    public static final float A4_HEIGHT = 842f;
 
     private static final float MARGIN = 40f;
-    private static final float TITLE_SIZE = 16f;
-    private static final float META_SIZE = 8.5f;
-    private static final float HEAD_SIZE = 9.5f;
-    private static final float CELL_SIZE = 9f;
+
+    // 字号基准值。实际字号 = 基准 × 缩放系数，缩放由 setScale 给出。
+    // 之所以把「基准」和「实际」分开：宽表需要整体缩小字号才放得下，
+    // 但行高、内边距这些都要跟着一起缩，写死会算错版面
+    private static final float BASE_TITLE_SIZE = 16f;
+    private static final float BASE_META_SIZE = 8.5f;
+    private static final float BASE_HEAD_SIZE = 9.5f;
+    private static final float BASE_CELL_SIZE = 9f;
     private static final float CELL_PAD = 4f;
     private static final float LINE_GAP = 1.35f;
 
-    // 行高。字号 × 行距系数
-    private static final float HEAD_H = HEAD_SIZE * LINE_GAP + CELL_PAD * 2;
-    private static final float ROW_H = CELL_SIZE * LINE_GAP + CELL_PAD * 2;
+    // 当前页尺寸。默认 A4 纵向，横向由 setLandscape 切换
+    private float pageW = A4_WIDTH;
+    private float pageH = A4_HEIGHT;
+
+    // 字号缩放系数。1.0 = 原始大小
+    private float scale = 1f;
+
+    private float TITLE_SIZE = BASE_TITLE_SIZE;
+    private float META_SIZE = BASE_META_SIZE;
+    private float HEAD_SIZE = BASE_HEAD_SIZE;
+    private float CELL_SIZE = BASE_CELL_SIZE;
+    private float HEAD_H = BASE_HEAD_SIZE * LINE_GAP + CELL_PAD * 2;
+    private float ROW_H = BASE_CELL_SIZE * LINE_GAP + CELL_PAD * 2;
 
     private final PdfFont font;
 
@@ -80,10 +96,231 @@ public class PdfWriter implements AutoCloseable {
         newPage();
     }
 
+    /**
+     * 切换纸张方向。
+     *
+     * <p>必须在写入任何内容【之前】调用：页码与分页位置都依赖页高，
+     * 中途改会让已经放在页上的内容错位。</p>
+     *
+     * @param landscape true = A4 横向（宽 842、高 595）
+     */
+    public void setLandscape(boolean landscape) {
+        this.pageW = landscape ? A4_HEIGHT : A4_WIDTH;
+        this.pageH = landscape ? A4_WIDTH : A4_HEIGHT;
+        // 页高变了，当前写入位置要跟着回到新页顶
+        this.y = pageH - MARGIN;
+        this.tableTop = y;
+    }
+
+    /**
+     * 设置字号缩放系数，用于「列太多、整页缩小才放得下」的场景。
+     *
+     * <p>单元格内边距不缩：内边距是让文字不贴着框线用的，
+     * 跟着缩会让文字与框线糊在一起，得不偿失。</p>
+     *
+     * @param scale 0.5 ~ 1.0 之间。超出范围会被夹住 ——
+     *              缩到 0.4 以下就不是「小字」而是「看不清」了
+     */
+    public void setScale(float scale) {
+        this.scale = Math.max(0.5f, Math.min(1f, scale));
+        this.TITLE_SIZE = BASE_TITLE_SIZE * this.scale;
+        this.META_SIZE = BASE_META_SIZE * this.scale;
+        this.HEAD_SIZE = BASE_HEAD_SIZE * this.scale;
+        this.CELL_SIZE = BASE_CELL_SIZE * this.scale;
+        this.HEAD_H = this.HEAD_SIZE * LINE_GAP + CELL_PAD * 2;
+        this.ROW_H = this.CELL_SIZE * LINE_GAP + CELL_PAD * 2;
+    }
+
+    /** 当前可用宽度（页宽减左右边距） */
+    public float availableWidth() {
+        return pageW - MARGIN * 2;
+    }
+
+    /**
+     * 估算一串文本在指定字号缩放下需要多宽。
+     *
+     * <p>给「导出前预览」用：算出每列是否放得下，好让用户在导出前
+     * 就知道换横版或缩字号能不能解决，而不是导完才发现看不清。</p>
+     *
+     * <p>scale 是参数而不是读当前实例的缩放：预览要一次算出好几档字号的
+     * 结果，不可能为了量一档就去改一次实例状态。</p>
+     */
+    public float measure(String text, boolean header, float scale) {
+        float size = (header ? BASE_HEAD_SIZE : BASE_CELL_SIZE) * scale;
+        return textWidth(text, size) + CELL_PAD * 2;
+    }
+
+    /**
+     * 画布：给 {@link PdfChart} 用的绘图接口。
+     *
+     * <p>把「画一根线 / 一个矩形 / 一段文字」抽象出来，是为了让图表代码
+     * 不必关心 PDF 的图形指令长什么样，也不必拿到本类的全部内部状态。
+     * 坐标一律是 PDF 的坐标系：原点在左下角，y 向上。</p>
+     */
+    public interface Canvas {
+
+        /** 画线。width 是线宽（点） */
+        void line(float x1, float y1, float x2, float y2, float width, float[] rgb);
+
+        /** 画实心矩形，(x,y) 是左下角 */
+        void rect(float x, float y, float w, float h, float[] rgb);
+
+        /** 画扇形：圆心 + 起始角 + 结束角（弧度，逆时针为正） */
+        void pieSlice(float cx, float cy, float r, double startAngle, double endAngle, float[] rgb);
+
+        /** 写文字，(x,y) 是基线左端 */
+        void text(float x, float y, String s, float size, boolean bold, float[] rgb);
+
+        /** 一段文字的排版宽度，供调用方做居中与截断 */
+        float textWidth(String s, float size);
+
+        /** 单个字符的宽度 */
+        float charWidth(int codePoint, float size);
+    }
+
+    /**
+     * 取出一个往当前页写字的画布。
+     *
+     * <p>注意：画布持有的是「当前页」的内容流。分页之后旧的画布就失效了，
+     * 所以调用方应当在同一个页内用完即弃。</p>
+     */
+    public Canvas canvas() {
+        return new PageCanvas();
+    }
+
+    // 当前页的画布实现。绘图指令直接拼进当前页的内容流
+    private final class PageCanvas implements Canvas {
+
+        @Override
+        public void line(float x1, float y1, float x2, float y2, float width, float[] rgb) {
+            setStroke(rgb);
+            cur.append(String.format("%.2f w%n", width));
+            cur.append(String.format("%.2f %.2f m %.2f %.2f l S%n", x1, y1, x2, y2));
+        }
+
+        @Override
+        public void rect(float x, float y, float w, float h, float[] rgb) {
+            setFill(rgb);
+            cur.append(String.format("%.2f %.2f %.2f %.2f re f%n", x, y, w, h));
+        }
+
+        @Override
+        public void pieSlice(float cx, float cy, float r, double startAngle, double endAngle,
+                             float[] rgb) {
+            setFill(rgb);
+            // 扇形路径：移到圆心 → 连线到弧起点 → 用四段以内贝塞尔近似弧 → 闭合并填充。
+            // 直接用多段直线也能画，但放大后会看到明显的棱角 —— 那正是用矢量格式
+            // 想避免的事。这里按弧长切分，每段不超过 90°，保证近似误差看不出来。
+            double sweep = endAngle - startAngle;
+            int segments = Math.max(1, (int) Math.ceil(Math.abs(sweep) / (Math.PI / 2)));
+
+            float sx = cx + (float) (r * Math.cos(startAngle));
+            float sy = cy + (float) (r * Math.sin(startAngle));
+
+            cur.append(String.format("%.2f %.2f m%n", cx, cy));
+            cur.append(String.format("%.2f %.2f l%n", sx, sy));
+
+            double step = sweep / segments;
+            double a0 = startAngle;
+            for (int i = 0; i < segments; i++) {
+                double a1 = a0 + step;
+                // 三次贝塞尔近似圆弧：控制点距端点长度为 k = 4/3 * tan(θ/4)
+                double k = 4.0 / 3.0 * Math.tan(step / 4.0);
+                float p0x = cx + (float) (r * Math.cos(a0));
+                float p0y = cy + (float) (r * Math.sin(a0));
+                float p1x = cx + (float) (r * Math.cos(a1));
+                float p1y = cy + (float) (r * Math.sin(a1));
+                // 切向 = 半径方向旋转 90°
+                float c1x = p0x - (float) (k * r * Math.sin(a0));
+                float c1y = p0y + (float) (k * r * Math.cos(a0));
+                float c2x = p1x + (float) (k * r * Math.sin(a1));
+                float c2y = p1y - (float) (k * r * Math.cos(a1));
+                cur.append(String.format("%.2f %.2f %.2f %.2f %.2f %.2f c%n",
+                        c1x, c1y, c2x, c2y, p1x, p1y));
+                a0 = a1;
+            }
+
+            cur.append("h f\n");
+        }
+
+        @Override
+        public void text(float x, float yBaseline, String s, float size, boolean bold,
+                         float[] rgb) {
+            if (s == null || s.isEmpty()) {
+                return;
+            }
+            setFill(rgb);
+            drawText(x, yBaseline, s, size, bold);
+        }
+
+        @Override
+        public float textWidth(String s, float size) {
+            return PdfWriter.this.textWidth(s, size);
+        }
+
+        @Override
+        public float charWidth(int codePoint, float size) {
+            return font.widthOf(codePoint) * size;
+        }
+
+        // PDF 的填充色指令 rg，描边色是 RG。
+        // 图表里矩形与扇形都靠填充，线条才用描边，所以两处都要设
+        private void setFill(float[] rgb) {
+            cur.append(String.format("%.3f %.3f %.3f rg%n", rgb[0], rgb[1], rgb[2]));
+            cur.append("0 0 0 RG\n");
+        }
+
+        private void setStroke(float[] rgb) {
+            cur.append(String.format("%.3f %.3f %.3f RG%n", rgb[0], rgb[1], rgb[2]));
+        }
+    }
+
     /** 标题与副标题（副标题可放「数据源 / 导出时间 / 行数」这类信息）。 */
     public void setHeader(String title, String subtitle) {
         this.title = title == null ? "" : title;
         this.subtitle = subtitle == null ? "" : subtitle;
+    }
+
+    /**
+     * 立刻把标题块写出来。
+     *
+     * <p>{@link #writeTable} 自己会调用它，所以只导表格时不必手动调。
+     * 单独公开是因为「只导图表、不导表格」时没有 writeTable 可依赖 ——
+     * 那样标题就永远不会被画出来，报表顶端会是一片空白。</p>
+     *
+     * <p>重复调用是安全的：写过就不会再写第二遍。</p>
+     */
+    public void writeHeader() {
+        writeTitleBlock();
+    }
+
+    /**
+     * 在页面上画一块图表区域。
+     *
+     * <p>返回一个已经绑定到本页的 {@link PdfChart}，调用方随后调用它的
+     * {@code draw(...)}。空间不够会自动翻页 —— 图表不该被从中间截断。</p>
+     *
+     * @param blockHeight 图表连同标题占用的高度。整块一起换页，不切开
+     */
+    public PdfChart chartBlock(float blockHeight, String title) {
+        ensureSpace(blockHeight);
+        y -= blockHeight;
+        return new PdfChart(canvas(), MARGIN, y, pageW - MARGIN * 2, blockHeight, title);
+    }
+
+    /** 往下空一段距离（图表与表格之间留白用）。 */
+    public void gap(float height) {
+        ensureSpace(height);
+        y -= height;
+    }
+
+    /** 画一条分隔线，用于把图表区和表格区分开。 */
+    public void separator() {
+        cur.append("0.85 0.85 0.85 RG\n");
+        cur.append(String.format("%.2f w%n", 0.5f));
+        cur.append(String.format("%.2f %.2f m %.2f %.2f l S%n",
+                MARGIN, y, pageW - MARGIN, y));
+        cur.append("0 0 0 RG\n");
     }
 
     /**
@@ -123,7 +360,7 @@ public class PdfWriter implements AutoCloseable {
     /** 收尾并返回完整 PDF 字节。 */
     public byte[] finish() throws IOException {
         // 每页都要补上表格竖线（分页时才知道表格到哪儿结束）
-        return PdfAssembler.assemble(pages, font, PAGE_W, PAGE_H);
+        return PdfAssembler.assemble(pages, font, pageW, pageH);
     }
 
     @Override
@@ -134,7 +371,7 @@ public class PdfWriter implements AutoCloseable {
     // ------------------------------------------------------------ 版面
 
     private void computeColumnWidths(String[] names, List<String[]> rows) {
-        float avail = PAGE_W - MARGIN * 2;
+        float avail = pageW - MARGIN * 2;
         int n = names.length;
 
         // 按内容长度分配。用「字符宽度总和」而不是字节数，中文才算得准
@@ -206,7 +443,16 @@ public class PdfWriter implements AutoCloseable {
         return w;
     }
 
+    // 标题只画一次。writeTable 会调用本方法，而「只导图表」的场景
+    // 由调用方主动调 writeHeader —— 两条路都可能走到这里，所以要防重
+    private boolean titleDrawn = false;
+
     private void writeTitleBlock() {
+        if (titleDrawn) {
+            return;
+        }
+        titleDrawn = true;
+
         float left = MARGIN;
         if (!title.isEmpty()) {
             y -= TITLE_SIZE * 1.2f;
@@ -228,7 +474,7 @@ public class PdfWriter implements AutoCloseable {
         // 不设的话默认是黑色，整行表头会变成黑底
         cur.append("0.90 0.90 0.90 rg\n");
         cur.append(String.format("%.2f %.2f %.2f %.2f re f%n",
-                left, y - HEAD_H, PAGE_W - MARGIN * 2, HEAD_H));
+                left, y - HEAD_H, pageW - MARGIN * 2, HEAD_H));
         cur.append("0 0 0 rg\n");   // 恢复黑色，供文字与线条使用
 
         float ty = y - CELL_PAD - HEAD_SIZE;
@@ -278,7 +524,7 @@ public class PdfWriter implements AutoCloseable {
 
     private void drawRowSeparator(float atY) {
         cur.append(String.format("%.2f %.2f m %.2f %.2f l S%n",
-                MARGIN, atY, PAGE_W - MARGIN, atY));
+                MARGIN, atY, pageW - MARGIN, atY));
     }
 
     // 文本截断：超出列宽时截断并加省略号。宁可截断也不要溢出到隔壁列
@@ -333,7 +579,7 @@ public class PdfWriter implements AutoCloseable {
         // 每页开头重置图形状态，并铺一层白底
         cur.append("1 0 0 1 0 0 cm\n");
         pages.add(cur);
-        y = PAGE_H - MARGIN;
+        y = pageH - MARGIN;
         tableTop = y;
     }
 
