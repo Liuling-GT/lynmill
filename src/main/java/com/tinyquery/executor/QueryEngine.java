@@ -137,6 +137,49 @@ public record QueryEngine(ColumnStore store) {
         return buildRow(cols, rowIndex);
     }
 
+    /**
+     * 按 SELECT 列表投影单行，<b>保留原始类型</b>，供 Excel 导出使用。
+     *
+     * <p>与 {@link #projectRow} 的唯一区别是不把值转成字符串。CSV 里一切都是文本，
+     * 但 Excel 里如果数字被写成文本，用户既不能求和也不能排序 —— 导出就失去了
+     * 意义。日期同理：写成文本就没法按时间轴排序。</p>
+     *
+     * <p>常量项（{@code select 1, count(*)} 里的 1）没有原始对象可给，
+     * 按字面量语义还原成 Integer。</p>
+     *
+     * @param stmt  已解析的语句
+     * @param cols  预先解析好的投影列（见 prepareColumns）
+     * @param rowIndex 行号
+     */
+    public Object[] projectRowTyped(QueryStatement stmt, ProjectionColumns cols, int rowIndex) {
+        int colCount = cols.names().length;
+        Object[] row = new Object[colCount];
+        for (int i = 0; i < colCount; i++) {
+            switch (cols.kinds()[i]) {
+                case COL_NUMBER_LITERAL -> row[i] = parseNumericLiteral(cols.literals()[i]);
+                // 字符串常量保持字符串，不要被 Excel 当成数字
+                case COL_STRING_LITERAL -> row[i] = cols.literals()[i];
+                // 其余直接给原始对象，让 XlsxWriter 按类型分流
+                default -> row[i] = cols.columns().get(i).get(rowIndex);
+            }
+        }
+        return row;
+    }
+
+    // 数字字面量还原成数值对象。解析失败就退回字符串，不让导出因此失败
+    private static Object parseNumericLiteral(String text) {
+        if (text == null) {
+            return null;
+        }
+        try {
+            java.math.BigDecimal d = new java.math.BigDecimal(text.trim());
+            // 整数用整数类型，避免 Excel 里显示成 1.0
+            return d.scale() <= 0 ? (Object) d.longValueExact() : (Object) d;
+        } catch (ArithmeticException | NumberFormatException e) {
+            return text;
+        }
+    }
+
 
 
     // 解析结果表的列名

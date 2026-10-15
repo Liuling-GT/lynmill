@@ -4,6 +4,7 @@ import com.tinyquery.executor.ChartResult;
 import com.tinyquery.executor.ColumnStore;
 import com.tinyquery.executor.QueryEngine;
 import com.tinyquery.executor.QueryResult;
+import com.tinyquery.export.XlsxWriter;
 import com.tinyquery.parser.NameSuggester;
 import com.tinyquery.parser.QueryHintException;
 import com.tinyquery.parser.QueryStatement;
@@ -204,47 +205,27 @@ public class QueryController {
             description = "Stream the full result set as CSV without row limit")
     @PostMapping("/query/export")
     public void export(@RequestBody QueryRequest request, HttpServletResponse response) throws IOException {
-        QueryStatement stmt;
-        QueryEngine engine;
-        List<Integer> indexes;
-        QueryEngine.ProjectionColumns cols;
-
         // 先完成解析与过滤。此阶段可能失败，失败时响应头还没发出，可以正常返回 JSON 错误
-        try {
-            stmt = parser.parse(request.sql());
-
-            if (stmt.isAggregate()) {
-                writeError(response, Messages.get("error.exportNotSupported"));
-                return;
-            }
-
-            ColumnStore store = manager.getByTableName(stmt.tableName());
-            engine = new QueryEngine(store);
-            cols = engine.prepareColumns(stmt);
-            // 用 listRows 而不是单纯的过滤：导出必须与查询保持同样的行序
-            indexes = engine.listRows(stmt);
-        } catch (Exception e) {
-            writeError(response, e.getMessage());
+        ExportPlan plan = planExport(request, response);
+        if (plan == null) {
             return;
         }
 
-        String fileName = exportFileName(stmt.tableName());
+        String fileName = exportFileName(plan.tableName(), "csv");
 
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("text/csv; charset=UTF-8");
-        response.setHeader("Content-Disposition",
-                "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
-                        + URLEncoder.encode(fileName, StandardCharsets.UTF_8));
+        setDownloadHeaders(response, fileName);
 
         PrintWriter writer = response.getWriter();
 
         // UTF-8 BOM：不加的话 Excel 打开中文列名会乱码
         writer.write('\uFEFF');
-        writeCsvRow(writer, cols.names());
+        writeCsvRow(writer, plan.cols().names());
 
         int written = 0;
-        for (int idx : indexes) {
-            writeCsvRow(writer, engine.projectRow(stmt, cols, idx));
+        for (int idx : plan.indexes()) {
+            writeCsvRow(writer, plan.engine().projectRow(plan.stmt(), plan.cols(), idx));
 
             // 定期 flush，让浏览器尽早开始接收，避免全部攒在缓冲区
             if (++written % EXPORT_FLUSH_INTERVAL == 0) {
@@ -253,6 +234,82 @@ public class QueryController {
         }
 
         writer.flush();
+    }
+
+    /**
+     * 导出查询结果为 Excel（.xlsx）。
+     *
+     * <p>与 CSV 导出的两处关键差别：</p>
+     *
+     * <ul>
+     *   <li><b>保留类型</b>：数字与日期按原生类型写出，Excel 里可以直接求和、排序、
+     *       画图。CSV 里一切都是文本，这正是用户抱怨「导出来没法用」的根因。</li>
+     *   <li><b>表头加粗并冻结首行</b>：数据一多，滚动后看不见列名是最常见的抱怨。</li>
+     * </ul>
+     *
+     * <p>同样不走分页也不截断，逐行写出，内存占用与总行数无关。</p>
+     */
+    @Operation(summary = "Export Query Result as Excel",
+            description = "Stream the full result set as .xlsx with native number and date types")
+    @PostMapping("/query/export/xlsx")
+    public void exportXlsx(@RequestBody QueryRequest request, HttpServletResponse response) throws IOException {
+        ExportPlan plan = planExport(request, response);
+        if (plan == null) {
+            return;
+        }
+
+        String fileName = exportFileName(plan.tableName(), "xlsx");
+
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        setDownloadHeaders(response, fileName);
+
+        try (XlsxWriter writer = new XlsxWriter(response.getOutputStream(), plan.tableName())) {
+            writer.writeHeader(plan.cols().names());
+            for (int idx : plan.indexes()) {
+                writer.writeRow(plan.engine().projectRowTyped(plan.stmt(), plan.cols(), idx));
+            }
+        }
+    }
+
+    /**
+     * 导出前的公共准备：解析、取列、算行序。
+     *
+     * <p>CSV 与 Excel 两个导出共用，避免两处各写一遍解析逻辑而慢慢长歪。
+     * 失败时本方法已经把 JSON 错误写进响应并返回 {@code null}，调用方直接 return 即可。</p>
+     */
+    private ExportPlan planExport(QueryRequest request, HttpServletResponse response) throws IOException {
+        try {
+            QueryStatement stmt = parser.parse(request.sql());
+
+            if (stmt.isAggregate()) {
+                writeError(response, Messages.get("error.exportNotSupported"));
+                return null;
+            }
+
+            ColumnStore store = manager.getByTableName(stmt.tableName());
+            QueryEngine engine = new QueryEngine(store);
+            QueryEngine.ProjectionColumns cols = engine.prepareColumns(stmt);
+            // 用 listRows 而不是单纯的过滤：导出必须与查询保持同样的行序
+            List<Integer> indexes = engine.listRows(stmt);
+
+            return new ExportPlan(stmt, engine, cols, indexes, stmt.tableName());
+        } catch (Exception e) {
+            writeError(response, e.getMessage());
+            return null;
+        }
+    }
+
+    // 两个导出共用的中间结果
+    private record ExportPlan(QueryStatement stmt, QueryEngine engine,
+                              QueryEngine.ProjectionColumns cols,
+                              List<Integer> indexes, String tableName) {
+    }
+
+    // 下载响应头。文件名同时给 ASCII 与 UTF-8 两种写法，兼容老浏览器
+    private void setDownloadHeaders(HttpServletResponse response, String fileName) {
+        response.setHeader("Content-Disposition",
+                "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
+                        + URLEncoder.encode(fileName, StandardCharsets.UTF_8));
     }
 
     // 把一行拼成 CSV 并写出。值中含逗号、引号或换行时按 RFC 4180 用引号包裹
@@ -283,10 +340,10 @@ public class QueryController {
     }
 
     // 导出文件名：数据源名 + 时间戳，避免多次导出互相覆盖
-    private String exportFileName(String tableName) {
+    private String exportFileName(String tableName, String ext) {
         String base = tableName.replaceAll("[\\\\/:*?\"<>|]", "_");
         String stamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
-        return base + "_" + stamp + ".csv";
+        return base + "_" + stamp + "." + ext;
     }
 
     // 写出 JSON 错误体。仅在响应头尚未发出时可用

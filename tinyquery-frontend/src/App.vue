@@ -111,15 +111,26 @@
             导出放这里而不是「查询」页：它导出的是结果集，与执行入口分开放才对得上。
             导的是 executedSql（上次执行成功的那条），不是输入框里的实时内容 ——
             否则改了 SQL 没执行时，看到的和导出的会是两份数据
+
+            CSV 与 Excel 两个格式都提供：CSV 通用性好，Excel 保留数字与日期类型，
+            拿到手就能求和、排序、画图 —— 后者才是多数用户真正想要的。
           -->
-          <el-button
-            size="small"
-            :disabled="!executedSql"
-            :loading="exporting"
-            @click="exportQuery"
+          <el-dropdown
+            trigger="click"
+            :disabled="!executedSql || exporting"
+            @command="exportQuery"
           >
-            {{ exporting ? t('result.exporting') : t('result.export') }}
-          </el-button>
+            <el-button size="small" :disabled="!executedSql" :loading="exporting">
+              {{ exporting ? t('result.exporting') : t('result.export') }}
+              <el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="csv">{{ t('result.exportCsv') }}</el-dropdown-item>
+                <el-dropdown-item command="xlsx">{{ t('result.exportXlsx') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </header>
 
         <el-empty
@@ -238,7 +249,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Coin, EditPen, Grid, Setting, TrendCharts } from '@element-plus/icons-vue'
+import { ArrowDown, Coin, EditPen, Grid, Setting, TrendCharts } from '@element-plus/icons-vue'
 // 导出失败的提示走气泡：它是一次性动作的结果，不该常驻，
 // 更不该把已经查出来的结果表格顶掉
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -685,7 +696,7 @@ watch(activeNav, async (value) => {
 
 // 导出走独立的流式接口，不经过 JSON 解析，因此不受分页与行数上限影响。
 // 用原生 fetch 而非 axios：axios 会把整个响应读进内存，百万行会撑爆浏览器
-const exportQuery = async () => {
+const exportQuery = async (format = 'csv') => {
   // 导的是上次执行成功的那条 SQL，不是输入框里的实时内容 ——
   // 按钮已经搬到结果页，导出的必须就是页面上这份结果
   const targetSql = executedSql.value
@@ -699,7 +710,9 @@ const exportQuery = async () => {
   errorHint.value = ''
 
   try {
-    const response = await fetch('/api/query/export', {
+    // CSV 与 Excel 两个端点的差别只在 URL，其余流程完全一致
+    const endpoint = format === 'xlsx' ? '/api/query/export/xlsx' : '/api/query/export'
+    const response = await fetch(endpoint, {
       method: 'POST',
       // 导出走原生 fetch 而不是 axios，所以令牌得自己带上 ——
       // 这是三处 API 调用里最容易漏掉的一处
