@@ -571,13 +571,19 @@ public final class PdfChart {
             return;
         }
 
-        // 目标 4 格。步长取 1/2/2.5/5/10 × 10^k 里最接近的那个，
-        // 这样刻度落在人习惯的数字上
-        double rawStep = (hi - base) / TICKS;
-        double step = niceStep(rawStep);
-        if (step <= 0) {
-            step = 1;
-        }
+        /*
+          选步长。
+
+          目标不是「步长好看」而是「轴顶贴近数据」：最高柱子上方留白太多，
+          整张图就显得空、柱子显矮，而用户对照的是界面上 ECharts 画的那张 ——
+          留白比例不一样，看上去就是两张不同的图。
+
+          做法是把几个候选步长都试一遍，算出各自的轴顶与格数，
+          再按「留白越少越好、格数别太密也别太疏」挑一个。
+          早先只按 max/TICKS 取一次再向上取整，会明显偏大：
+          数据最大 16000 时算出 5000 一格、轴顶 20000，白空 25%。
+        */
+        double step = chooseStep(base, hi);
 
         double lo2 = base >= 0 ? 0 : Math.floor(base / step) * step;
         double hi2 = Math.ceil(hi / step) * step;
@@ -593,6 +599,44 @@ public final class PdfChart {
 
         min = lo2;
         max = hi2;
+    }
+
+    /**
+     * 在候选步长里挑一个让轴顶最贴近数据的。
+     *
+     * <p>评价标准就一条：轴顶高出数据多少。留白越少柱子越高、图越饱满；
+     * 但格数太少（比如只有 2 格）读起来又费劲，所以给格数一个下限。</p>
+     */
+    private static double chooseStep(double base, double hi) {
+        if (hi <= base) {
+            return 1;
+        }
+        // 候选：以 max/TICKS 为中心，往细里多试几档
+        double center = (hi - base) / TICKS;
+        double exp = Math.floor(Math.log10(center));
+        double pow = Math.pow(10, exp);
+        double[] fracs = {1, 2, 2.5, 5, 7.5, 10, 20};
+
+        double best = niceStep(center);
+        double bestWaste = Double.MAX_VALUE;
+        for (double frac : fracs) {
+            double step = frac * pow;
+            if (step <= 0) {
+                continue;
+            }
+            double top = Math.ceil(hi / step) * step;
+            int ticks = (int) Math.round((top - (base >= 0 ? 0 : Math.floor(base / step) * step)) / step);
+            // 格数太少读图费劲；太多则刻度数字会挤在一起
+            if (ticks < 3 || ticks > 8) {
+                continue;
+            }
+            double waste = (top - hi) / hi;
+            if (waste < bestWaste) {
+                bestWaste = waste;
+                best = step;
+            }
+        }
+        return best;
     }
 
     /**

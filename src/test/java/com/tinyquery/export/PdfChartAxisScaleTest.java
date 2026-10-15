@@ -69,4 +69,49 @@ class PdfChartAxisScaleTest {
                     "步长 " + step + " 小于请求值 " + raw + " 会导致轴顶装不下最高柱");
         }
     }
+
+    /**
+     * 轴顶不能白空太多。
+     *
+     * <p>用户第二次反馈「Y 轴还是奇怪」时，数据最大 16000，PDF 轴顶却是 20000
+     * —— 上方白空 25%，柱子显得矮，和界面上 ECharts 画的那张（轴顶 18000）
+     * 摆在一起就不是一张图。</p>
+     */
+    @Test
+    @DisplayName("轴顶贴近数据：渲染后的留白不超过两成")
+    void axisTopHugsDataAcrossMagnitudes() throws Exception {
+        for (double max : new double[]{2191, 16000, 950, 9, 123456}) {
+            double top = axisTopOf(max);
+            double waste = (top - max) / max;
+            assertTrue(waste <= 0.2,
+                    "数据最大 " + max + " 时轴顶 " + top + "，留白 "
+                            + Math.round(waste * 100) + "%，超过了上限");
+            assertTrue(top >= max, "轴顶不能低于数据最大值");
+        }
+    }
+
+    @Test
+    @DisplayName("16000 的轴顶是 18000（与界面一致），不是 20000")
+    void sixteenThousandTopsAtEighteenThousand() throws Exception {
+        assertEquals(18000.0, axisTopOf(16000.0), 0.001,
+                "界面显示 18000；PDF 若取 20000 则白空 25%，看着就是另一张图");
+    }
+
+    /** 复刻 PdfChart.valueRange 的完整流程，返回轴顶 */
+    private static double axisTopOf(double max) throws Exception {
+        java.lang.reflect.Method m = PdfChart.class
+                .getDeclaredMethod("chooseStep", double.class, double.class);
+        m.setAccessible(true);
+        double step = (double) m.invoke(null, 0.0, max);
+        double lo2 = 0;
+        double hi2 = Math.ceil(max / step) * step;
+        if (hi2 - lo2 < step) {
+            hi2 = lo2 + step;
+        }
+        // 顶端留一格，最高的柱子不至于顶到边框
+        if (hi2 == max) {
+            hi2 += step;
+        }
+        return hi2;
+    }
 }

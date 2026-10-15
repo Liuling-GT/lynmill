@@ -270,7 +270,7 @@
     <el-dialog
       v-model="layoutDialogVisible"
       :title="t('result.layoutTitle')"
-      width="520px"
+      width="600px"
       append-to-body
     >
       <div v-loading="layoutLoading" class="layout-body">
@@ -1379,7 +1379,16 @@ const resolveFileName = (disposition) => {
 }
 
 .layout-option {
+  /*
+    el-radio 默认是 display:inline-flex 且 white-space:nowrap，
+    作为行内元素会【按内容宽度收缩】—— 于是每行宽度都不一样，
+    宽的那行（带「推荐」标签的）把右侧结果文字顶出了卡片外，
+    窄的那行又缩回来，六行看着参差不齐。
+    撑满整行 + 让 el-radio-group 纵向排列，六行才有可比性。
+  */
   display: flex;
+  width: 100%;
+  white-space: normal;
   align-items: center;
   height: auto;
   padding: var(--sp-2) var(--sp-3);
@@ -1399,16 +1408,19 @@ const resolveFileName = (disposition) => {
   注意这里【不能写 :deep()】—— 本文件的 <style> 没有 scoped，
   :deep() 是 scoped 样式专用的伪类，在全局样式里是无效选择器，
   浏览器会整条规则丢弃，排布就会退回到默认的行内流。
-  之前正是这样：档位名、「推荐」标签、结果三段各自换行叠在一起。
+
+  grid 三列：档位名 / 推荐标签 / 结果靠右。
+  用 grid 而不是 flex + space-between，是为了让六行的三列都对齐 ——
+  flex 下每行各算各的，长短不一时右边那列会参差不齐。
+  推荐标签那一列即使为空也占位（见模板里的 layout-cell-tag），
+  这样第 6 行没有标签时，结果文字仍与第 5 行对齐。
 */
 .layout-option .el-radio__label {
   display: grid;
-  /* 三列：档位名 / 推荐标签 / 结果靠右。
-     用 grid 而不是 flex + space-between，是为了让所有行的三列都对齐 ——
-     flex 下每行各算各的，长短不一时右边那列会参差不齐 */
-  grid-template-columns: 160px 64px 1fr;
+  grid-template-columns: 1fr 72px 150px;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  width: auto;
   padding-left: var(--sp-2);
 }
 
