@@ -1378,12 +1378,27 @@ const resolveFileName = (disposition) => {
   width: 100%;
 }
 
-.layout-option {
+/*
+  ⚠️ 这一段的每个选择器都写了【两层类】或更具体的形式，不是啰嗦，是必须的。
+
+  App.vue 是在 main.js 里于 element-plus 之前被引入的，所以本文件的样式
+  在产物 CSS 里排在 Element Plus 前面。CSS 对「同权重」的规则是后来者胜 ——
+  也就是说：只要我和 Element Plus 撞上同一个元素且权重相同，一律是它赢，
+  我写的 display / height / padding 全部静默失效，界面看起来「改了跟没改一样」。
+
+  排查过程记在这里，免得下次又踩：弹框那六行怎么调都不对齐，
+  根因就是 .layout-option 与 .el-radio 是同一个元素、权重同为 (0,1,0)，
+  而 Element 的 .el-radio{display:inline-flex;height:32px} 排在后面把我的覆盖了。
+
+  解决方式不是去改引入顺序（App.vue 必须先于 Element Plus 引入才能注册组件），
+  而是把选择器写具体一层：.el-radio.layout-option 权重 (0,2,0)，
+  高于 .el-radio 的 (0,1,0)，与加载顺序无关。
+*/
+.el-radio.layout-option {
   /*
     el-radio 默认是 display:inline-flex 且 white-space:nowrap，
     作为行内元素会【按内容宽度收缩】—— 于是每行宽度都不一样，
-    宽的那行（带「推荐」标签的）把右侧结果文字顶出了卡片外，
-    窄的那行又缩回来，六行看着参差不齐。
+    宽的那行（带「推荐」标签的）把右侧结果文字顶出了卡片外。
     撑满整行 + 让 el-radio-group 纵向排列，六行才有可比性。
   */
   display: flex;
@@ -1403,16 +1418,14 @@ const resolveFileName = (disposition) => {
 }
 
 /* 推荐档位描个边。不做得太醒目 —— 它只是建议，用户仍可自选 */
-.layout-option.is-best {
+.el-radio.layout-option.is-best {
   border-color: var(--el-color-success);
   background: var(--el-color-success-light-9);
 }
 
 /*
   el-radio 把内容包在 .el-radio__label 里，三栏排布要落在这一层。
-  注意这里【不能写 :deep()】—— 本文件的 <style> 没有 scoped，
-  :deep() 是 scoped 样式专用的伪类，在全局样式里是无效选择器，
-  浏览器会整条规则丢弃，排布就会退回到默认的行内流。
+  两层类，理由同上：要压过 Element Plus 自己的 .el-radio__label 规则。
 
   grid 三列：档位名 / 推荐标签 / 结果靠右。
   用 grid 而不是 flex + space-between，是为了让六行的三列都对齐 ——
@@ -1420,7 +1433,7 @@ const resolveFileName = (disposition) => {
   推荐标签那一列即使为空也占位（见模板里的 layout-cell-tag），
   这样第 6 行没有标签时，结果文字仍与第 5 行对齐。
 */
-.layout-option .el-radio__label {
+.el-radio.layout-option .el-radio__label {
   display: grid;
   grid-template-columns: 1fr 72px 150px;
   align-items: center;
@@ -1445,14 +1458,16 @@ const resolveFileName = (disposition) => {
   el-tag 自带 height:24px 与 margin:2px 0，比纯文字行高出几个像素，
   于是带标签的第 5 行整体比别的行高，第 6 行的文字就跟着错位。
   六行等高，右边那列才能真正对齐。
+
+  .el-radio.layout-option 前缀同上面的理由，为了压过 Element Plus 的默认规则。
 */
-.layout-cell-tag {
+.el-radio.layout-option .layout-cell-tag {
   display: flex;
   align-items: center;
   height: 22px;
 }
 
-.layout-cell-tag .el-tag {
+.el-radio.layout-option .layout-cell-tag .el-tag {
   height: 20px;
   margin: 0;
 }
@@ -1469,7 +1484,12 @@ const resolveFileName = (disposition) => {
   color: var(--el-color-warning);
 }
 
-.chart-pdf-option {
+/*
+  .el-checkbox 前缀是为了压过 Element Plus 自带的 .el-checkbox{font-size:14px}。
+  单写 .chart-pdf-option 权重相同，而 Element 的样式排在本文件之后，会被它盖掉。
+  同上：本文件先于 element-plus 引入，凡是覆盖 EP 默认值的规则都要多一层类。
+*/
+.el-checkbox.chart-pdf-option {
   font-size: 13px;
 }
 
