@@ -29,15 +29,14 @@ README 面向使用者，讲"能做什么"；这份面向维护者与排查问�
 
 **注意**：`select 城市, count(*) from t` 这种"普通列 + 聚合"的混用是**被主动拒绝**的，报错会说清原因（聚合结果只有一行，普通列没有行可引用）——这是刻意加的检查，不是解析失败。
 
-### 1.2 比较运算符与 `in` / `between`（1-2 起支持后者）
+### 1.2 只有 7 个比较运算符 + `in` / `between`，没有 `is null` / `like`
 
-**支持**：`>=` `<=` `!=` `<>` `>` `<` `=`
+**支持**：`>=` `<=` `!=` `<>` `>` `<` `=`，以及 `in (...)`、`not in (...)`、
+`between a and b`、`not between a and b`
 
-**1-2 新增支持**：`in (...)`、`not in (...)`、`between a and b`、`not between a and b`
+**不支持**：`is null` / `is not null`、`like`
 
-**仍然不支持**：`is null` / `is not null`、`like`
-
-**为什么 `in` / `between` 可以做，`is null` / `like` 不做**
+**为什么 `in` / `between` 做了，`is null` / `like` 不做**
 
 区别在于：**前者能不能改写成已经支持的写法**。
 
@@ -55,7 +54,7 @@ README 面向使用者，讲"能做什么"；这份面向维护者与排查问�
 
 改写之后得到的是 `OrCondition` / `AndCondition`，而**执行层、图表、分页、PDF 导出
 一行都不用改** —— 它们只认 `SimpleCondition(field, op, value)` 加三种组合。
-这正是选这条路的原因：新增能力但没有新增执行路径，风险低。
+这正是当初选这条路的原因：新增能力但没有新增执行路径，风险低。
 
 `is null` 要的是**空值语义**（判断"没有值"，而比较运算符对空值的处理本身是另一套规则）、
 `like` 要的是**模式匹配**（要真的跑通配符匹配算法），
@@ -69,26 +68,7 @@ README 面向使用者，讲"能做什么"；这份面向维护者与排查问�
 **参数校验**（都有专门文案）：`in ()` 空列表报错、`in 'a','b'` 缺括号报错、
 `between 1` 缺 `and` 报错。
 
-### 1.3 标识符可以加引号（1-2 起支持，含内部引号）
-
-`` `t` ``、`"t"`、`[t]` **都可以用**，引号会在词法层被剥掉。
-
-**1-2 之前的旧行为**：解析器不报错，把引号连同名字一起当表名（解析出的表名就是 `` `t` ``），报错推迟到查数据源时，文案是「数据源不存在：`` `t` ``」。
-
-**为什么最后是「剥掉引号」而不是「拒绝引号」**：引号是 SQL 的**定界符**，不是名字的一部分。
-用户写 `` from `销售` `` 就是想引用「销售」这个数据源 ——
-Excel 里一列叫「销售」，不会叫「`销售`」。剥掉定界符才是符合直觉的语义。
-
-**支持三种定界符**：反引号（MySQL 习惯）、双引号（标准 SQL）、方括号（SQL Server 习惯）。
-定界符内的内容按字面处理，转义规则是「同类引号写两遍」。
-
-**内部含引号也是支持的**：`` `a"b` `` 表示列名 `a"b`，`` `a``b` `` 表示 `` a`b ``。
-哪种写法合法、哪种非法，见 **3.5**（附对真实 SQLite 的实测对照表）。
-
-> ⚠️ **排查提示**：1-2 之前这一类问题的共同点是「**解析器放行、错误推迟**」。
-> 现在词法层会把定界符剥掉，若仍报「数据源不存在」，说明名字本身写错了，而不是引号没处理。
-
-### 1.4 公式单元格只读缓存值（xlsx 数据源）
+### 1.3 公式单元格只读缓存值（xlsx 数据源）
 
 Excel 公式单元格**不做求值**，只读 Excel 上次保存时算好的缓存值。
 
@@ -96,13 +76,13 @@ Excel 公式单元格**不做求值**，只读 Excel 上次保存时算好的缓
 
 **表现**：如果文件是程序生成的、公式从没被 Excel 打开过，缓存值可能为空 → 该单元格读出为空。**这是预期行为，不是读漏了。**
 
-### 1.5 xlsx 的其他边界
+### 1.4 xlsx 的其他边界
 
 - **只支持 `.xlsx`**，`.xls` 会明确报错并提示另存为 `.xlsx`
 - **合并单元格只保留左上角的值**（与 Excel 的显示一致，其余位置为空）
 - 不读样式与配色（我们只关心数据）
 
-### 1.5b PDF 数据源：做过，实测后撤除
+### 1.4b PDF 数据源：做过，实测后撤除
 
 **结论**：LynMill **不提供 PDF 数据源**。曾经实现过一版"只读带框线表格"的（手写解析、零依赖、约 3100 行主代码 + 550 行测试），在真实文件上实测后**主动删掉**。这里记的是为什么，因为"能读一部分"听起来总比"不支持"好，实际不是。
 
@@ -156,7 +136,7 @@ Excel 公式单元格**不做求值**，只读 Excel 上次保存时算好的缓
 
 找原始 Excel/CSV 直接导入（最可靠）；确实只有 PDF 时，用 Acrobat / WPS 的"PDF 转 Excel"，**转完自己核对一遍**再导入 —— 转换工具同样在猜，核对不能省。
 
-### 1.5c 构建标识：`build-info.properties` 在打包时生成
+### 1.4c 构建标识：`build-info.properties` 在打包时生成
 
 **现状**：打包时由 pom 里 antrun 的 `generate-build-info` 执行生成 `target/classes/build-info.properties`，内容三行：
 
@@ -181,7 +161,7 @@ build.commit=e0dce58
 
 **为什么不做成"比对 jar 内时间戳"**：jar 是 zip，里面每个条目的时间戳都是**写入 jar 的时刻**，不是文件原本的修改时间。所以"jar 内 `index.html` 的时间"恒等于打包时刻，**比不出"前端是否比 jar 旧"**。这个思路行不通，只能打包时写死一份元数据。
 
-### 1.6 没有 `application.properties`，配置写在启动类里
+### 1.5 没有 `application.properties`，配置写在启动类里
 
 **现状**：`src/main/resources/` 下**没有** `application.properties`（也没有 `.yml`）。所有配置项都由 `TinyQueryApplication` 在 `SpringApplication.run` 之前用 `System.setProperty` 设置。
 
@@ -199,7 +179,7 @@ build.commit=e0dce58
 
 **想加新配置项时**：先判断它是**静态**的（如 `spring.mvc.throw-exception-if-no-handler-found`）还是**运行时计算**的。静态的可以进配置文件；运行时的请加到 `TinyQueryApplication`，并沿用同一套"命令行 > 系统属性 > 默认"的优先级写法。
 
-### 1.7 数据源整表驻留内存，占用约为文件大小的 5 倍
+### 1.6 数据源整表驻留内存，占用约为文件大小的 5 倍
 
 **现状**：打开一个数据源后，**整张表一直留在堆里**，没有上限、没有淘汰、没有 LRU。
 要释放只能删掉这个数据源或重启程序。
@@ -243,7 +223,7 @@ build.commit=e0dce58
 
 ---
 
-### 1.8 发布包带的是**裁剪过的** runtime，模块清单是手工维护的
+### 1.7 发布包带的是**裁剪过的** runtime，模块清单是手工维护的
 
 **现状**：打包时先用 `jlink` 生成一个只含必需模块的 runtime（约 47 MB），
 再用 `jpackage --runtime-image` 打进去。发布包从约 176 MB 降到约 94 MB。
@@ -293,7 +273,7 @@ powershell -File packaging\package.ps1 -FullRuntime     # Windows
 故意裁掉 `jdk.crypto.ec` + `jdk.localedata` 时精确定位到这两项。
 **一个从没红过的验收脚本不能算验收脚本。**
 
-### 1.9 `packaging\package.ps1` 必须以 UTF-8 **带 BOM** 保存
+### 1.8 `packaging\package.ps1` 必须以 UTF-8 **带 BOM** 保存
 
 **现状**：该文件带 BOM，且文件头有醒目警告。
 
@@ -553,17 +533,17 @@ fc-list :lang=zh | wc -l      # 输出 0 就是没有中文字体
 
 | 条目 | 测试类 |
 |---|---|
-| 解析器相关的限制与缺陷（1.1–1.5、2.1、3.x） | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
-| 启动配置与用户数据目录（1.6） | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
-| 内存占用与预检（1.7） | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
-| 裁剪后的 runtime 仍能连库、读中文、出图（1.8） | `packaging/verify-package.py`（独立验收，**需要真的数据库**） |
-| 裁剪后加密/字符集/本地化模块齐全（1.8） | `packaging/verify-crypto.py`（独立验收） |
-| `.ps1` 的 BOM 没被吃掉（1.9） | `packaging/check-ps1-encoding.py`（独立自检） |
+| 解析器相关的限制与缺陷（1.1–1.4、2.1、3.x） | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
+| 启动配置与用户数据目录（1.5） | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
+| 内存占用与预检（1.6） | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
+| 裁剪后的 runtime 仍能连库、读中文、出图（1.7） | `packaging/verify-package.py`（独立验收，**需要真的数据库**） |
+| 裁剪后加密/字符集/本地化模块齐全（1.7） | `packaging/verify-crypto.py`（独立验收） |
+| `.ps1` 的 BOM 没被吃掉（1.8） | `packaging/check-ps1-encoding.py`（独立自检） |
 | 托盘菜单字体能显示中文（3.4） | `src/test/java/com/tinyquery/desktop/TrayIconInstallerTest.java` |
 | deb 补中文字体 Recommends（3.4） | `packaging/check-font-recommends.sh`（独立自检，**只在 Linux 上跑**） |
 | README 两张表与真实行为一致（全部） | `src/test/java/com/tinyquery/audit/ReadmeAuditTest.java`（在 `mvn test` 里跑）+ `ReadmeAudit.java`（断言本体，另有 `main` 供人工跑） |
 
-1.7 的**实测数字**由 `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java` 产生，
+1.6 的**实测数字**由 `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java` 产生，
 可随时重跑复核（`mvn test-compile` 后直接跑 main 方法，或在 IDE 里运行）。
 
 3.4 的第二个自检**不在 Maven 里**：它要 `dpkg-deb`，Windows 上没有，
@@ -571,7 +551,7 @@ fc-list :lang=zh | wc -l      # 输出 0 就是没有中文字体
 它由 `packaging/package-linux.sh` 在打 deb/rpm 前主动调用，自检不过就中止打包 ——
 这样"坏掉"不会拖到用户装上包才发现。手动跑：`bash packaging/check-font-recommends.sh`。
 
-1.8 / 1.9 的三个自检同样**不在 Maven 里**，理由各不相同：
+1.7 / 1.8 的三个自检同样**不在 Maven 里**，理由各不相同：
 
 - `verify-package.py` 要**真的数据库**（MySQL/PostgreSQL 由 docker 起，端口可配）。
   放进 Maven 会让没起数据库的机器变红，而人会习惯性跳过它 —— 跳过就等于没有
@@ -687,7 +667,7 @@ fc-list :lang=zh | wc -l      # 输出 0 就是没有中文字体
    ```
 
    `verify-package.py` 跑的是**打包出来的启动器**（不是 `java -jar`），
-   所以只有它能验到自带的那个 runtime。详见本文件 1.8 与 1.9。
+   所以只有它能验到自带的那个 runtime。详见本文件 1.7 与 1.8。
 
 ---
 

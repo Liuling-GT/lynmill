@@ -29,18 +29,20 @@ The README is for users and talks about "what it can do"; this one is for mainta
 
 **Note**: mixing a plain column with an aggregate, as in `select 城市, count(*) from t`, is **actively rejected**, and the error says why (an aggregate result has only one row, so a plain column has no row to reference). This is a deliberate check, not a parse failure.
 
-### 1.2 Comparison operators and `in` / `between` (the latter two supported from 1-2)
+### 1.2 Only 7 comparison operators plus `in` / `between` — no `is null` / `like`
 
-**Supported**: `>=` `<=` `!=` `<>` `>` `<` `=`
+**Supported**: `>=` `<=` `!=` `<>` `>` `<` `=`, plus `in (...)`, `not in (...)`,
+`between a and b`, `not between a and b`
 
-**Newly supported in 1-2**: `in (...)`, `not in (...)`, `between a and b`, `not between a and b`
+**Not supported**: `is null` / `is not null`, `like`
 
-**Still not supported**: `is null` / `is not null`, `like`
+**Why `in` / `between` were done but `is null` / `like` were not**
 
-**Why `in` / `between` can be done but `is null` / `like` cannot**
+The distinction is: **can it be rewritten into a form that is already supported?**
 
-`in` / `between` are **syntactic sugar** and expand at parse time into comparison
-combinations that already exist:
+`in` / `between` can — they say the same thing in a different way, so the parser
+**rewrites them on the spot** into existing comparison combinations, and the layers
+below never learn that the user wrote `in`:
 
 | You want to write | What the parser turns it into |
 |---|---|
@@ -49,13 +51,18 @@ combinations that already exist:
 | `n between 1 and 10` | `n >= 1 and n <= 10` |
 | `n not between 1 and 10` | `n < 1 or n > 10` |
 
+(The usual name for "same meaning, different spelling" syntax is **syntactic sugar**.)
+
 Once expanded into `OrCondition` / `AndCondition`, **the execution layer, charts,
 pagination and PDF export need not change a single line** — they only understand
-`SimpleCondition(field, op, value)` plus the three combinators.
+`SimpleCondition(field, op, value)` plus the three combinators. That is exactly why this
+route was chosen: new capability without a new execution path, so the risk is low.
 
-`is null` needs **null semantics** and `like` needs **pattern matching**; neither can be
-expanded into a comparison combination. They are genuinely new capabilities, so they
-stay on the unsupported list.
+`is null` needs **null semantics** (testing for "no value", while how comparison
+operators treat nulls is a separate set of rules), and `like` needs **pattern matching**
+(a wildcard matcher would have to actually run). Neither can be rewritten into anything
+that already exists, so they are genuinely new capabilities and stay on the unsupported
+list.
 
 **One trap worth recording**: `between` must be handled **before the top-level AND
 split**. The `and` in `n between 1 and 10` belongs to `between`, not to logical
@@ -66,27 +73,7 @@ reports "missing and". The position of the `tryParseBetween` call inside
 **Argument validation** (each has dedicated copy): `in ()` with an empty list errors,
 `in 'a','b'` missing parentheses errors, `between 1` missing `and` errors.
 
-### 1.3 Identifiers may be quoted (supported since 1-2)
-
-`` `t` ``, `"t"`, `[t]` — **all work**; the delimiters are stripped by the lexer.
-
-**Old behavior before 1-2**: **the parser did not error**. It treated the quotes as part of the name (the parsed table name literally was `` `t` ``), so the error was deferred until the data source lookup, where the message read "Data source not found: `` `t` ``".
-
-**Why the resolution is "strip the quotes" rather than "reject the quotes"**: quotes are SQL **delimiters**, not part of the name.
-Writing `` from `销售` `` means "reference the data source named 销售" —
-an Excel column is named 销售, never `` `销售` ``. Stripping the delimiter is the intuitive semantics.
-
-**Three delimiter styles supported**: backtick (MySQL), double quote (standard SQL), square bracket (SQL Server).
-The content inside is taken literally; the escape rule is "write a same-type quote twice".
-
-**Quotes inside a delimiter are supported too**: `` `a"b` `` means the column `a"b`, and
-`` `a``b` `` means `` a`b ``. Which forms are legal and which are not is in **3.5**,
-with a table measured against real SQLite.
-
-> ⚠️ **Troubleshooting hint**: before 1-2 this class of problems shared the trait "**the parser lets it through, the error is deferred**."
-> The lexer now strips delimiters, so if you still get "data source not found", the name itself is wrong — not the quote handling.
-
-### 1.4 Formula cells read the cached value only (xlsx data source)
+### 1.3 Formula cells read the cached value only (xlsx data source)
 
 Excel formula cells are **not evaluated**; only the cached value computed the last time Excel saved the file is read.
 
@@ -94,13 +81,13 @@ Excel formula cells are **not evaluated**; only the cached value computed the la
 
 **Symptom**: if the file was generated programmatically and the formulas were never opened by Excel, the cached value may be empty → that cell reads as empty. **This is expected behavior, not a missed read.**
 
-### 1.5 Other xlsx boundaries
+### 1.4 Other xlsx boundaries
 
 - **`.xlsx` only**; `.xls` errors out explicitly and tells you to save as `.xlsx`
 - **Merged cells keep only the top-left value** (matching how Excel displays them; the remaining positions are empty)
 - Styles and colors are not read (we only care about the data)
 
-### 1.5b PDF data source: built, measured, then removed
+### 1.4b PDF data source: built, measured, then removed
 
 **Conclusion**: LynMill **does not offer a PDF data source**. A version that read "tables with ruled borders only" was once implemented (hand-written parsing, zero dependencies, about 3,100 lines of main code + 550 lines of tests) and was **deliberately deleted** after being measured against real files. Why is recorded here, because "it can read some of them" always sounds better than "unsupported" — it is not.
 
@@ -154,7 +141,7 @@ If it is ever redone, the conclusions below still hold, so nobody has to step on
 
 Find the original Excel/CSV and import that directly (most reliable); when only the PDF exists, use Acrobat / WPS "PDF to Excel" and **check it over yourself** before importing — conversion tools are guessing too, and the check is not optional.
 
-### 1.5c Build identity: `build-info.properties` is generated at packaging time
+### 1.4c Build identity: `build-info.properties` is generated at packaging time
 
 **Current state**: at packaging time the antrun `generate-build-info` execution in the pom generates `target/classes/build-info.properties` with three lines:
 
@@ -179,7 +166,7 @@ By the same token, when running in development mode directly (`mvn spring-boot:r
 
 **Why not "compare timestamps inside the jar"**: a jar is a zip, and the timestamp on every entry is **the moment it was written into the jar**, not the file's original modification time. So "the time of `index.html` inside the jar" is always exactly the packaging moment, and it **cannot tell you whether the frontend is older than the jar**. That approach does not work; the only option is to bake a copy of the metadata in at packaging time.
 
-### 1.6 There is no `application.properties`; configuration lives in the startup class
+### 1.5 There is no `application.properties`; configuration lives in the startup class
 
 **Current state**: there is **no** `application.properties` under `src/main/resources/` (and no `.yml` either). Every configuration item is set by `TinyQueryApplication` via `System.setProperty` before `SpringApplication.run`.
 
@@ -197,7 +184,7 @@ By the same token, when running in development mode directly (`mvn spring-boot:r
 
 **When adding a new configuration item**: first decide whether it is **static** (like `spring.mvc.throw-exception-if-no-handler-found`) or **computed at runtime**. Static ones can go in a configuration file; runtime ones belong in `TinyQueryApplication`, following the same "command line > system property > default" precedence.
 
-### 1.7 Data sources stay resident in memory in full, at roughly 5× the file size
+### 1.6 Data sources stay resident in memory in full, at roughly 5× the file size
 
 **Current state**: once a data source is opened, **the entire table stays on the heap** — no cap, no eviction, no LRU.
 The only way to release it is to delete the data source or restart the program.
@@ -241,7 +228,7 @@ The current positioning is a local lightweight tool, and users have an intuition
 
 ---
 
-### 1.8 Release packages ship a **trimmed** runtime, and the module list is maintained by hand
+### 1.7 Release packages ship a **trimmed** runtime, and the module list is maintained by hand
 
 **Current state**: at packaging time `jlink` first produces a runtime containing only the required modules (about 47 MB),
 which `jpackage --runtime-image` then packages in. The release package dropped from about 176 MB to about 94 MB.
@@ -291,7 +278,7 @@ The value of these two scripts has been verified by **fault injection**: deliber
 deliberately trimming `jdk.crypto.ec` + `jdk.localedata` pins the failure to exactly those two.
 **An acceptance script that has never gone red does not count as an acceptance script.**
 
-### 1.9 `packaging\package.ps1` must be saved as UTF-8 **with BOM**
+### 1.8 `packaging\package.ps1` must be saved as UTF-8 **with BOM**
 
 **Current state**: the file has a BOM, and the top of the file carries a prominent warning.
 
@@ -554,17 +541,17 @@ Every "we think it behaves like this" above has a corresponding test:
 
 | Entry | Test class |
 |---|---|
-| Parser-related limitations and defects (1.1–1.5, 2.1, 3.x) | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
-| Startup configuration and user data directory (1.6) | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
-| Memory footprint and pre-check (1.7) | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
-| The trimmed runtime still connects to databases, reads Chinese, and renders charts (1.8) | `packaging/verify-package.py` (standalone acceptance, **needs real databases**) |
-| Crypto/charset/localization modules intact after trimming (1.8) | `packaging/verify-crypto.py` (standalone acceptance) |
-| The `.ps1` BOM has not been eaten (1.9) | `packaging/check-ps1-encoding.py` (standalone self-check) |
+| Parser-related limitations and defects (1.1–1.4, 2.1, 3.x) | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
+| Startup configuration and user data directory (1.5) | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
+| Memory footprint and pre-check (1.6) | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
+| The trimmed runtime still connects to databases, reads Chinese, and renders charts (1.7) | `packaging/verify-package.py` (standalone acceptance, **needs real databases**) |
+| Crypto/charset/localization modules intact after trimming (1.7) | `packaging/verify-crypto.py` (standalone acceptance) |
+| The `.ps1` BOM has not been eaten (1.8) | `packaging/check-ps1-encoding.py` (standalone self-check) |
 | The tray menu font can display Chinese (3.4) | `src/test/java/com/tinyquery/desktop/TrayIconInstallerTest.java` |
 | The deb adds a Chinese-font Recommends (3.4) | `packaging/check-font-recommends.sh` (standalone self-check, **runs on Linux only**) |
 | The README's two tables match real behavior (all) | `src/test/java/com/tinyquery/audit/ReadmeAuditTest.java` (runs in `mvn test`) + `ReadmeAudit.java` (the assertions, and a `main` for manual runs) |
 
-The **measured numbers** in 1.7 are produced by `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java`,
+The **measured numbers** in 1.6 are produced by `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java`,
 and can be re-run at any time to re-check (`mvn test-compile`, then run the main method directly, or run it from the IDE).
 
 3.4's second self-check is **not in Maven**: it needs `dpkg-deb`, which does not exist on Windows,
@@ -572,7 +559,7 @@ and putting it in Maven would either make Windows builds go red or force it to b
 It is invoked proactively by `packaging/package-linux.sh` before building the deb/rpm, and packaging aborts if the self-check fails —
 so "it broke" does not wait until a user has installed the package to surface. Run it manually with: `bash packaging/check-font-recommends.sh`.
 
-The three self-checks for 1.8 / 1.9 are likewise **not in Maven**, each for a different reason:
+The three self-checks for 1.7 / 1.8 are likewise **not in Maven**, each for a different reason:
 
 - `verify-package.py` needs **real databases** (MySQL/PostgreSQL started via docker, ports configurable).
   Putting it in Maven would turn machines without databases running red, and people would habitually skip it — and skipping equals not having it
@@ -688,7 +675,7 @@ Only when both are done is the work complete.
    ```
 
    `verify-package.py` runs **the packaged launcher** (not `java -jar`),
-   so only it can verify the bundled runtime. See 1.8 and 1.9 of this file.
+   so only it can verify the bundled runtime. See 1.7 and 1.8 of this file.
 
 ---
 
