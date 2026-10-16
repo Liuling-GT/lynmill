@@ -1,6 +1,5 @@
 package com.tinyquery.parser;
 
-import com.tinyquery.i18n.Messages;
 import com.tinyquery.parser.where.*;
 
 import java.util.ArrayList;
@@ -48,7 +47,7 @@ public class SQLParser {
         // 值是错的却不报错 —— where name = 'abc 会得到值 'abc（前引号没被剥掉），
         // 字符串比较永不相等，用户看到的是空表而不是一个错误提示。
         if (hasUnterminatedLiteral(sql)) {
-            throw new IllegalArgumentException(Messages.get("parse.unterminatedQuote"));
+            throw ParserChecks.unterminatedQuote();
         }
 
         // 预处理：只归一化引号外的片段。引号内是用户数据，任何改写都是数据污染 ——
@@ -57,10 +56,10 @@ public class SQLParser {
         sql = normalize(sql);
 
         if (!sql.toLowerCase().contains("select")) {
-            throw new IllegalArgumentException(Messages.get("parse.missingSelect"));
+            throw ParserChecks.missingSelect();
         }
         if (!sql.toLowerCase().contains("from")) {
-            throw new IllegalArgumentException(Messages.get("parse.missingFrom"));
+            throw ParserChecks.missingFrom();
         }
 
         // LIMIT/OFFSET 必须在 WHERE 之前剥离：WHERE 分支会把「where 之后的所有内容」
@@ -83,8 +82,7 @@ public class SQLParser {
         boolean[] limitMask = literalMask(sql);
         if (findTopLevelKeyword(sql, limitMask, "limit") >= 0
                 || findTopLevelKeyword(sql, limitMask, "offset") >= 0) {
-            throw new IllegalArgumentException(
-                    Messages.get("parse.limitOffsetUnsupported"));
+            throw ParserChecks.limitOffsetUnsupported();
         }
 
         // ORDER BY 在 LIMIT 之后剥离（此时它才位于末尾），同样必须在 WHERE 之前
@@ -103,7 +101,7 @@ public class SQLParser {
             sql = sql.substring(0, whereIndex).trim();
             if (wherePart.isEmpty()) {
                 // 静默「不过滤」会让用户以为加了条件、实际拿到全表 —— 宁可报错
-                throw new IllegalArgumentException(Messages.get("parse.whereMissingExpr"));
+                throw ParserChecks.whereMissingExpr();
             }
         }
 
@@ -114,7 +112,7 @@ public class SQLParser {
         ).trim();
 
         if (selectPart.isEmpty()) {
-            throw new IllegalArgumentException(Messages.get("parse.noColumn"));
+            throw ParserChecks.noColumn();
         }
 
         String[] columns;
@@ -127,7 +125,7 @@ public class SQLParser {
                 String col = raw[i].trim();
                 columns[i] = col;
                 if (columns[i].isEmpty()) {
-                    throw new IllegalArgumentException(Messages.get("parse.emptyColumn"));
+                    throw ParserChecks.emptyColumn();
                 }
             }
         }
@@ -136,7 +134,7 @@ public class SQLParser {
         String tableName = sql.substring(sql.toLowerCase().indexOf("from") + 4).trim();
 
         if (tableName.isEmpty()) {
-            throw new IllegalArgumentException(Messages.get("parse.missingTable"));
+            throw ParserChecks.missingTable();
         }
 
         // 解析 where
@@ -183,8 +181,7 @@ public class SQLParser {
         // 逗号形式先拒绝：limit 偏移,行数 的顺序与标准相反，静默接受会让用户
         // 以为第一个数是行数，拿到的却是从第 N 行开始的另一段数据
         if (LIMIT_COMMA_PATTERN.matcher(sql).find()) {
-            throw new IllegalArgumentException(
-                    Messages.get("parse.limitCommaUnsupported"));
+            throw ParserChecks.limitCommaUnsupported();
         }
 
         // 按「最具体优先」匹配：limit n offset m 必须排在 offset m 之前，
@@ -213,7 +210,7 @@ public class SQLParser {
         try {
             return Integer.parseInt(raw);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(Messages.get("parse.numberOutOfRange", clause, raw));
+            throw ParserChecks.numberOutOfRange(clause, raw);
         }
     }
 
@@ -245,8 +242,7 @@ public class SQLParser {
             // 没有匹配到完整形式，但语句里确实出现了 order by，
             // 说明写法不受支持。不静默忽略，否则表名会被污染成「t order by」这种难以理解的形态
             if (CONTAINS_ORDER_BY.matcher(sql).find()) {
-                throw new IllegalArgumentException(
-                        Messages.get("parse.orderByUnsupported"));
+                throw ParserChecks.orderByUnsupported();
             }
             return null;
         }
@@ -258,21 +254,19 @@ public class SQLParser {
             if (trimmed.isEmpty()) {
                 // order by a, / order by ,a / order by a,,b
                 // 早先逗号会留在列名里，用户看到的是「列 dept, 不存在」这种莫名其妙的报错
-                throw new IllegalArgumentException(
-                        Messages.get("parse.orderByEmptyColumn"));
+                throw ParserChecks.orderByEmptyColumn();
             }
             Matcher itemMatcher = ORDER_BY_ITEM_PATTERN.matcher(trimmed);
             if (!itemMatcher.find()) {
                 // order by a b c 这类：列表里混进了多余的片段
-                throw new IllegalArgumentException(
-                        Messages.get("parse.orderByUnsupported"));
+                throw ParserChecks.orderByUnsupported();
             }
             // 方向缺省为升序
             specs.add(new SortSpec(itemMatcher.group(1), "desc".equalsIgnoreCase(itemMatcher.group(2))));
         }
 
         if (specs.isEmpty()) {
-            throw new IllegalArgumentException(Messages.get("parse.orderByMissingColumn"));
+            throw ParserChecks.orderByMissingColumn();
         }
         return new OrderByClause(new SortSpecs(specs), matcher.start());
     }
@@ -353,19 +347,17 @@ public class SQLParser {
         }
 
         if (opIndex < 0) {
-            throw new IllegalArgumentException(
-                    Messages.get("parse.unsupportedOperator", expr)
-                            + Messages.get("parse.supportedOperators"));
+            throw ParserChecks.unsupportedOperator(expr);
         }
 
         String field = expr.substring(0, opIndex).trim();
         String value = expr.substring(opIndex + op.length()).trim();
 
         if (field.isEmpty()) {
-            throw new IllegalArgumentException(Messages.get("parse.missingColumnBeforeOp", expr));
+            throw ParserChecks.missingColumnBeforeOp(expr);
         }
         if (value.isEmpty()) {
-            throw new IllegalArgumentException(Messages.get("parse.missingValueAfterOp", expr));
+            throw ParserChecks.missingValueAfterOp(expr);
         }
 
         // 值两侧的括号同样剥掉，让 where a > (1) 与 where a > 1 等价
@@ -377,7 +369,7 @@ public class SQLParser {
             value = value.substring(1, value.length() - 1).replace("''", "'");
         } else if (value.indexOf(' ') >= 0) {
             // 未加引号却含空格，多半是漏了引号。宁可报错，也不做一次静默的字符串比较
-            throw new IllegalArgumentException(Messages.get("parse.valueHasSpace", value));
+            throw ParserChecks.valueHasSpace(value);
         }
 
         return new SimpleCondition(field, op, value);
