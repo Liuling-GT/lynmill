@@ -15,6 +15,40 @@ The README is for users and talks about "what it can do"; this one is for mainta
 
 ---
 
+## At a Glance: What 1-2 Fixed and Added
+
+> **This is an index, not the content — the detail lives in the entries below.**
+> It is here because "already fixed" entries stay at their original positions (so people
+> upgrading from an older version can find them under the old heading), but **what got
+> fixed** is the first thing a reader should see, and it should not be buried in a long
+> document.
+
+### Defects fixed in 1-2
+
+| No. | Entry | In one line |
+|---|---|---|
+| **2.1** | Column aliases (`as`) | `select city as c` used to be taken whole as one column name, reporting "column not found" |
+| **2.2** | Column or alias containing `from` | Used to split on the first `" from "` **by character position**, slicing the table name into garbage |
+| **2.6** | Quotes nested inside a delimiter | Used to stop at the next same-type quote, cutting names like `a"b` short |
+| **2.7** | Delimited identifier unquoted as a string | **No error, wrong column**: column `'''` read as `'` |
+| **2.8** | Error messages mixing Chinese and English | Chinese UI showed English errors; 6 gaps in the execution layer |
+
+### Capabilities added in 1-2
+
+| No. | Entry | In one line |
+|---|---|---|
+| **1.2** | `in` / `between` | Rewritten at parse time into existing comparison combinations; zero execution-layer changes |
+| **1.3** | Delimited identifiers | Inner-quote handling completed; escape rules match real SQLite (measured) |
+
+> **Two things are not entries in this file**:
+> - The parser was split into three layers (lexical / syntactic / semantic) with a
+>   114-statement behaviour baseline guarding it — a structural change; see the README
+>   and CHANGELOG
+> - Export grew beyond CSV to Excel and PDF (1.1.0 had CSV only) — a new feature; see
+>   the README and CHANGELOG
+
+---
+
 ## 1. Known Limitations (Intentional)
 
 ### 1.1 `GROUP BY` is not supported
@@ -29,11 +63,11 @@ The README is for users and talks about "what it can do"; this one is for mainta
 
 **Note**: mixing a plain column with an aggregate, as in `select 城市, count(*) from t`, is **actively rejected**, and the error says why (an aggregate result has only one row, so a plain column has no row to reference). This is a deliberate check, not a parse failure.
 
-### 1.2 Comparison operators and `in` / `between` (the latter two supported from this round)
+### 1.2 Comparison operators and `in` / `between` (the latter two supported from 1-2)
 
 **Supported**: `>=` `<=` `!=` `<>` `>` `<` `=`
 
-**Newly supported this round**: `in (...)`, `not in (...)`, `between a and b`, `not between a and b`
+**Newly supported in 1-2**: `in (...)`, `not in (...)`, `between a and b`, `not between a and b`
 
 **Still not supported**: `is null` / `is not null`, `like`
 
@@ -314,7 +348,7 @@ It scans every `.ps1` under `packaging/` and reports an error, with the fix, for
 ## 2. Known Defects (Should Work But Currently Does Not)
 
 
-### 2.1 Column aliases (`as`) (implemented this round)
+### 2.1 Column aliases (`as`) (implemented in 1-2)
 
 ```sql
 select city as c from sales      -- ✅ now: header c, values city
@@ -325,7 +359,7 @@ select amount * 2 double from t  -- ✅ expressions may omit `as`
 select city c from sales         -- ❌ still an error, see below
 ```
 
-**Old behavior (before this round)**: the parser treated the whole of `city as c` as
+**Old behavior (before 1-2)**: the parser treated the whole of `city as c` as
 **a single column name**. `selectColumns` held the string `"city as c"`, and the
 execution layer went looking for that name in the table and naturally did not find it,
 reporting `Unknown column:city as c`.
@@ -396,7 +430,7 @@ The parsed table name is `t join t2 on t.姓名 = t2.姓名` — **the whole thi
 
 **What has already improved**: `limit m, n` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.)
 
-### 2.6 Quotes nested inside a delimiter (fixed this round)
+### 2.6 Quotes nested inside a delimiter (fixed in 1-2)
 
 Once 1.3 made delimited identifiers work, an **independent** problem surfaced:
 when **a quote appears inside a delimiter**, the lexical layer splits it wrong.
@@ -462,7 +496,7 @@ names are unique.
 > **For whoever troubleshoots this**: the shared pattern in this class of problems is "**the parser lets it through and the error is deferred to the execution layer**."
 > Assuming the answer is in the parser — "why didn't it stop this?" — wastes time. First confirm what table name was actually parsed.
 
-### 2.7 A delimited identifier's name was unquoted as if it were a string constant (fixed this round)
+### 2.7 A delimited identifier's name was unquoted as if it were a string constant (fixed in 1-2)
 
 **Symptom**: the query **does not error**, but reads **a different column**.
 
@@ -496,7 +530,7 @@ identifier, keep it verbatim". `selectColumns` itself is unchanged and stays cle
 > A test that only compares "success/failure" cannot catch it — you must check **the returned column names**.
 > And when checking column names, do not hand-roll "strip the delimiter + decode the escape" rules (see the lesson below).
 
-### 2.8 Error messages mixing Chinese and English (fixed this round)
+### 2.8 Error messages mixing Chinese and English (fixed in 1-2)
 
 **Symptom**: the UI language is Chinese, but the error is English:
 
@@ -834,3 +868,52 @@ Only when both are done is the work complete.
 - **New entries**: decide first whether it is a "defect" or a "limitation", and put it in the right section — putting it in the wrong one makes people change things with the wrong expectation
 - **After fixing it**: **delete the entry**; do not leave a "fixed" tombstone behind. History is in git
 - **When a limitation becomes a defect**: if one day you decide it should work, move it from section 1 to section 2 and write down why you changed your mind
+- **New entries must be registered in the top index**: every fixed defect and every
+  added capability gets a row in the "At a Glance" section at the top. The entry body
+  stays where it is so people upgrading from an older version can find it under the old
+  heading, but "what got fixed" should not be buried in a long document
+- **Write "1-2", not "this round"**: round numbers are a temporary development label;
+  a few months later nobody knows which round "this round" was
+- **English documents must end with a Chinese summary**: `README.md`, `NOTES.md`,
+  `CHANGELOG.md` and any English document under `docs/` are written in English but
+  **end with a 「中文摘要」 section**. This is a fixed repository convention — most users
+  are Chinese speakers, and they should not have to switch language just to read a
+  summary
+
+---
+
+## 中文摘要
+
+> 本文件正文用英文书写，中文版见 [NOTES.zh-CN.md](NOTES.zh-CN.md)（内容对应）。
+> 下面是本文件要点的中文摘要；**以英文正文为准**。
+
+**这份文件收录三类东西**：当前版本**有意不做的事**（第一章「已知限制」）、
+**已知会出错的地方**（第二章「已知缺陷」）、以及
+**容易被误判成 bug 的正常行为**（第三章）。
+README 面向使用者讲"能做什么"，这份面向维护者与排查问题的人讲"哪里会绊倒你"。
+
+**两类要分清，处理方式完全不同**：
+**已知限制**是我们**有意不做**且有取舍理由的 —— 不是 bug，别顺手"修"掉；
+**已知缺陷**是我们**认为它本该工作**但现在不工作 —— 欢迎修，先看条目里的根因。
+
+**1-2 修好与新增的条目（置顶有完整索引）**：
+
+- **修好的缺陷**：列别名整串被当列名、列名/别名含 `from` 被按字符位置切错、
+  定界符内部嵌套引号被提前收尾、**定界标识符被当字符串剥引号（不报错但取错列）**、
+  报错文案中英混用（执行层 6 处漏翻）
+- **新增的能力**：`in` / `between`（解析期改写成已有的比较组合，执行层零改动）、
+  定界标识符补齐内部引号处理（转义规则实测对齐 SQLite）
+
+**几条最值得记住的**：
+
+- **1.1**：`group by` 不支持，会报「数据源不存在」而不是"不支持"
+- **2.4**：**不支持语法的报错会误导** —— 报「数据源不存在」，其实数据源没问题。
+  遇到名字看着没错却报数据源不存在，先查是不是用了不支持的写法
+- **2.7**：**「不报错但取错了东西」是最危险的一类 bug**。
+  只比对"成功/失败"的测试抓不住它，必须核对**返回的列名**
+- **1.7**：数据源整表驻留内存，占用约为文件大小的 5 倍
+- **1.9**：`packaging\package.ps1` 必须以 **UTF-8 带 BOM** 保存，
+  否则 PowerShell 读中文乱码、语法报错
+
+**排查方法（第五章）**：改完代码怎么自查；**本文件的断言由测试守着（第四章）** ——
+文档漂移了会有测试变红，不会没人知道。

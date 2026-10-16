@@ -193,6 +193,59 @@ First release.
 - CSV encoding selection with auto-detection.
 - Desktop app (system tray + local web UI) for Windows, macOS and Linux.
 
+---
+
+## 中文摘要
+
+> 本文件正文按 [Keep a Changelog](https://keepachangelog.com/) 惯例用英文书写。
+> 下面是各版本的中文摘要；**详细内容以英文正文为准**。
+
+### [1.2.0] — 2026-10-16
+
+**两条主线：导出不再只有 CSV，以及 SQL 解析器重建。**
+
+**新增（导出）**：导出 Excel（数字按数值写，可求和排序；表头加粗冻结）、
+导出 PDF（A4 分页、每页重复表头、**中文字体内嵌**所以换台电脑也不缺字）、
+图表导出 PDF（配色与 Y 轴范围跟界面一致）、PDF 布局预览。
+
+**新增（SQL）**：列别名 `select 城市 as c`（表达式可省略 `as`）、
+`in` / `not in`、`between` / `not between`（都在解析期改写成已有的比较组合）、
+定界标识符 `` `x` `` `"x"` `[x]`（转义规则对齐 SQLite，实测核对；
+裸定界符改为报错而不是静默匹配）、关键字可作列名。
+
+**变更**：解析器拆成词法 / 语法 / 语义三层，旧 `SQLParser` 退化为薄编排；
+解析期校验集中到 `ParserChecks`；建立 **114 条行为基线**由 `ParserEquivalenceTest` 守着
+（它在别名改造中真的抓到一次回归）；报错文案彻底本地化（执行层 6 处漏翻已修，
+并新增扫描源码的测试防再漏）。
+
+**修复**：**584 条对拍从 147 条不符降到 0**。其中最重要的是一处
+**「查询成功但取错列」**——执行层 `unquote` 把定界标识符当字符串常量剥引号，
+列 `'''` 被取成了 `'`。另有：方括号内 `]]` 提前收尾、
+Excel 数据源数值列误判为文本、图表导出三处观感问题、
+跨域未暴露 `Content-Disposition`。
+此外修掉了**语料与测试数据自身 5 处错误**（重复列名导致 35 列并成 33 列等）。
+
+**验证**：单元测试 921 项通过（1.1.0 时 911）；584 / 584 对拍一致；
+真实应用 27 / 27 通过；包自检 17/17。
+
+**不附安装包**：版本号已提升、源码已打 tag，安装包需自行从源码构建。
+
+### [1.1.0] — 2026-10-12
+
+四种界面主题色；中英双语界面（含托盘菜单与报错）；
+`GET/PUT /api/preferences` 让浏览器界面把语言与主题回传给桌面层；
+Excel 数据源（第五种）；补上 LICENSE 与 THIRD-PARTY.md。
+运行时用 `jlink` 裁剪：**128.5 MB → 46.9 MB**。改用 MIT 许可。
+修掉 5 个只在 Linux / macOS 构建时出现的打包缺陷。
+
+### [1.0.0] — 2026-09-16
+
+首个版本。CSV / Excel / MySQL / PostgreSQL / SQLite 统一用 SQL 查询；
+列式内存存储；图表面板、`ORDER BY`、后端分页、CSV 导出；
+CSV 编码自动探测；Windows / macOS / Linux 桌面程序（托盘 + 本地 Web 界面）。
+
+---
+
 [Unreleased]: https://github.com/Liuling-GT/lynmill/compare/v1.2.0...HEAD
 [1.2.0]: https://github.com/Liuling-GT/lynmill/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Liuling-GT/lynmill/releases/tag/v1.1.0

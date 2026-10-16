@@ -242,27 +242,34 @@ This is a **lightweight query engine**, not a full SQL database. It supports a c
 
 There is a known class of inaccurate error messages: **when you write unsupported syntax, the error may say "data source not found"**, even though the data source is fine and the real problem is the unsupported syntax.
 
-For example:
-
 ```
 select * from sample join other on sample.id = other.id
-→ 报：数据源不存在：sample join other on sample.id = other.id
+→ reports: data source not found: sample join other on sample.id = other.id
 ```
 
-It treats everything after `from` as the table name. **If you get "data source not found" but the name looks correct, first check whether you used syntax the table above lists as unsupported.**
+The parser has no notion of `join` / `union` / subqueries / `group by`, so it keeps
+reading to the end of the statement as the table name.
 
-(The root cause is that the parser has no notion of `join` / `union` / subqueries / `group by`, so it keeps reading to the end of the statement as the table name. This is a known issue, not yet fixed — see section 2.2 of [NOTES.md](NOTES.md).)
+**Is this fixed? Partly — and the distinction matters.**
 
-> Since 1.2.0 the parser no longer splits on spaces, so the *original* cause of this
-> class of message is gone — but the message still appears for the unsupported
-> constructs above, because there is genuinely no clause to stop at.
->
-> Also note `select distinct a` reports **"column not found: distinct a"** rather than
-> "not supported" — misleading in the same way. Write `group by` / `distinct` / `join`
-> out of your query rather than trying to work around the message.
->
-> `limit m, n`, `is null`, `like`, and mixing plain columns with aggregates **do** have
-> dedicated messages that say what is wrong instead of blaming the data source.
+| | Status |
+|---|---|
+| **Fixed in 1.2.0** | The *original* cause is gone. The old parser split SQL on the first `" from "` **by character position**, so a column or alias merely *containing* `from` produced a garbage table name. `select 'from' as x from t` and `select city_as from_x from t_from_x` both parse correctly now |
+| **Still not fixed** | The message still appears for `join`, `union`, subqueries and `group by`. The cause is different: there is genuinely **no clause to stop at**, because the parser does not implement those constructs at all |
+
+**What to do**: **if you get "data source not found" but the name looks correct, first check whether you used syntax the table above lists as unsupported.** A table name never contains spaces or `on`, so a long "table name" in the error is the giveaway.
+
+Which unsupported syntax gives which message:
+
+| You wrote | Message you get | Says what's wrong? |
+|---|---|---|
+| `join` / `union` / `group by` / subquery | data source not found | ❌ misleading |
+| `select distinct a` | column not found: `distinct a` | ❌ misleading |
+| `limit m, n` | dedicated message | ✅ |
+| `is null` / `like` | dedicated message listing supported operators | ✅ |
+| plain columns mixed with aggregates | dedicated message | ✅ |
+
+See section 2.4 of [NOTES.md](NOTES.md).
 
 ---
 
@@ -458,3 +465,35 @@ LynMill is released under the **MIT License**. See [LICENSE](LICENSE) for the fu
 In short: you may use, modify, and redistribute it, including commercially, provided the copyright notice and license text are kept. The software comes with no warranty.
 
 Third-party components bundled in the release are covered by their own licenses — see [`packaging/THIRD-PARTY.md`](packaging/THIRD-PARTY.md).
+
+---
+
+## 中文摘要
+
+> 本 README 正文用英文书写，中文版见 [README.zh-CN.md](README.zh-CN.md)（内容对应，不是逐字翻译）。
+> 下面是本页要点的中文摘要；**以英文正文为准**。
+
+**LynMill 是一个本地、零运维的多数据源 SQL 查询引擎。** 把 CSV / Excel 文件、
+MySQL、PostgreSQL、SQLite 拖进来，就能用 SQL 查 —— 不用装数据库，也不用写代码。
+单个可执行文件并自带运行时，**不需要装 JDK**，数据不离开本机。
+
+**本版（1.2.0）新增**：导出不再只有 CSV —— 新增**导出 Excel**（数字按数值写，
+可求和排序）、**导出 PDF**（A4 分页、每页重复表头、**中文字体内嵌**所以换台电脑
+也不缺字）、**图表导出 PDF**；SQL 方面新增**列别名**、**`in` / `between`**、
+**定界标识符**（`` `x` `` `"x"` `[x]`），并**重建了解析器**修掉一批
+"列名含 `from` 就被切错"之类的问题。
+
+**数据源**：CSV、Excel（.xlsx）、MySQL / MariaDB、PostgreSQL、SQLite 五种。
+**不支持 PDF**（做过又撤掉了，理由见正文「Why There Is No PDF Data Source」）。
+
+**SQL 支持范围**：筛选、排序、分页、聚合（`count` / `sum` / `avg` / `min` / `max`）、
+列别名、`in` / `between`、定界标识符。**不支持** `group by`、`is null`、`like`、
+`join`、子查询、`union`、`distinct`（详见正文表格）。
+
+> ⚠️ **一个容易踩的坑**：写出不支持的语法时，报错可能说**「数据源不存在」**
+> 而不是"不支持这个语法"。遇到名字看着没错却报数据源不存在时，
+> 先回头看是不是用了不支持的写法 —— 详见正文「Error Messages Can Be Misleading」。
+
+**常见问题**：首次启动会弹 SmartScreen / Gatekeeper 拦截（程序未签名，正文有解法）；
+数据存在用户数据目录（Windows 是 `%APPDATA%\LynMill\`），不在程序目录里；
+只监听 `127.0.0.1` 并带一次性访问令牌，局域网内其它机器访问不到。
