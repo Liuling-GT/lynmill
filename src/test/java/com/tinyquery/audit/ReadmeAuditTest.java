@@ -64,9 +64,13 @@ class ReadmeAuditTest {
                 .filter(c -> c.verdict() == ReadmeAudit.Verdict.INFO)
                 .count();
 
-        // 当前实际：支持 17 + 不支持 14 + 专门文案 3 = 34 条断言，另有 7 条只打印
-        assertTrue(asserted >= 34,
-                "断言条数从 34 掉到了 " + asserted + " —— 核对没有跑全，"
+        // 当前实际：支持 23 + 不支持 11 + 专门文案 3 = 37 条断言，另有 7 条只打印
+        // 【1-2】支持表 +3（定界标识符三种）
+        // 【L2】支持表 +4（in / not in / between / not between），不支持表 -2
+        // 【D1】支持表 +2（别名），不支持表 -1
+        //       数字随 README 实际条目走，掉下去就说明核对没跑全
+        assertTrue(asserted >= 37,
+                "断言条数从 37 掉到了 " + asserted + " —— 核对没有跑全，"
                         + "上面的「一致」结论不可信");
         assertTrue(infos >= 7,
                 "只打印的条目从 7 掉到了 " + infos + " —— 有人删了 show()，请确认是否有意为之");

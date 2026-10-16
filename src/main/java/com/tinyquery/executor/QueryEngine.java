@@ -184,6 +184,17 @@ public record QueryEngine(ColumnStore store) {
 
     // 解析结果表的列名
     private List<String> resolveColumnNames(QueryStatement stmt) {
+        // D1：别名优先。别名是用户明确指定的表头，比任何推导出来的名字都权威 ——
+        // 聚合、常量、明细三条路径都一样，所以放在最前面统一处理。
+        // 没写别名的位置 headerAt 会返回列表达式本身，等价于原来的行为
+        if (stmt.hasAliases()) {
+            List<String> names = new ArrayList<>(stmt.selectColumns().length);
+            for (int i = 0; i < stmt.selectColumns().length; i++) {
+                names.add(unquote(stmt.headerAt(i)));
+            }
+            return names;
+        }
+
         // 聚合：直接用表达式原文作为表头，如 count(*) / avg(粉丝数)。
         // 常量项要剥引号：原文是 '总计'，表头应当是 总计
         if (stmt.isAggregate()) {
@@ -203,9 +214,15 @@ public record QueryEngine(ColumnStore store) {
         }
 
         List<String> names = new ArrayList<>(colNames.length);
-        for (String colName : colNames) {
-            // 字符串字面量作为列名时去掉引号，与结果行的取值保持一致
-            names.add(unquote(colName));
+        for (int i = 0; i < colNames.length; i++) {
+            // 字符串字面量作为列名时去掉引号，与结果行的取值保持一致。
+            //
+            // 【本轮修正】但**定界标识符**不能走这条路：它的 text 已经是最终列名，
+            // 首尾的单引号是名字的一部分，不是字符串字面量的定界符。
+            // 早先不加区分地 unquote，于是列名 ''' 被剥成 '。
+            // 实测：`` `'''` `` 在真实 SQLite 里取到列 '''，我们却取到 '。
+            String raw = stmt.delimitedColumnAt(i);
+            names.add(raw != null ? raw : unquote(colNames[i]));
         }
         return names;
     }

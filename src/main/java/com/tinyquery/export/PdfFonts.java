@@ -1,5 +1,7 @@
 package com.tinyquery.export;
 
+import com.tinyquery.i18n.Messages;
+
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -36,8 +38,8 @@ public final class PdfFonts {
     public static InputStream open() throws IOException {
         InputStream in = PdfFonts.class.getResourceAsStream(FONT_RESOURCE);
         if (in == null) {
-            throw new IOException("内嵌字体缺失：" + FONT_RESOURCE
-                    + "（检查打包时 resources/fonts 是否被包含）");
+            // 原先硬编码中文，英文模式下会显示中文（单向漏翻）
+            throw new IOException(Messages.get("error.fontMissing", FONT_RESOURCE));
         }
         return in;
     }

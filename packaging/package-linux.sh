@@ -9,16 +9,16 @@
 #   bash packaging/package-linux.sh --deb --rpm
 #
 # 前置条件：
-#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.1.0.jar
+#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.2.0.jar
 #   2. 已装 JDK 17（jpackage 从 JDK 14 起随 JDK 提供）
 #   3. 打 deb 需 dpkg-deb 与 fakeroot；打 rpm 需 rpmbuild
 #   4. 系统必须装了中文字体（见下面「中文字体」一节）
 #
 # 产物（都在 jpackage-out/ 下）：
 #   LynMill/                                 app-image 目录，解压即用
-#   LynMill-1.1.0-linux-x86_64.tar.gz        可直接分发的压缩包
-#   LynMill-1.1.0-1.x86_64.deb               仅在传了 --deb 时
-#   LynMill-1.1.0-1.x86_64.rpm               仅在传了 --rpm 时
+#   LynMill-1.2.0-linux-x86_64.tar.gz        可直接分发的压缩包
+#   LynMill-1.2.0-1.x86_64.deb               仅在传了 --deb 时
+#   LynMill-1.2.0-1.x86_64.rpm               仅在传了 --rpm 时
 #
 # ---------- 为什么默认只出 tar.gz，不出 deb/rpm ----------
 # Linux 桌面环境碎片化严重：.deb 只能在 Debian/Ubuntu 系装，.rpm 只能在
@@ -62,7 +62,7 @@ root="$(cd "$scriptDir/.." && pwd)"
 
 # 必须与 pom.xml 的 <version> 一致。jpackage 的 --app-version 只接受
 # 「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝。
-appVersion='1.1.0'
+appVersion='1.2.0'
 # --vendor 会写进 deb/rpm 的维护者字段与 .desktop 里
 vendor='Liuling'
 # 桌面环境里显示的菜单名与图标名。全小写、无空格是 Linux 的惯例

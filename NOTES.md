@@ -29,21 +29,42 @@ The README is for users and talks about "what it can do"; this one is for mainta
 
 **Note**: mixing a plain column with an aggregate, as in `select 城市, count(*) from t`, is **actively rejected**, and the error says why (an aggregate result has only one row, so a plain column has no row to reference). This is a deliberate check, not a parse failure.
 
-### 1.2 Only 7 comparison operators are supported
+### 1.2 Comparison operators and `in` / `between` (the latter two supported from this round)
 
 **Supported**: `>=` `<=` `!=` `<>` `>` `<` `=`
 
-**Not supported**: `in (...)`, `between a and b`, `is null` / `is not null`, `like`, `not in`
+**Newly supported this round**: `in (...)`, `not in (...)`, `between a and b`, `not between a and b`
 
-**Rationale**: each of these needs its own lexical handling in the parser (`in` is followed by a parenthesized list, `between` has to swallow an `and`, `is null` is postfix), and the `and` / `or` splitting logic interferes with all of them. Doing it means redesigning condition parsing, and the payoff does not match the cost.
+**Still not supported**: `is null` / `is not null`, `like`
 
-**Rewrites**:
+**Why `in` / `between` can be done but `is null` / `like` cannot**
 
-| You want to write | Write instead |
+`in` / `between` are **syntactic sugar** and expand at parse time into comparison
+combinations that already exist:
+
+| You want to write | What the parser turns it into |
 |---|---|
 | `c in ('a','b')` | `c = 'a' or c = 'b'` |
+| `c not in ('a','b')` | `c != 'a' and c != 'b'` |
 | `n between 1 and 10` | `n >= 1 and n <= 10` |
-| `c is null` | Not expressible for now (nulls are rare in CSV / tabular data) |
+| `n not between 1 and 10` | `n < 1 or n > 10` |
+
+Once expanded into `OrCondition` / `AndCondition`, **the execution layer, charts,
+pagination and PDF export need not change a single line** — they only understand
+`SimpleCondition(field, op, value)` plus the three combinators.
+
+`is null` needs **null semantics** and `like` needs **pattern matching**; neither can be
+expanded into a comparison combination. They are genuinely new capabilities, so they
+stay on the unsupported list.
+
+**One trap worth recording**: `between` must be handled **before the top-level AND
+split**. The `and` in `n between 1 and 10` belongs to `between`, not to logical
+conjunction; splitting on `and` first turns `between 1` into half a condition and
+reports "missing and". The position of the `tryParseBetween` call inside
+`Parser.parseCondition` is deliberate.
+
+**Argument validation** (each has dedicated copy): `in ()` with an empty list errors,
+`in 'a','b'` missing parentheses errors, `between 1` missing `and` errors.
 
 ### 1.3 Identifiers may be quoted (supported since 1-2)
 
@@ -137,7 +158,7 @@ Find the original Excel/CSV and import that directly (most reliable); when only 
 **Current state**: at packaging time the antrun `generate-build-info` execution in the pom generates `target/classes/build-info.properties` with three lines:
 
 ```
-build.version=1.1.0
+build.version=1.2.0
 build.time=2026-10-10 15:02
 build.commit=e0dce58
 ```
@@ -293,31 +314,40 @@ It scans every `.ps1` under `packaging/` and reports an error, with the fix, for
 ## 2. Known Defects (Should Work But Currently Does Not)
 
 
-### 2.1 Column aliases (`as`) are not supported at all
+### 2.1 Column aliases (`as`) (implemented this round)
 
 ```sql
-select city as c from sales      -- ❌ error:Unknown column:city as c
-select city c from sales         -- ❌ error:Unknown column:city c
-select 城市 as 城市名 from t       -- ❌ error:Unknown column:城市 as 城市名
+select city as c from sales      -- ✅ now: header c, values city
+select 城市 as 城市名 from t       -- ✅ now: header 城市名
+select sum(x) as total from t    -- ✅ now: header total
+select sum(x) total from t       -- ✅ expressions may omit `as`
+select amount * 2 double from t  -- ✅ expressions may omit `as`
+select city c from sales         -- ❌ still an error, see below
 ```
 
-**Root cause (confirmed by measurement)**: the parser treats the whole of `city as c` as **a single column name**.
-`selectColumns` holds the string `"city as c"`, and the execution layer goes looking for that name in the table and naturally does not find it.
+**Old behavior (before this round)**: the parser treated the whole of `city as c` as
+**a single column name**. `selectColumns` held the string `"city as c"`, and the
+execution layer went looking for that name in the table and naturally did not find it,
+reporting `Unknown column:city as c`.
 
-A full-text search confirms: there is **no code in `SQLParser` that handles `as` at all**, and there never has been since the initial commit —
-**this is not a regression, it was never implemented.**
+**How it is fixed**: the alias is parsed into a **separate `aliases` array** rather than
+being folded into `selectColumns`. That separation is deliberate — `isAggregateExpr`
+prefix matching, `looksLikeColumnRef` and the `QueryEngine` column lookup all keep
+working unmodified, because `selectColumns` still holds only the real expression text.
+`QueryStatement.headerAt(i)` returns the alias when present.
 
-**Why nobody noticed before**: the README's [Supported] table listed it as "supported"
-(written in when the README was rewritten in `8cc9c9f`; the same commit also wrongly listed `in` / `between` / `is null`
-as "supported"). Users who follow it get an `Unknown column:city as c` —
-the column name looks fine, so it is hard to connect it to "aliases are unsupported". **This entry is the textbook case of documentation and implementation drifting apart.**
+`Parsed` and `SelectList` both carry `aliases`, and `SemanticAnalyzer` threads them through.
 
-**Current state**: this round the README has been brought back in line with the implementation (moved to [Not supported]).
-Implementing column aliases is a **new feature**; no user has asked for it, and there is no prompting for it anywhere in the frontend or the copy —
-so it was handled as "document it truthfully" rather than slipping in a feature.
+**Why a bare column may not omit `as`**: `select city c` is syntactically identical to
+"a column whose name is `city c`" — a spaced column name — and such column names really
+do exist (the corpus has one). Splitting it would silently change the meaning of an
+existing valid query. Expressions are unambiguous (`sum(x) total` cannot be a single
+column name), so they may omit it.
 
-**Things to watch when fixing it** (left for the future): handling `as` and the `from` scanning of 2.3 live in **the same lexical layer**,
-so quote awareness has to be considered for both together; aliases also have to be referenceable in `where` / `order by`.
+**Things that were watched while fixing it**: the 114-statement behaviour baseline
+caught a real regression during this work — `select city_as from_x from t_from_x`
+started splitting into a column `city_as` plus an alias `from_x`, which would have
+broken the very case that 1.2 fixed. The baseline is what caught it.
 
 ### 2.2 Column names or aliases containing `from` fail to parse (fixed in 1-2)
 
@@ -366,30 +396,147 @@ The parsed table name is `t join t2 on t.姓名 = t2.姓名` — **the whole thi
 
 **What has already improved**: `limit m, n` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.)
 
-### 2.6 Quotes cannot be nested inside a delimiter (newly found in 1-2)
+### 2.6 Quotes nested inside a delimiter (fixed this round)
 
 Once 1.3 made delimited identifiers work, an **independent** problem surfaced:
 when **a quote appears inside a delimiter**, the lexical layer splits it wrong.
 
-```sql
-select `a"b`  from 对拍引号列名表   -- ❌ column a"b does exist, but reports Unknown column
-select "a"b"  from 对拍引号列名表   -- ❌ same
-select [a]b]  from 对拍引号列名表   -- ❌ right bracket inside a bracket delimiter
-```
+**Old root cause**: after reading an opening delimiter, `Tokenizer` stopped at
+**the next same-type character**, without implementing the SQL-standard escape
+"write a same-type quote twice to mean one" (single-quoted strings **already**
+implemented this; delimiters did not).
 
-**Root cause**: after reading an opening delimiter, `Tokenizer` stops at **the next same-type character**,
-without implementing the SQL-standard escape "write a same-type quote twice to mean one"
-(single-quoted strings **already** implement this; delimiters do not).
+**Fix**: all three delimiter kinds now go through `readDelimited`, which implements
+same-type doubling, and `Token` gained a `delimited` flag (downstream needs to tell
+"a name the user explicitly delimited" from a bare word). Brackets go through
+`tryReadBracketIdentifier` separately, implementing SQL Server's `]]` → `]`.
 
-**Why this is a separate entry rather than folded into 1.3**: 1.3 answers "should the quotes be stripped",
-this one answers "how are inner quotes handled while stripping" — the two can be fixed independently, and merging them
-would make 1.3 look unfixed.
+**Which forms are legal — measured, not asserted**
 
-**Blast radius**: 25 of the 584 differential-test statements are of this kind, all on the deliberately constructed
-`对拍引号列名表`. Real-world cases (a column named 销售 or 2024年销量) are unaffected.
+This cannot be settled by opinion, because "the quoting form itself is illegal" and
+"the parser has a bug" both show up as an error. The table below is the result of
+running each form against **real SQLite 3** (which supports backtick and double-quote
+identifiers):
+
+| Form | Real SQLite | tinyquery | Verdict |
+|---|---|---|---|
+| `` `a"b` `` | column `a"b` | column `a"b` | ✅ match |
+| `` `a'b` `` | column `a'b` | column `a'b` | ✅ match |
+| `` `a``b` `` | column ``a`b`` | column ``a`b`` | ✅ match |
+| ```` ```a``` ```` | column `` `a` `` | column `` `a` `` | ✅ match |
+| ```` ``a`` ```` | syntax error | error | ✅ match |
+| `` `a`b` `` | unrecognized token | error | ✅ match |
+| `` [a`b] `` | column ``a`b`` | column ``a`b`` | ✅ match |
+| `[a``b]` | error (`no such column: a``b`) | error | ✅ match |
+
+**Conclusion**: quote characters of a **different** kind may be nested freely (a
+backtick may contain single or double quotes). A same-type quote written **bare** is
+illegal and must be doubled. Brackets use the SQL Server `]]` rule.
+
+**One trap worth remembering**: `` [a`b] `` works but `[a``b]` does not — brackets do
+**not** treat backticks as special, so `[a``b]` asks for a column literally named
+`` a``b `` (two backticks), which does not exist. SQLite behaves identically, so this
+is correct behaviour rather than a defect — users hitting it usually expect the
+backtick escaping rule to apply inside brackets, and it does not.
+
+**Blast radius**: 25 of the 584 differential-test statements are of this kind, all on
+the deliberately constructed `对拍引号列名表`. Real-world cases (a column named 销售 or
+2024年销量) are unaffected.
+
+**Corpus errors found in the same sweep (not product defects)**
+
+`gen_test_data.py` used to write headers with `csv.writer`'s default `QUOTE_MINIMAL`,
+which **re-escapes quote characters that are genuinely part of the column name**: the
+intent was a column named `a"b`, but what landed on disk was `"a""b"`. The backend read
+`"a""b"`, which did not match the `a"b` written in the corpus, so a whole batch of
+cases **failed spuriously**. Both column-name tables are now written literally
+(`raw=True`); the other tables still use standard CSV escaping (their data really does
+contain commas and newlines).
+
+One more: the generator wrote `a'''b` and `` a`b `` **twice each**, producing duplicate
+column names in one table. `ColumnStore` stores columns in a `LinkedHashMap`, so
+duplicates merge — a 35-column CSV surfaced as 33 columns, showing up as "`select *`
+is missing two columns". The generator now de-duplicates and self-checks that column
+names are unique.
 
 > **For whoever troubleshoots this**: the shared pattern in this class of problems is "**the parser lets it through and the error is deferred to the execution layer**."
 > Assuming the answer is in the parser — "why didn't it stop this?" — wastes time. First confirm what table name was actually parsed.
+
+### 2.7 A delimited identifier's name was unquoted as if it were a string constant (fixed this round)
+
+**Symptom**: the query **does not error**, but reads **a different column**.
+
+```sql
+select `'''` from 对拍引号列名表   -- the table really has a column ''' ; reads column '
+select `'a'` from 对拍引号列名表   -- the table really has a column 'a' ; reads column a
+```
+
+**Root cause**: the execution layer has an `unquote` that treats text **beginning and
+ending with a single quote** as a string literal and strips the quotes. That rule is
+**right** for `select '总计'` (the header should read `总计`, not `'总计'`) but **wrong**
+for a delimited identifier — a delimited identifier's name is already settled at the
+lexical layer, and the name itself may legitimately contain single quotes.
+
+**Why it was hard to find**: it does not error. The query succeeds, the row count is
+right, only the column and the values are wrong. The differential run originally
+compared only "expected ok / actual ok", so this class of error **passed all the way
+through**.
+
+**Fix**: `QueryStatement` gained `delimitedColumnAt(i)`, which explicitly exposes "this
+column is a delimited identifier, and here is its original name"; the execution layer
+uses that to distinguish "a string constant, run it through `unquote`" from "a delimited
+identifier, keep it verbatim". `selectColumns` itself is unchanged and stays clean.
+
+**Where the expected value comes from**: measured against real SQLite —
+`select `'''`` reads the column `'''` there. This product now matches.
+
+**Regression test**: `DocumentedLimitationsTest.delimitedIdentifierKeepsItsOwnQuotes`.
+
+> **For whoever troubleshoots this**: the shared pattern in this class of problems is "**it does not error, but it reads the wrong thing**".
+> A test that only compares "success/failure" cannot catch it — you must check **the returned column names**.
+> And when checking column names, do not hand-roll "strip the delimiter + decode the escape" rules (see the lesson below).
+
+### 2.8 Error messages mixing Chinese and English (fixed this round)
+
+**Symptom**: the UI language is Chinese, but the error is English:
+
+```
+Error: Unknown column:a``b
+```
+
+**Root cause**: that message was **hardcoded** in `ColumnStore`. This repository had
+already done a pass to move error copy into `Messages`, but that pass cleaned the
+**parser** layer (`SQLParser` / `QueryStatement`); `ColumnStore` is the **execution**
+layer, was not on that list, and was missed.
+
+**Why it hid for so long**: in Chinese mode it looks "intentional", not like a bug.
+
+**Fix**: added the `parse.unknownColumn` key (one Chinese and one English entry) and
+pointed `ColumnStore` at `Messages`. Chinese mode now shows 「列不存在：a``b」 and English
+mode shows "Unknown column: a``b".
+
+**Five more fixed in the same sweep** — all of them "one-directional misses", i.e. they
+look fine in Chinese and only show up in English:
+
+| Location | Old copy | New key |
+|---|---|---|
+| `ColumnStore` | `error:Unknown column:` | `parse.unknownColumn` |
+| `XlsxWriter` ×2 | 表头只能写一次 / 必须先写表头 | `error.exportHeaderTwice` / `error.exportNeedHeader` |
+| `PdfFonts` | 内嵌字体缺失 | `error.fontMissing` |
+| `PathResolver` | 无法创建用户数据目录 | `error.dataDirCreate` |
+| `DataSourceStore` | 数据源配置序列化失败 | `error.configSaveFailed` |
+
+**Preventing a repeat**: `HardcodedUserMessageAuditTest` **scans the source** and fails
+the build when an exception carries a natural-language sentence that did not go through
+`Messages`. Measuring a handful of known messages cannot cover this — what slips
+through is always "the one nobody thought of" — so it has to be a census.
+
+The test carries a `WHITELIST` naming four places that are **deliberately** not
+translated (programmer errors and startup-time failures the user never reaches). Each
+entry states its reason — otherwise a whitelist becomes a bin that hides problems.
+
+> This test was verified not to be decorative: hardcoding an English sentence into
+> `ColumnStore` on purpose made it fail immediately and name `ColumnStore.java:86`.
 
 ---
 
@@ -642,7 +789,7 @@ Only when both are done is the work complete.
 
 7. **"I changed it and nothing happened" → check the version number first, do not suspect the code first**.
 
-   After the program starts, the bottom of the settings page shows a build identity line such as `1.1.0 · e0dce58 · 2026-10-10 15:02`;
+   After the program starts, the bottom of the settings page shows a build identity line such as `1.2.0 · e0dce58 · 2026-10-10 15:02`;
    there is also a "build version" line in the startup log. Compare it against **the time of your most recent packaging run**:
 
    - **They match** → what you are looking at is the latest code; the problem is elsewhere

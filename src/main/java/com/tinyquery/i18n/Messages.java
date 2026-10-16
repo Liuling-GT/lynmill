@@ -484,6 +484,23 @@ public final class Messages {
         zh("error.exportNotSupported", "聚合查询不支持导出，请导出明细数据");
         en("error.exportNotSupported", "Aggregate queries cannot be exported; export row data instead");
 
+        // 导出/落盘过程中的失败。这两条原先硬编码中文，英文模式下会显示中文。
+        // 中文模式看着没问题，所以一直没被发现 —— 属于「单向漏翻」
+        zh("error.exportHeaderTwice", "表头只能写一次");
+        en("error.exportHeaderTwice", "The header row can only be written once");
+
+        zh("error.exportNeedHeader", "必须先写表头再写数据行");
+        en("error.exportNeedHeader", "Write the header row before writing data rows");
+
+        zh("error.fontMissing", "内嵌字体缺失：{0}，安装包可能不完整");
+        en("error.fontMissing", "Embedded font missing: {0}; the installation may be incomplete");
+
+        zh("error.dataDirCreate", "无法创建用户数据目录：{0}");
+        en("error.dataDirCreate", "Cannot create the user data directory: {0}");
+
+        zh("error.configSaveFailed", "数据源配置保存失败");
+        en("error.configSaveFailed", "Failed to save data source configuration");
+
         // PDF 导出时写在标题下方的那行元信息
         zh("pdf.subtitle", "共 {0} 行 · {1} 列 · 导出自 LynMill");
         en("pdf.subtitle", "{0} rows · {1} columns · exported from LynMill");
@@ -501,6 +518,34 @@ public final class Messages {
         zh("parse.unterminatedQuote", "单引号未闭合，检查 SQL 中的引号是否成对");
         en("parse.unterminatedQuote", "Unterminated single quote; check that quotes in the SQL come in pairs");
 
+        // 定界标识符的两种错误。原先一律复用 unterminatedQuote，
+        // 用户写的是反引号却被告知「单引号未闭合」，会往错误方向排查
+        zh("parse.unterminatedDelimiter", "定界符 {0} 未闭合，检查 SQL 中的该定界符是否成对");
+        en("parse.unterminatedDelimiter", "Unterminated delimiter {0}; check that it comes in pairs");
+
+        zh("parse.emptyIdentifier", "定界符 {0} 中间没有名字");
+        en("parse.emptyIdentifier", "Empty identifier between delimiters {0}");
+
+        // L2：in / between 已支持（解析期展开），这三条是「写法错」而非「不支持」
+        zh("parse.betweenNeedsAnd", "between 写法应为「列 between 小值 and 大值」，这里缺少 and：{0}");
+        en("parse.betweenNeedsAnd", "BETWEEN must be \"column BETWEEN low AND high\"; missing AND: {0}");
+
+        zh("parse.inNeedsParens", "in 后面要跟括号括起来的取值列表，如 in ('a','b')：{0}");
+        en("parse.inNeedsParens", "IN must be followed by a parenthesized list, e.g. in ('a','b'): {0}");
+
+        zh("parse.inEmptyList", "in 后面的括号里没有值：{0}");
+        en("parse.inEmptyList", "The parentheses after IN are empty: {0}");
+
+        // D1：列别名
+        zh("parse.aliasIncomplete", "别名写法不完整，应为「列 as 别名」：{0}");
+        en("parse.aliasIncomplete", "Incomplete alias; expected \"column AS alias\": {0}");
+
+        zh("parse.aliasHasSpace", "别名里有空格，请用引号包起来：{0}");
+        en("parse.aliasHasSpace", "The alias contains spaces; wrap it in quotes: {0}");
+
+        zh("parse.aliasCountMismatch", "别名数量（{0}）与列数（{1}）不一致");
+        en("parse.aliasCountMismatch", "Alias count ({0}) does not match column count ({1})");
+
         zh("parse.missingSelect", "缺少 SELECT 关键字");
         en("parse.missingSelect", "Missing keyword SELECT");
 
@@ -512,6 +557,13 @@ public final class Messages {
 
         zh("parse.noColumn", "SELECT 与 FROM 之间没有指定列");
         en("parse.noColumn", "No column specified between SELECT and FROM");
+
+        // 列不存在。这条原先硬编码在 ColumnStore 里（"error:Unknown column:" + 列名），
+        // 于是界面在中文模式下显示 「Error: Unknown column:a``b」—— 中英混杂。
+        // 漏掉的原因：上一轮统一 i18n 时只清了 SQLParser / QueryStatement 那批，
+        // ColumnStore 属执行层，不在那份清单里。
+        zh("parse.unknownColumn", "列不存在：{0}");
+        en("parse.unknownColumn", "Unknown column: {0}");
 
         zh("parse.emptyColumn", "列名为空，检查是否多写了逗号");
         en("parse.emptyColumn", "Empty column name; check for extra commas");

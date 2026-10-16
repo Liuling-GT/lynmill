@@ -10,7 +10,7 @@
 #   bash packaging/package.sh
 #
 # 前置条件：
-#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.1.0.jar
+#   1. 已执行 mvn clean package，target/ 下有 tinyquery-1.2.0.jar
 #   2. 已装 JDK 17 —— jpackage 从 JDK 14 起随 JDK 一起提供，无需单独安装
 #   3. packaging/tinyquery.icns 存在（用 iconutil 从 iconset 生成）
 #
@@ -41,8 +41,8 @@ done
 
 # ---------- 0. 应用标识 ----------
 # 这些值必须与 pom.xml 的 <version> 保持一致。jpackage 的 --app-version
-# 只接受「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝，所以版本号已统一为 1.1.0。
-appVersion='1.1.0'
+# 只接受「数字和点」，写 1.0-SNAPSHOT 会被直接拒绝，所以版本号已统一为 1.2.0。
+appVersion='1.2.0'
 # --vendor 会写进包的发布者字段。不写就是「未知」。
 vendor='Liuling'
 # macOS 的 bundle id。一旦发出去就改不动了（改了等于换了一个应用，

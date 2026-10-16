@@ -174,9 +174,12 @@ class QueryEngineTest {
     @Test
     @DisplayName("引用不存在的列时报错")
     void unknownColumnThrows() {
+        // 断言用 Messages 拼期望值，而不是写死中文或英文 ——
+        // 这样切换语言或改文案时测试不会假红，但仍然钉住「报的是这条错」
         assertTrue(assertThrows(IllegalArgumentException.class,
                 () -> rows(salaryStore(10), "select * from t where 没有这列 = 1"))
-                .getMessage().contains("Unknown column"));
+                .getMessage().contains(Messages.get("parse.unknownColumn", "没有这列")),
+                "应当报「列不存在」");
     }
 
     // ==================== 聚合 ====================
@@ -1045,7 +1048,8 @@ class QueryEngineTest {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> chart(deptSalaryStore(), "nope", List.of("salary"), "sum", 10));
 
-        assertTrue(e.getMessage().contains("Unknown column"), e.getMessage());
+        assertTrue(e.getMessage().contains(Messages.get("parse.unknownColumn", "nope")),
+                e.getMessage());
     }
 
     // ==================== LIMIT / OFFSET ====================
@@ -1596,7 +1600,9 @@ class QueryEngineTest {
         QueryHintException e = assertThrows(QueryHintException.class,
                 () -> page(caseStore(), "select sum(salary) from t", 1, 50));
 
-        assertEquals("error:Unknown column:salary", e.getMessage());
+        // 文案已走 i18n：测试默认中文环境，所以是「列不存在：salary」。
+        // 断言里带上 "error:" 前缀，因为前端靠它识别「这是解析/执行报错」
+        assertEquals("error:列不存在：salary", e.getMessage());
         assertTrue(e.getHint().contains("Salary"), e.getHint());
     }
 
@@ -1633,7 +1639,8 @@ class QueryEngineTest {
                 () -> page(s, "select sum(salary) from t", 1, 50));
 
         assertFalse(e instanceof QueryHintException, "候选不唯一时不该猜");
-        assertTrue(e.getMessage().contains("Unknown column:salary"), e.getMessage());
+        assertTrue(e.getMessage().contains(Messages.get("parse.unknownColumn", "salary")),
+                e.getMessage());
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.tinyquery.config;
 
+import com.tinyquery.i18n.Messages;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -151,7 +153,8 @@ public final class PathResolver {
             // createDirectories 对已存在的目录是幂等的，不会抛异常
             Files.createDirectories(dir);
         } catch (IOException e) {
-            throw new UncheckedIOException("无法创建用户数据目录：" + dir, e);
+            // 原先硬编码中文，英文模式下会显示中文（单向漏翻）
+            throw new UncheckedIOException(Messages.get("error.dataDirCreate", dir), e);
         }
     }
 

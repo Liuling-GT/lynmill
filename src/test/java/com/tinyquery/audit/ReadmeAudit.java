@@ -158,20 +158,36 @@ public final class ReadmeAudit {
         expectOk(S_SUPPORT, "表名反引号 `t`", "select * from `sales`");
         expectOk(S_SUPPORT, "表名双引号 \"t\"", "select * from \"sales\"");
         expectOk(S_SUPPORT, "表名方括号 [t]", "select * from [sales]");
+
+        // 【L2 新增】in / between 在解析期展开成等价的比较组合：
+        //   city in ('北京','上海')  → city = '北京' or city = '上海'
+        //   amount between 1 and 2   → amount >= 1 and amount <= 2
+        // 用能真正命中的数据（sales 里有北京/上海），否则「成功但 0 行」
+        // 无法区分「展开对了」和「条件恒假」
+        expectOk(S_SUPPORT, "in (...)", "select * from sales where city in ('北京', '上海')");
+        expectOk(S_SUPPORT, "not in (...)", "select * from sales where city not in ('北京')");
+        expectOk(S_SUPPORT, "between", "select * from sales where amount between 1 and 100000");
+        expectOk(S_SUPPORT, "not between", "select * from sales where amount not between 1 and 100000");
+
+        // 【D1 新增】列别名
+        expectOk(S_SUPPORT, "select a as 别名", "select city as 城市 from sales");
+        expectOk(S_SUPPORT, "select a as 别名（聚合）", "select count(*) as 行数 from sales");
     }
 
     // ==================== 「不支持」表 ====================
 
     private void sectionUnsupported() {
-        // 2026-10 复核发现这条原来被错误地放在「支持」表里，现在放到这里并断言
-        // 它确实失败 —— 将来若实现了别名，此处会红
-        expectFail(S_UNSUPPORTED, "select a as 别名", "select city as 城市 from sales");
+        // 【D1 实现了】"select a as 别名" 原在此处断言「应失败」，现已删除 ——
+        // 别名能用了，同时挪到【支持】表去断言（见 sectionSupported）。
         // 夹具原来是 select city, count(*) ... group by city，那条会先撞上
         // 「普通列混聚合」规则 —— 测的是那条规则，不是 group by。
         // 纯 group by（下面这条）才是真正要测的东西。
         expectFail(S_UNSUPPORTED, "group by", "select count(*) from sales group by city");
-        expectFail(S_UNSUPPORTED, "in (...)", "select * from sales where city in ('北京', '上海')");
-        expectFail(S_UNSUPPORTED, "between", "select * from sales where amount between 1 and 2");
+        // 【L2 改为支持】in (...) 与 between 的原断言已删除 ——
+        // 它们现在在解析期展开成 = / or / and 组合，能正常执行。
+        // 同样挪到【支持】表那一段去断言（见 sectionSupported 的运算符糖一组）。
+        // 注意 is null / like 仍在此处：它们要的是空值语义与模式匹配，
+        // 不是「写法糖」，展开不出来。
         expectFail(S_UNSUPPORTED, "is null", "select * from sales where city is null");
         expectFail(S_UNSUPPORTED, "like", "select * from sales where city like '北%'");
         expectFail(S_UNSUPPORTED, "limit m, n", "select * from sales limit 1, 2");

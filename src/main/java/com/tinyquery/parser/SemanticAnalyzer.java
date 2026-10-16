@@ -51,7 +51,8 @@ public final class SemanticAnalyzer {
         }
 
         QueryStatement stmt = new QueryStatement(
-                parsed.selectColumns(), parsed.tableName(), parsed.condition(),
+                parsed.selectColumns(), parsed.aliases(), parsed.delimitedFlags(),
+                parsed.tableName(), parsed.condition(),
                 parsed.sort(), parsed.limit(), parsed.offset());
 
         // 聚合查询里混入普通列是写错了。放在这里而不是 QueryStatement 构造器里，

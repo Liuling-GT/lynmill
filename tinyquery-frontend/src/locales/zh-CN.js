@@ -23,7 +23,7 @@ export default {
   // ==================== 应用外壳 ====================
   app: {
     title: 'LynMill',
-    subtitle: '本地查询引擎 · V1.1.0',
+    subtitle: '本地查询引擎 · V1.2.0',
     nav: {
       query: '查询',
       datasource: '数据源',

@@ -48,6 +48,9 @@ It does this by loading data into an in-memory **columnar store** and executing 
 - **Paginated results**: 50 rows per page by default, so large result sets don't flood the browser
 - **Charts**: render query results directly as line/bar/pie charts, with aggregation computed server-side
 - **CSV export**: includes a UTF-8 BOM so Chinese column names open correctly in Excel; the exported range matches the UI, and `limit` / `offset` apply as well
+- **Excel (`.xlsx`) export**: numbers are written as real numbers rather than text, so Excel can sum and sort them; written directly rather than through a heavyweight library, keeping the download small
+- **PDF export**: paginated A4 with the header row repeated on each page, and a **CJK font embedded in the app** so exported reports render correctly on machines with no Chinese fonts installed — reordering rows, collapsing groups and printing to hand out all work
+- **Chart export to PDF**: line/bar/pie charts export with the same colours, Y-axis range and optional data table as the on-screen chart; a **PDF layout preview** lets you check pagination before downloading
 - **Persistent data sources**: registered data sources are written to `datasources.json` and restored automatically on the next launch
 - **Optional password storage**: when enabled, passwords go into the **system credential manager** (Windows Credential Manager / macOS Keychain / Linux Secret Service), never into a config file
 - **Chinese-friendly**: automatic CSV encoding detection (UTF-8 / GBK), BOM stripping, and support for Chinese paths and file names
@@ -103,14 +106,14 @@ The application is **portable**: unzip it and run — no need to install Java fi
 
 ### Windows
 
-1. Unzip `LynMill-1.1.0-win.zip`
+1. Unzip `LynMill-1.2.0-win.zip`
 2. Double-click `LynMill.exe` inside
 
 > Don't drag `LynMill.exe` out on its own — it needs the `app\` and `runtime\` directories alongside it to start.
 
 ### macOS
 
-1. Open `LynMill-1.1.0.dmg` and drag LynMill into Applications
+1. Open `LynMill-1.2.0.dmg` and drag LynMill into Applications
 2. For the first launch, see the workaround in the next section
 
 > The current build is for **Apple Silicon (M1–M4)**. On an Intel Mac, build from source or run the jar directly (see [Build from Source](#build-from-source)).
@@ -120,15 +123,15 @@ The application is **portable**: unzip it and run — no need to install Java fi
 **Option 1: Archive (recommended, works on all distributions)**
 
 ```bash
-tar -xzf LynMill-1.1.0-linux-x86_64.tar.gz
+tar -xzf LynMill-1.2.0-linux-x86_64.tar.gz
 ./LynMill/bin/LynMill
 ```
 
 **Option 2: Installer package**
 
 ```bash
-sudo dpkg -i lynmill_1.1.0-1_amd64.deb     # Debian / Ubuntu
-sudo rpm -i lynmill-1.1.0-1.x86_64.rpm     # Fedora / RHEL
+sudo dpkg -i lynmill_1.2.0-1_amd64.deb     # Debian / Ubuntu
+sudo rpm -i lynmill-1.2.0-1.x86_64.rpm     # Fedora / RHEL
 ```
 
 After installation, launch it from the application menu.
@@ -211,19 +214,22 @@ This is a **lightweight query engine**, not a full SQL database. It supports a c
 | Pagination | `limit n`, `limit n offset m`, `offset m` (the server also has separate page / pageSize pagination) |
 | Aggregation | `count(*)`, `count(column)`, `sum`, `avg`, `min`, `max` |
 | Delimited identifiers | Table or column names wrapped in `` ` `` / `"` / `[]`; the quotes are stripped. Use when a name contains spaces or keywords |
+| Column aliases | `select a as alias`, `select sum(x) as total`. The alias changes only the result header; `where` / `order by` still use the **original column name** |
+| `in (...)` / `not in (...)` | Expanded automatically: `c in ('a','b')` means `c = 'a' or c = 'b'`; `not in` uses `and` + `!=` |
+| `between a and b` | Expanded automatically: `n between 1 and 10` means `n >= 1 and n <= 10`; `not between` is the reverse |
 
 ### Not Supported (reports an error)
 
 | Syntax | Notes |
 |---|---|
-| `select a as alias` | **Not implemented.** The alias is treated as a column name one character long, producing `Unknown column: a as 别名`. Result column names are the original column names |
+| `select a alias` (omitting `as`) | Two bare identifiers cannot be told apart from a column name containing a space; write `as` in full. Expressions may omit it: `select amount * 2 double` works |
 | `group by` | **Deliberately omitted.** Aggregation is currently whole-table, not grouped. Use the chart feature to see distributions |
-| `in (...)` / `between` / `is null` | **Deliberately omitted.** Use `c = 'a' or c = 'b'` and `n >= 1 and n <= 10` instead |
-| `like` | Same as above, not implemented |
+| `is null` | **Deliberately omitted.** Null semantics are not syntactic sugar and cannot be expanded |
+| `like` | **Deliberately omitted.** Pattern matching is likewise not syntactic sugar |
 | `limit m, n` | Argument order is reversed from the standard and easy to misread; use `limit n offset m` instead |
 | `select distinct` | Not supported |
 | `join` / subqueries / `union` | Not supported |
-| Nested quotes inside a quote | `` `a"b` ``, `"a"b"`, `[a]b]` all fail. When a same-type or other-type quote appears inside a delimiter, the split is incorrect |
+| Improperly escaped quotes inside a quote | `` `a"b` `` **is** supported, but `` `a`b` ``, `"a"b"`, `[a]b]` written **without** the escape rule report an error. The correct form doubles the same-type quote: `` `a``b` ``, `"a""b"`, `[a]]b]` |
 
 > This table has previously contained two kinds of errors, where the docs claimed something the implementation didn't do (or vice versa):
 > `in` / `between` / `is null` were wrongly listed as "supported", `select a as alias` was likewise wrongly listed as "supported",
@@ -245,9 +251,18 @@ select * from sample join other on sample.id = other.id
 
 It treats everything after `from` as the table name. **If you get "data source not found" but the name looks correct, first check whether you used syntax the table above lists as unsupported.**
 
-(The root cause is that the parser splits on spaces to find `from` and performs no validity check on clause boundaries. This is a known issue, not yet fixed — see section 2.2 of [NOTES.md](NOTES.md).)
+(The root cause is that the parser has no notion of `join` / `union` / subqueries / `group by`, so it keeps reading to the end of the statement as the table name. This is a known issue, not yet fixed — see section 2.2 of [NOTES.md](NOTES.md).)
 
-> `limit m, n` and mixing plain columns with aggregates now have dedicated error messages that clearly say "not supported" rather than "data source not found"; **`group by` and everything else are still affected.**
+> Since 1.2.0 the parser no longer splits on spaces, so the *original* cause of this
+> class of message is gone — but the message still appears for the unsupported
+> constructs above, because there is genuinely no clause to stop at.
+>
+> Also note `select distinct a` reports **"column not found: distinct a"** rather than
+> "not supported" — misleading in the same way. Write `group by` / `distinct` / `join`
+> out of your query rather than trying to work around the message.
+>
+> `limit m, n`, `is null`, `like`, and mixing plain columns with aggregates **do** have
+> dedicated messages that say what is wrong instead of blaming the data source.
 
 ---
 
@@ -313,7 +328,7 @@ npm run build
 
 # 2. Backend + tests
 cd ..
-mvn clean package          # produces target/tinyquery-1.1.0.jar and runs the full test suite
+mvn clean package          # produces target/tinyquery-1.2.0.jar and runs the full test suite
 
 # 3. Package the portable app
 bash    packaging/package-linux.sh     # Linux: tar.gz (add --deb / --rpm for installer packages)
@@ -326,7 +341,7 @@ The header comment of every script under `packaging/` explains **why it works th
 ### Running the Jar Directly (no packaging)
 
 ```bash
-java -jar target/tinyquery-1.1.0.jar
+java -jar target/tinyquery-1.2.0.jar
 ```
 
 This path works on **any machine with JDK 17**, including platforms with no ready-made installer (Intel Mac, for example). In this mode it runs as a "development mode" build: it **does not open the browser automatically**, so you need to visit the address from the log manually.

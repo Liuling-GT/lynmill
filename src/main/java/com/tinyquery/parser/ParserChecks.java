@@ -60,6 +60,31 @@ public final class ParserChecks {
         return new IllegalArgumentException(Messages.get("parse.unterminatedQuote"));
     }
 
+    /**
+     * 定界标识符未闭合（{@code `x} / {@code "x} / {@code [x}）。
+     *
+     * <p>与单引号同样的道理，只是<b>报错要指明是哪种定界符</b>：
+     * 原来一律报「单引号未闭合」，用户写的是 {@@code `} 却被告知单引号有问题，
+     * 会往完全错误的方向排查。</p>
+     *
+     * @param quote 未闭合的定界符字符
+     */
+    public static IllegalArgumentException unterminatedDelimiter(char quote) {
+        return new IllegalArgumentException(
+                Messages.get("parse.unterminatedDelimiter", String.valueOf(quote)));
+    }
+
+    /**
+     * 定界标识符内容为空（{@code ``} / {@code ""} / {@code []}）。
+     *
+     * <p>不产出空 IDENTIFIER：空名字没有任何合法含义，
+     * 放过去只会让下游在离病根很远的地方报一个看不懂的错。</p>
+     */
+    public static IllegalArgumentException emptyIdentifier(char quote) {
+        return new IllegalArgumentException(
+                Messages.get("parse.emptyIdentifier", String.valueOf(quote)));
+    }
+
     // ==================== 语法层（将来留在 Parser） ====================
 
     /** 整条语句里没有 select */
@@ -92,6 +117,37 @@ public final class ParserChecks {
         return new IllegalArgumentException(
                 Messages.get("parse.unsupportedOperator", expr)
                         + Messages.get("parse.supportedOperators"));
+    }
+
+    // ---------- L2：in / between 的写法错误 ----------
+    // 这两个运算符本身已经支持（解析期展开成 = / or / and），
+    // 下面报的是「写法没写对」，不是「不支持」。文案要能让用户看出差在哪。
+
+    /** {@code between} 缺少中间的 {@code and} */
+    public static IllegalArgumentException betweenNeedsAnd(String expr) {
+        return new IllegalArgumentException(Messages.get("parse.betweenNeedsAnd", expr));
+    }
+
+    /** {@code in} 后面没有括号，或括号没配平 */
+    public static IllegalArgumentException inNeedsParens(String expr) {
+        return new IllegalArgumentException(Messages.get("parse.inNeedsParens", expr));
+    }
+
+    /** {@code in ()} 空列表 —— 没有合法语义，不展开成「永假」 */
+    public static IllegalArgumentException inEmptyList(String expr) {
+        return new IllegalArgumentException(Messages.get("parse.inEmptyList", expr));
+    }
+
+    // ---------- D1：列别名 ----------
+
+    /** {@code as} 两侧缺东西：{@code as 城市} 或 {@code city as} */
+    public static IllegalArgumentException aliasIncomplete(String expr) {
+        return new IllegalArgumentException(Messages.get("parse.aliasIncomplete", expr));
+    }
+
+    /** 别名含空格：{@code city as 城 市} —— 多半是忘了加引号 */
+    public static IllegalArgumentException aliasHasSpace(String alias) {
+        return new IllegalArgumentException(Messages.get("parse.aliasHasSpace", alias));
     }
 
     /** 运算符左侧没有列名，如 {@code where = 1} */

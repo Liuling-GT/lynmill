@@ -1,5 +1,7 @@
 package com.tinyquery.export;
 
+import com.tinyquery.i18n.Messages;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -78,7 +80,7 @@ public class XlsxWriter implements Closeable {
     /** 写表头行。加粗并冻结 —— 数据一多，滚动后看不见列名是最常见的抱怨。 */
     public void writeHeader(String[] names) throws IOException {
         if (headerWritten) {
-            throw new IllegalStateException("表头只能写一次");
+            throw new IllegalStateException(Messages.get("error.exportHeaderTwice"));
         }
         headerWritten = true;
 
@@ -104,7 +106,7 @@ public class XlsxWriter implements Closeable {
      */
     public void writeRow(Object[] values) throws IOException {
         if (!headerWritten) {
-            throw new IllegalStateException("必须先写表头");
+            throw new IllegalStateException(Messages.get("error.exportNeedHeader"));
         }
         rowCount++;
         int rowNum = rowCount;

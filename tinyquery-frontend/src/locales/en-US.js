@@ -25,7 +25,7 @@ export default {
   // ==================== App shell ====================
   app: {
     title: 'LynMill',
-    subtitle: 'Local Query Engine · V1.1.0',
+    subtitle: 'Local Query Engine · V1.2.0',
     nav: {
       query: 'Query',
       datasource: 'Data Source',

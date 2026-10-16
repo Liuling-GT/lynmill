@@ -2,6 +2,21 @@
 # 格式：<期望输出>\t<原SQL>
 # 用途：解析器分层重构期间钉住行为，见 ParserEquivalenceTest
 #
+# 变更记录（重录基线后需手工补回，RecordBaseline 只写前四行表头）
+#   1-1（9963271）：首次录制，114 条。
+#   1-2（e1ae9fa）：14 条 —— D2/D4/L3 修复目标 10 条、报错文案 3 条、
+#                   select a, from t 改为报错 1 条。
+#   本轮 L2：2 条 —— in (1,2) 与 between 1 and 10 由「不支持的运算符」
+#                   改为展开成 OrCondition / AndCondition。
+#   本轮 D1：1 条 —— select 'from' as x from t
+#                   旧 cols='from' as x（as 整段被当列名，别名不可用的根因）
+#                   新 cols='from'（别名 x 拆走；基线只记 selectColumns）
+#   本轮执行层 unquote 修复（定界标识符不再被当字符串常量剥引号）：
+#                   0 条 —— 那是执行层的事，解析器基线不该动。
+#                   实测确认 0 变化，正说明修复的作用面是收敛的。
+#   F1/F2（定界符内引号转义）与 F3（关键字做列名）不改基线 ——
+#   114 条里没有覆盖这两类，它们的验证在 DocumentedLimitationsTest 与 584 条对拍。
+#
 OK|table=huge|cols=*|where=null|sort=-|limit=-|offset=-	select * from huge
 OK|table=huge|cols=name|where=null|sort=-|limit=-|offset=-	select name from huge
 OK|table=huge|cols=name,salary|where=null|sort=-|limit=-|offset=-	select name , salary from huge
@@ -70,7 +85,7 @@ OK|table=t|cols=Count(*)|where=null|sort=-|limit=-|offset=-	select Count(*) from
 OK|table=t|cols=sum(a),avg(b),min(c),max(d)|where=null|sort=-|limit=-|offset=-	select sum(a), avg(b), min(c), max(d) from t
 OK|table=t|cols=count(*)|where=SimpleCondition[field=a, op==, value=1]|sort=-|limit=-|offset=-	select count(*) from t where a = 1
 OK|table=t|cols=sum(salary)|where=null|sort=-|limit=-|offset=-	select sum(salary) from t
-OK|table=t|cols='from' as x|where=null|sort=-|limit=-|offset=-	select 'from' as x from t
+OK|table=t|cols='from'|where=null|sort=-|limit=-|offset=-	select 'from' as x from t
 OK|table=t|cols=city_from|where=null|sort=-|limit=-|offset=-	select city_from from t
 OK|table=t_from_x|cols=city_as from_x|where=null|sort=-|limit=-|offset=-	select city_as from_x from t_from_x
 OK|table=t_from_x|cols=*|where=null|sort=-|limit=-|offset=-	select * from t_from_x
@@ -95,8 +110,8 @@ IllegalArgumentException|WHERE 子句中不支持的运算符：a。支持的运
 IllegalArgumentException|运算符后面缺少值：a =	select * from t where a =
 IllegalArgumentException|运算符前面缺少列名：= 1	select * from t where = 1
 IllegalArgumentException|单引号未闭合，检查 SQL 中的引号是否成对	select * from t where a = 'x
-IllegalArgumentException|WHERE 子句中不支持的运算符：a in (1,2)。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a in (1,2)
-IllegalArgumentException|WHERE 子句中不支持的运算符：a between 1。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a between 1 and 10
+OK|table=t|cols=*|where=OrCondition[left=SimpleCondition[field=a, op==, value=1], right=SimpleCondition[field=a, op==, value=2]]|sort=-|limit=-|offset=-	select * from t where a in (1,2)
+OK|table=t|cols=*|where=AndCondition[left=SimpleCondition[field=a, op=>=, value=1], right=SimpleCondition[field=a, op=<=, value=10]]|sort=-|limit=-|offset=-	select * from t where a between 1 and 10
 IllegalArgumentException|WHERE 子句中不支持的运算符：a is null。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a is null
 IllegalArgumentException|WHERE 子句中不支持的运算符：a like 'x%'。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a like 'x%'
 IllegalArgumentException|LIMIT/OFFSET 写法不受支持。只支持三种："limit n"、"limit n offset m"、"offset m"	select * from t limit 2, 3

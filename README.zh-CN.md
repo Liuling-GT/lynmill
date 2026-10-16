@@ -48,6 +48,9 @@
 - **结果分页**：默认每页 50 行，大结果集不会一次塞满浏览器
 - **图表**：查询结果可以直接画成折线/柱状/饼图，聚合在服务端算
 - **导出 CSV**：带 UTF-8 BOM，Excel 打开中文列名不乱码；导出范围与界面一致，`limit` / `offset` 同样生效
+- **导出 Excel（`.xlsx`）**：数字按数值写而不是文本，Excel 里能直接求和、排序；自行生成而非依赖重型库，安装包不会因此变大
+- **导出 PDF**：A4 自动分页、每页重复表头，**中文字体内嵌在程序里**，换一台没装中文字体的电脑打开也不缺字 —— 排序、折叠分组、打印发下去都能直接用
+- **图表导出 PDF**：折线/柱状/饼图的配色、Y 轴范围与图下数据表都和界面一致；可先用**布局预览**确认分页再下载
 - **数据源持久化**：注册过的数据源写在 `datasources.json` 里，重开程序自动恢复
 - **密码可选保存**：勾选后存进**系统凭据管理器**（Windows 凭据管理器 / macOS 钥匙串 / Linux Secret Service），不写进配置文件
 - **中文友好**：CSV 自动探测编码（UTF-8 / GBK）、剥离 BOM、支持中文路径与中文文件名
@@ -103,14 +106,14 @@ LynMill **不支持 PDF**。早期版本做过"只读带框线表格"的一版�
 
 ### Windows
 
-1. 解压 `LynMill-1.1.0-win.zip`
+1. 解压 `LynMill-1.2.0-win.zip`
 2. 双击里面的 `LynMill.exe`
 
 > 不要只把 `LynMill.exe` 单独拖出来 —— 它要靠同目录下的 `app\` 和 `runtime\` 才能启动。
 
 ### macOS
 
-1. 打开 `LynMill-1.1.0.dmg`，把 LynMill 拖进「应用程序」
+1. 打开 `LynMill-1.2.0.dmg`，把 LynMill 拖进「应用程序」
 2. 首次打开见下一节的放行方法
 
 > 当前提供的是 **Apple Silicon（M1~M4）** 版本。Intel Mac 请从源码构建，或用 jar 直接运行（见[从源码构建](#从源码构建)）。
@@ -120,15 +123,15 @@ LynMill **不支持 PDF**。早期版本做过"只读带框线表格"的一版�
 **方式一：压缩包（推荐，所有发行版通用）**
 
 ```bash
-tar -xzf LynMill-1.1.0-linux-x86_64.tar.gz
+tar -xzf LynMill-1.2.0-linux-x86_64.tar.gz
 ./LynMill/bin/LynMill
 ```
 
 **方式二：安装包**
 
 ```bash
-sudo dpkg -i lynmill_1.1.0-1_amd64.deb     # Debian / Ubuntu 系
-sudo rpm -i lynmill-1.1.0-1.x86_64.rpm     # Fedora / RHEL 系
+sudo dpkg -i lynmill_1.2.0-1_amd64.deb     # Debian / Ubuntu 系
+sudo rpm -i lynmill-1.2.0-1.x86_64.rpm     # Fedora / RHEL 系
 ```
 
 装完可以从应用菜单启动。
@@ -211,19 +214,22 @@ select city, count(*) from sample where age > 20   -- 注意：无 GROUP BY，�
 | 分页 | `limit n`、`limit n offset m`、`offset m`（服务端另有 page / pageSize 分页） |
 | 聚合 | `count(*)`、`count(列)`、`sum`、`avg`、`min`、`max` |
 | 定界标识符 | 表名或列名加 `` ` `` / `"` / `[]`，引号会被剥掉；名字含空格或关键字时用它 |
+| 列别名 | `select a as 别名`、`select sum(x) as 总额`。别名只改结果表头，`where` / `order by` 里仍要用**原列名** |
+| `in (...)` / `not in (...)` | 自动展开：`c in ('a','b')` 等价于 `c = 'a' or c = 'b'`；`not in` 用 `and` + `!=` |
+| `between a and b` | 自动展开：`n between 1 and 10` 等价于 `n >= 1 and n <= 10`；`not between` 反向 |
 
 ### 不支持（会报错）
 
 | 语法 | 说明 |
 |---|---|
-| `select a as 别名` | **未实现**。别名会被当成长度为一个的列名，报 `Unknown column: a as 别名`。结果列名就是原列名 |
+| `select a 别名`（省略 `as`） | 两个裸标识符无法与「含空格的列名」区分，请写全 `as`。表达式可省：`select amount * 2 双倍` 可以 |
 | `group by` | **有意不做**。当前聚合是整体聚合，不做分组。要看分布请用图表功能 |
-| `in (...)` / `between` / `is null` | **有意不做**。改用 `c = 'a' or c = 'b'`、`n >= 1 and n <= 10` |
-| `like` | 同上，未实现 |
+| `is null` | **有意不做**。空值语义不是「写法糖」，展开不出来 |
+| `like` | **有意不做**。模式匹配同理，不是写法糖 |
 | `limit m, n` | 参数顺序与标准相反、容易误读；请改用 `limit n offset m` |
 | `select distinct` | 不支持 |
 | `join` / 子查询 / `union` | 不支持 |
-| 引号里再套引号 | `` `a"b` ``、`"a"b"`、`[a]b]` 都不行。定界符内出现同类或其他引号时切分不正确 |
+| 引号里再套引号 | `` `a"b` `` 已支持，但 `` `a`b` ``、`"a"b"`、`[a]b]` 这类**未按转义规则书写**的写法会报错。规范写法是同类引号写两遍：`` `a``b` ``、`"a""b"`、`[a]]b]` |
 
 > 上表曾经出过两类错误，都是文档写了而实现没有（或反之）：
 > `in` / `between` / `is null` 被误写成"支持"，`select a as 别名` 同样被误写成"支持"，
@@ -245,9 +251,17 @@ select * from sample join other on sample.id = other.id
 
 它把 `from` 之后的整段都当成了表名。**遇到「数据源不存在」但名字看着没问题时，先检查是不是用了上面表格里不支持的语法。**
 
-（根因是解析器按空格切分找 `from`，对子句边界没有做合法性检查。这是已知问题，尚未修复 —— 详见 [NOTES.zh-CN.md](NOTES.zh-CN.md) 的 2.2。）
+（根因是解析器根本不认识 `join` / `union` / 子查询 / `group by`，于是把整段都当成表名读下去。这是已知问题，尚未修复 —— 详见 [NOTES.zh-CN.md](NOTES.zh-CN.md) 的 2.2。）
 
-> `limit m, n`、普通列混聚合这两类现在有专门的报错文案，能说清"不支持"而不是"数据源不存在"；**`group by` 与其余条目仍受此影响。**
+> 1.2.0 起解析器不再「按空格切分」，所以这类报错**最初的那个成因已经消失**；
+> 但上面这些不支持的写法仍会报「数据源不存在」—— 因为确实没有子句可以停。
+>
+> 另外 `select distinct a` 报的是**「列不存在：distinct a」**，而不是"不支持"，
+> 属于同一类误导。看到这类文案时，先把 `group by` / `distinct` / `join` 从
+> SQL 里去掉，不要围着报错文案找原因。
+>
+> `limit m, n`、`is null`、`like`、普通列混聚合这四类**有专门文案**，
+> 能说清哪里写错了，不会甩锅给数据源。
 
 ---
 
@@ -313,7 +327,7 @@ npm run build
 
 # 2. 后端 + 测试
 cd ..
-mvn clean package          # 产出 target/tinyquery-1.1.0.jar，并跑全部测试
+mvn clean package          # 产出 target/tinyquery-1.2.0.jar，并跑全部测试
 
 # 3. 打成免安装程序
 bash    packaging/package-linux.sh     # Linux：tar.gz（加 --deb / --rpm 出安装包）
@@ -326,7 +340,7 @@ bash    packaging/make-icns.sh         # macOS：先由 PNG 生成 icns
 ### 直接跑 jar（不打包）
 
 ```bash
-java -jar target/tinyquery-1.1.0.jar
+java -jar target/tinyquery-1.2.0.jar
 ```
 
 这条路径在**任何装了 JDK 17 的机器**上都能用，包括没有现成安装包的平台（例如 Intel Mac）。此时它按"开发模式"运行，**不会自动打开浏览器**，需手动访问日志里的地址。
