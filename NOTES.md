@@ -15,40 +15,6 @@ The README is for users and talks about "what it can do"; this one is for mainta
 
 ---
 
-## At a Glance: What 1-2 Fixed and Added
-
-> **This is an index, not the content — the detail lives in the entries below.**
-> It is here because "already fixed" entries stay at their original positions (so people
-> upgrading from an older version can find them under the old heading), but **what got
-> fixed** is the first thing a reader should see, and it should not be buried in a long
-> document.
-
-### Defects fixed in 1-2
-
-| No. | Entry | In one line |
-|---|---|---|
-| **2.1** | Column aliases (`as`) | `select city as c` used to be taken whole as one column name, reporting "column not found" |
-| **2.2** | Column or alias containing `from` | Used to split on the first `" from "` **by character position**, slicing the table name into garbage |
-| **2.6** | Quotes nested inside a delimiter | Used to stop at the next same-type quote, cutting names like `a"b` short |
-| **2.7** | Delimited identifier unquoted as a string | **No error, wrong column**: column `'''` read as `'` |
-| **2.8** | Error messages mixing Chinese and English | Chinese UI showed English errors; 6 gaps in the execution layer |
-
-### Capabilities added in 1-2
-
-| No. | Entry | In one line |
-|---|---|---|
-| **1.2** | `in` / `between` | Rewritten at parse time into existing comparison combinations; zero execution-layer changes |
-| **1.3** | Delimited identifiers | Inner-quote handling completed; escape rules match real SQLite (measured) |
-
-> **Two things are not entries in this file**:
-> - The parser was split into three layers (lexical / syntactic / semantic) with a
->   114-statement behaviour baseline guarding it — a structural change; see the README
->   and CHANGELOG
-> - Export grew beyond CSV to Excel and PDF (1.1.0 had CSV only) — a new feature; see
->   the README and CHANGELOG
-
----
-
 ## 1. Known Limitations (Intentional)
 
 ### 1.1 `GROUP BY` is not supported
@@ -113,8 +79,9 @@ an Excel column is named 销售, never `` `销售` ``. Stripping the delimiter i
 **Three delimiter styles supported**: backtick (MySQL), double quote (standard SQL), square bracket (SQL Server).
 The content inside is taken literally; the escape rule is "write a same-type quote twice".
 
-**Still unsupported**: **nesting a same-type or other-type quote inside a delimiter** (e.g. `` `a"b` `` meaning the column `a"b`).
-This is an independent problem newly exposed after 1-2, see 2.6.
+**Quotes inside a delimiter are supported too**: `` `a"b` `` means the column `a"b`, and
+`` `a``b` `` means `` a`b ``. Which forms are legal and which are not is in **3.5**,
+with a table measured against real SQLite.
 
 > ⚠️ **Troubleshooting hint**: before 1-2 this class of problems shared the trait "**the parser lets it through, the error is deferred**."
 > The lexer now strips delimiters, so if you still get "data source not found", the name itself is wrong — not the quote handling.
@@ -345,74 +312,11 @@ python packaging/check-ps1-encoding.py
 It scans every `.ps1` under `packaging/` and reports an error, with the fix, for any file that is "UTF-8 without BOM and contains non-ASCII".
 **Run it after touching a `.ps1`** — including after editing with automated tools, since those can eat the BOM too.
 
+---
+
 ## 2. Known Defects (Should Work But Currently Does Not)
 
-
-### 2.1 Column aliases (`as`) (implemented in 1-2)
-
-```sql
-select city as c from sales      -- ✅ now: header c, values city
-select 城市 as 城市名 from t       -- ✅ now: header 城市名
-select sum(x) as total from t    -- ✅ now: header total
-select sum(x) total from t       -- ✅ expressions may omit `as`
-select amount * 2 double from t  -- ✅ expressions may omit `as`
-select city c from sales         -- ❌ still an error, see below
-```
-
-**Old behavior (before 1-2)**: the parser treated the whole of `city as c` as
-**a single column name**. `selectColumns` held the string `"city as c"`, and the
-execution layer went looking for that name in the table and naturally did not find it,
-reporting `Unknown column:city as c`.
-
-**How it is fixed**: the alias is parsed into a **separate `aliases` array** rather than
-being folded into `selectColumns`. That separation is deliberate — `isAggregateExpr`
-prefix matching, `looksLikeColumnRef` and the `QueryEngine` column lookup all keep
-working unmodified, because `selectColumns` still holds only the real expression text.
-`QueryStatement.headerAt(i)` returns the alias when present.
-
-`Parsed` and `SelectList` both carry `aliases`, and `SemanticAnalyzer` threads them through.
-
-**Why a bare column may not omit `as`**: `select city c` is syntactically identical to
-"a column whose name is `city c`" — a spaced column name — and such column names really
-do exist (the corpus has one). Splitting it would silently change the meaning of an
-existing valid query. Expressions are unambiguous (`sum(x) total` cannot be a single
-column name), so they may omit it.
-
-**Things that were watched while fixing it**: the 114-statement behaviour baseline
-caught a real regression during this work — `select city_as from_x from t_from_x`
-started splitting into a column `city_as` plus an alias `from_x`, which would have
-broken the very case that 1.2 fixed. The baseline is what caught it.
-
-### 2.2 Column names or aliases containing `from` fail to parse (fixed in 1-2)
-
-> **This entry is fixed; the heading is kept so people upgrading from an older version can find it.** The fix is recorded below.
-
-```sql
-select 'from' as x from t           -- ✅ now: table t
-select city_as from_x from t_from_x -- ✅ now: table t_from_x, column city_as from_x (intact)
-```
-
-**Old behavior (before 1-2)**: when `SQLParser` located the `from` keyword it **split on the first `" from "`**,
-without distinguishing `from` inside quotes or inside an identifier. The parser itself did not error; it quietly sliced out a garbage table name:
-
-| What you wrote | Old parsed table name | Now |
-|---|---|---|
-| `select 'from' as x from t` | `' as x from t` | `t` |
-| `select city_as from_x from t_from_x` | `_x from t_from_x` | `t_from_x` |
-| `select * from t_from_x` | `t_from_x` (normal) | `t_from_x` |
-
-**Root cause (confirmed by measurement)**: the defect is not "containing `from` breaks it", it is
-"**splitting on the first ` from ` character position**" — so only the part appearing **before** ` from ` gets cut in half.
-
-**How 1-2 fixed it**: not by patching the old `indexOf`, but by splitting the parser into three layers.
-The lexical layer (`lex.Tokenizer`) emits tokens carrying their word class, and `from` **acts as a clause boundary only when it is a
-`TokenType.KEYWORD`**. `city_from` is a single complete `IDENTIFIER` token; the `from` inside it never enters the decision at all —
-the old approach simply has no place to live in the new structure.
-
-**Why a keyword whitelist could not have fixed it**: `from_table` in `select * from from_table` is a legitimate table name.
-The criterion has to be "word boundary + positional state", never "which words appeared".
-
-### 2.4 Error messages for unsupported syntax are misleading
+### 2.1 Error messages for unsupported syntax are misleading
 
 **Symptom**: when you write unsupported syntax, the error message may say "**Data source not found**", when the data source is in fact fine.
 
@@ -422,157 +326,27 @@ select * from t join t2 on t.姓名 = t2.姓名
 
 The parsed table name is `t join t2 on t.姓名 = t2.姓名` — **the whole thing was taken as the table name**. No such data source is found, so it reports "Data source not found".
 
-**Root cause**: unknown clauses after `from` are swallowed whole, with no validity check on the clause boundary.
-**Note this is not the same thing as 2.2**: 2.2 was "the split happened at the wrong place", 2.4 is "unsupported syntax was never recognized".
-1-2 fixed 2.2, but 2.4 **still stands** — `join` / `union` / `distinct` are still swallowed into the table name.
+**Root cause**: unknown clauses after `from` are swallowed whole, with no validity check on the clause boundary — the parser **does not implement** `join` / `union` / subqueries / `group by` at all, so there is genuinely nowhere to stop.
+
+> **Do not confuse this with "the split happened at the wrong place".** There used to be a
+> second cause: the old parser split on the first `" from "` **by character position**, so
+> a column or alias merely *containing* `from` produced a garbage table name. That cause
+> disappeared in 1-2 with the parser rewrite (`select 'from' as x from t` parses now).
+> **What remains is a different cause, unrelated to that one.**
 
 **Troubleshooting hint**: **when you hit "Data source not found" but the name looks fine, first check whether you used unsupported syntax** (`join`, `distinct`, subqueries, `union`, etc.). The way to tell is whether the "table name" in the error is a long string — a normal table name does not contain spaces or `on`.
 
-**What has already improved**: `limit m, n` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.)
+**Which unsupported syntax gives which message**:
 
-### 2.6 Quotes nested inside a delimiter (fixed in 1-2)
-
-Once 1.3 made delimited identifiers work, an **independent** problem surfaced:
-when **a quote appears inside a delimiter**, the lexical layer splits it wrong.
-
-**Old root cause**: after reading an opening delimiter, `Tokenizer` stopped at
-**the next same-type character**, without implementing the SQL-standard escape
-"write a same-type quote twice to mean one" (single-quoted strings **already**
-implemented this; delimiters did not).
-
-**Fix**: all three delimiter kinds now go through `readDelimited`, which implements
-same-type doubling, and `Token` gained a `delimited` flag (downstream needs to tell
-"a name the user explicitly delimited" from a bare word). Brackets go through
-`tryReadBracketIdentifier` separately, implementing SQL Server's `]]` → `]`.
-
-**Which forms are legal — measured, not asserted**
-
-This cannot be settled by opinion, because "the quoting form itself is illegal" and
-"the parser has a bug" both show up as an error. The table below is the result of
-running each form against **real SQLite 3** (which supports backtick and double-quote
-identifiers):
-
-| Form | Real SQLite | tinyquery | Verdict |
-|---|---|---|---|
-| `` `a"b` `` | column `a"b` | column `a"b` | ✅ match |
-| `` `a'b` `` | column `a'b` | column `a'b` | ✅ match |
-| `` `a``b` `` | column ``a`b`` | column ``a`b`` | ✅ match |
-| ```` ```a``` ```` | column `` `a` `` | column `` `a` `` | ✅ match |
-| ```` ``a`` ```` | syntax error | error | ✅ match |
-| `` `a`b` `` | unrecognized token | error | ✅ match |
-| `` [a`b] `` | column ``a`b`` | column ``a`b`` | ✅ match |
-| `[a``b]` | error (`no such column: a``b`) | error | ✅ match |
-
-**Conclusion**: quote characters of a **different** kind may be nested freely (a
-backtick may contain single or double quotes). A same-type quote written **bare** is
-illegal and must be doubled. Brackets use the SQL Server `]]` rule.
-
-**One trap worth remembering**: `` [a`b] `` works but `[a``b]` does not — brackets do
-**not** treat backticks as special, so `[a``b]` asks for a column literally named
-`` a``b `` (two backticks), which does not exist. SQLite behaves identically, so this
-is correct behaviour rather than a defect — users hitting it usually expect the
-backtick escaping rule to apply inside brackets, and it does not.
-
-**Blast radius**: 25 of the 584 differential-test statements are of this kind, all on
-the deliberately constructed `对拍引号列名表`. Real-world cases (a column named 销售 or
-2024年销量) are unaffected.
-
-**Corpus errors found in the same sweep (not product defects)**
-
-`gen_test_data.py` used to write headers with `csv.writer`'s default `QUOTE_MINIMAL`,
-which **re-escapes quote characters that are genuinely part of the column name**: the
-intent was a column named `a"b`, but what landed on disk was `"a""b"`. The backend read
-`"a""b"`, which did not match the `a"b` written in the corpus, so a whole batch of
-cases **failed spuriously**. Both column-name tables are now written literally
-(`raw=True`); the other tables still use standard CSV escaping (their data really does
-contain commas and newlines).
-
-One more: the generator wrote `a'''b` and `` a`b `` **twice each**, producing duplicate
-column names in one table. `ColumnStore` stores columns in a `LinkedHashMap`, so
-duplicates merge — a 35-column CSV surfaced as 33 columns, showing up as "`select *`
-is missing two columns". The generator now de-duplicates and self-checks that column
-names are unique.
-
-> **For whoever troubleshoots this**: the shared pattern in this class of problems is "**the parser lets it through and the error is deferred to the execution layer**."
-> Assuming the answer is in the parser — "why didn't it stop this?" — wastes time. First confirm what table name was actually parsed.
-
-### 2.7 A delimited identifier's name was unquoted as if it were a string constant (fixed in 1-2)
-
-**Symptom**: the query **does not error**, but reads **a different column**.
-
-```sql
-select `'''` from 对拍引号列名表   -- the table really has a column ''' ; reads column '
-select `'a'` from 对拍引号列名表   -- the table really has a column 'a' ; reads column a
-```
-
-**Root cause**: the execution layer has an `unquote` that treats text **beginning and
-ending with a single quote** as a string literal and strips the quotes. That rule is
-**right** for `select '总计'` (the header should read `总计`, not `'总计'`) but **wrong**
-for a delimited identifier — a delimited identifier's name is already settled at the
-lexical layer, and the name itself may legitimately contain single quotes.
-
-**Why it was hard to find**: it does not error. The query succeeds, the row count is
-right, only the column and the values are wrong. The differential run originally
-compared only "expected ok / actual ok", so this class of error **passed all the way
-through**.
-
-**Fix**: `QueryStatement` gained `delimitedColumnAt(i)`, which explicitly exposes "this
-column is a delimited identifier, and here is its original name"; the execution layer
-uses that to distinguish "a string constant, run it through `unquote`" from "a delimited
-identifier, keep it verbatim". `selectColumns` itself is unchanged and stays clean.
-
-**Where the expected value comes from**: measured against real SQLite —
-`select `'''`` reads the column `'''` there. This product now matches.
-
-**Regression test**: `DocumentedLimitationsTest.delimitedIdentifierKeepsItsOwnQuotes`.
-
-> **For whoever troubleshoots this**: the shared pattern in this class of problems is "**it does not error, but it reads the wrong thing**".
-> A test that only compares "success/failure" cannot catch it — you must check **the returned column names**.
-> And when checking column names, do not hand-roll "strip the delimiter + decode the escape" rules (see the lesson below).
-
-### 2.8 Error messages mixing Chinese and English (fixed in 1-2)
-
-**Symptom**: the UI language is Chinese, but the error is English:
-
-```
-Error: Unknown column:a``b
-```
-
-**Root cause**: that message was **hardcoded** in `ColumnStore`. This repository had
-already done a pass to move error copy into `Messages`, but that pass cleaned the
-**parser** layer (`SQLParser` / `QueryStatement`); `ColumnStore` is the **execution**
-layer, was not on that list, and was missed.
-
-**Why it hid for so long**: in Chinese mode it looks "intentional", not like a bug.
-
-**Fix**: added the `parse.unknownColumn` key (one Chinese and one English entry) and
-pointed `ColumnStore` at `Messages`. Chinese mode now shows 「列不存在：a``b」 and English
-mode shows "Unknown column: a``b".
-
-**Five more fixed in the same sweep** — all of them "one-directional misses", i.e. they
-look fine in Chinese and only show up in English:
-
-| Location | Old copy | New key |
+| You wrote | Message you get | Says what's wrong? |
 |---|---|---|
-| `ColumnStore` | `error:Unknown column:` | `parse.unknownColumn` |
-| `XlsxWriter` ×2 | 表头只能写一次 / 必须先写表头 | `error.exportHeaderTwice` / `error.exportNeedHeader` |
-| `PdfFonts` | 内嵌字体缺失 | `error.fontMissing` |
-| `PathResolver` | 无法创建用户数据目录 | `error.dataDirCreate` |
-| `DataSourceStore` | 数据源配置序列化失败 | `error.configSaveFailed` |
+| `join` / `union` / `group by` / subquery | Data source not found | ❌ misleading |
+| `select distinct a` | Column not found: `distinct a` | ❌ misleading |
+| `limit m, n` | dedicated message | ✅ |
+| `is null` / `like` | dedicated message listing supported operators | ✅ |
+| plain columns mixed with aggregates | dedicated message | ✅ |
 
-**Preventing a repeat**: `HardcodedUserMessageAuditTest` **scans the source** and fails
-the build when an exception carries a natural-language sentence that did not go through
-`Messages`. Measuring a handful of known messages cannot cover this — what slips
-through is always "the one nobody thought of" — so it has to be a census.
-
-The test carries a `WHITELIST` naming four places that are **deliberately** not
-translated (programmer errors and startup-time failures the user never reaches). Each
-entry states its reason — otherwise a whitelist becomes a bin that hides problems.
-
-> This test was verified not to be decorative: hardcoding an English sentence into
-> `ColumnStore` on purpose made it fail immediately and name `ColumnStore.java:86`.
-
----
+**What has already improved**: `limit m, n`, `is null`, `like` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.)
 
 ## 3. Behaviors Easily Misdiagnosed as Bugs
 
@@ -717,6 +491,61 @@ fc-list :lang=zh | wc -l      # 0 means no Chinese font is installed
 and it **deliberately fails** when the font is missing — that is a safety net, so do not loosen it just to "make the build pass".
 There is also a separate self-check, `packaging/check-font-recommends.sh`, verifying that the deb Recommends logic is not broken.
 
+### 3.5 Which quoting forms are legal inside a delimiter
+
+**This is not a defect** — it is a semantics note. Users write these forms and want to
+know why one errors and another does not.
+
+Quote characters of a **different** kind may be nested freely (a backtick may contain
+single or double quotes). A same-type quote written **bare** is illegal and must be
+doubled. Brackets use the SQL Server `]]` rule.
+
+This cannot be settled by opinion, because "the quoting form itself is illegal" and
+"the parser has a bug" both show up as an error. The table below is the result of
+running each form against **real SQLite 3**:
+
+| Form | Real SQLite | tinyquery | Verdict |
+|---|---|---|---|
+| `` `a"b` `` | column `a"b` | column `a"b` | ✅ match |
+| `` `a'b` `` | column `a'b` | column `a'b` | ✅ match |
+| `` `a``b` `` | column ``a`b`` | column ``a`b`` | ✅ match |
+| ```` ```a``` ```` | column `` `a` `` | column `` `a` `` | ✅ match |
+| `` [a`b] `` | column ``a`b`` | column ``a`b`` | ✅ match |
+| `[a``b]` | error (`no such column: a``b`) | error | ✅ match |
+| ```` ``a`` ```` | syntax error | error | ✅ match |
+| `` `a`b` `` | unrecognized token | error | ✅ match |
+
+> **The one people trip over**: `` [a`b] `` works but `[a``b]` does **not**.
+> Brackets do **not** treat backticks as special, so `[a``b]` asks for a column
+> literally named `` a``b `` (two backticks), and the table only has `` a`b `` (one).
+> SQLite behaves identically — correct behaviour, not a defect. Inside brackets only
+> `]` needs doubling.
+
+### 3.6 "No error, but the wrong thing came back" — the most dangerous class of bug
+
+**Remember this pattern when troubleshooting.**
+
+There was once a defect where the query succeeded, the row count was right, and yet
+**a different column came back** (a column named `'''` read as `'`). Zero errors, the UI
+looked perfectly normal. The cause was the execution layer treating a delimited
+identifier as a string constant and stripping its quotes.
+
+**Why it is the most dangerous class**: there is no error to chase, the user may act on
+wrong data, and **a test that only compares "success/failure" cannot catch it at all** —
+that defect passed the whole differential run, because the criterion at the time only
+looked at "expected ok / actual ok".
+
+**Two rules that came out of it**:
+
+1. **The criterion must check the returned column names**, not just success/failure.
+   Expected column names in the differential run now come from **real SQLite**.
+2. **Do not hand-roll "strip the delimiter + decode the escape" rules.** A hand-written
+   rule inevitably drifts from the lexical layer — in measurement it was wrong in both
+   directions: over-decoding produced 16 false positives, under-decoding 8. Switching
+   to SQLite as the oracle made both ends correct.
+
+**A test guards this**: `DocumentedLimitationsTest.delimitedIdentifierKeepsItsOwnQuotes`.
+
 ---
 
 ## 4. The Assertions in This File Are Guarded by Tests
@@ -725,7 +554,7 @@ Every "we think it behaves like this" above has a corresponding test:
 
 | Entry | Test class |
 |---|---|
-| Parser-related limitations and defects (1.1–1.5, 2.1–2.4, 3.x) | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
+| Parser-related limitations and defects (1.1–1.5, 2.1, 3.x) | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
 | Startup configuration and user data directory (1.6) | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
 | Memory footprint and pre-check (1.7) | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
 | The trimmed runtime still connects to databases, reads Chinese, and renders charts (1.8) | `packaging/verify-package.py` (standalone acceptance, **needs real databases**) |
@@ -765,8 +594,8 @@ It **goes through the real HTTP entry point**, printing "claimed behavior" and "
 > **Wiring it up exposed a false green inside the tool itself** (2026-10-11): the `group by` entry's fixture was
 > `select city, count(*) ... group by city`, which trips the "plain column mixed with aggregate" rule first and picks up
 > *that* rule's dedicated message — so it showed ✅, hiding the truth that **`group by` has no dedicated message at all**.
-> `DocumentedLimitationsTest` had two false greens of the same kind (limitation 1.1 and defect 2.4).
-> All three are corrected, and the "has a dedicated message" claim in the README and in NOTES 2.4 was corrected with them.
+> `DocumentedLimitationsTest` had two false greens of the same kind (limitation 1.1 and defect 2.1).
+> All three are corrected, and the "has a dedicated message" claim in the README and in NOTES 2.1 was corrected with them.
 > **A fixture must test only the one thing it claims to test** — incidentally exercising another rule hides the truth.
 
 > **The measuring instrument needs its own test**: the `garbageTableName` helper used to decide
@@ -776,7 +605,7 @@ It **goes through the real HTTP entry point**, printing "claimed behavior" and "
 > entry by entry, deriving the expected values on the spot rather than maintaining them from memory.
 
 > **Why this tool exists at all**: during the 2026-10 review, the README's [Supported] table was found to list
-> `select a as 别名` as "supported" when the implementation had never had it (recorded as 2.1).
+> `select a as 别名` as "supported" when the implementation had never had it (that defect was fixed in 1-2, and the entry was deleted per convention).
 > That error had been there for a long time, since the README was rewritten in `8cc9c9f`, and **no test ever went red because of it**.
 > Section 4 of this file covers "limitations", whereas the README covers "capabilities" —
 > and the latter had never been guarded by anything.
@@ -803,7 +632,8 @@ Only when both are done is the work complete.
 1. **Run the full test suite**: `mvn test` (the frontend has to be built first, see README)
 2. **Changed SQL parsing or execution**: run `DocumentedLimitationsTest`, and sync the README's
    "SQL Support Scope and Limitations" table and this file
-3. **Changed the parser**: confirm that the descriptions in 2.1 / 2.2 of this file are still accurate
+3. **Changed the parser**: confirm that the descriptions of the two parser-related entries in
+   this file are still accurate — limitation **1.1** (`group by` unsupported) and defect **2.1** (misleading errors)
 4. **Changed copy or i18n**: follow the "how to verify after changes" section of `TinyQuery-Data/06-开发文档/i18n-术语表与风格规范.md`
 5. **Run the javadoc reference check once after finishing**:
 
@@ -866,54 +696,14 @@ Only when both are done is the work complete.
 
 - **Location**: `NOTES.md` in the repository root. Developer-facing docs live in the repository and are versioned with the code
 - **New entries**: decide first whether it is a "defect" or a "limitation", and put it in the right section — putting it in the wrong one makes people change things with the wrong expectation
-- **After fixing it**: **delete the entry**; do not leave a "fixed" tombstone behind. History is in git
+- **After fixing it**: **delete the entry**; do not leave a "fixed" tombstone behind.
+  History is in git. What got fixed belongs in the CHANGELOG and README; this file only
+  describes what will trip you up **today**.
+  - Exception: if an entry contains something **independent of whether it is fixed**
+    (a semantics note, a troubleshooting lesson, a measured comparison table), move that
+    part to section 3 rather than deleting it along with the entry
+  - After deleting, **check other entries' cross-references**: a deleted entry's number
+    gets reused, so references to the old number must be updated too
 - **When a limitation becomes a defect**: if one day you decide it should work, move it from section 1 to section 2 and write down why you changed your mind
-- **New entries must be registered in the top index**: every fixed defect and every
-  added capability gets a row in the "At a Glance" section at the top. The entry body
-  stays where it is so people upgrading from an older version can find it under the old
-  heading, but "what got fixed" should not be buried in a long document
 - **Write "1-2", not "this round"**: round numbers are a temporary development label;
   a few months later nobody knows which round "this round" was
-- **English documents must end with a Chinese summary**: `README.md`, `NOTES.md`,
-  `CHANGELOG.md` and any English document under `docs/` are written in English but
-  **end with a 「中文摘要」 section**. This is a fixed repository convention — most users
-  are Chinese speakers, and they should not have to switch language just to read a
-  summary
-
----
-
-## 中文摘要
-
-> 本文件正文用英文书写，中文版见 [NOTES.zh-CN.md](NOTES.zh-CN.md)（内容对应）。
-> 下面是本文件要点的中文摘要；**以英文正文为准**。
-
-**这份文件收录三类东西**：当前版本**有意不做的事**（第一章「已知限制」）、
-**已知会出错的地方**（第二章「已知缺陷」）、以及
-**容易被误判成 bug 的正常行为**（第三章）。
-README 面向使用者讲"能做什么"，这份面向维护者与排查问题的人讲"哪里会绊倒你"。
-
-**两类要分清，处理方式完全不同**：
-**已知限制**是我们**有意不做**且有取舍理由的 —— 不是 bug，别顺手"修"掉；
-**已知缺陷**是我们**认为它本该工作**但现在不工作 —— 欢迎修，先看条目里的根因。
-
-**1-2 修好与新增的条目（置顶有完整索引）**：
-
-- **修好的缺陷**：列别名整串被当列名、列名/别名含 `from` 被按字符位置切错、
-  定界符内部嵌套引号被提前收尾、**定界标识符被当字符串剥引号（不报错但取错列）**、
-  报错文案中英混用（执行层 6 处漏翻）
-- **新增的能力**：`in` / `between`（解析期改写成已有的比较组合，执行层零改动）、
-  定界标识符补齐内部引号处理（转义规则实测对齐 SQLite）
-
-**几条最值得记住的**：
-
-- **1.1**：`group by` 不支持，会报「数据源不存在」而不是"不支持"
-- **2.4**：**不支持语法的报错会误导** —— 报「数据源不存在」，其实数据源没问题。
-  遇到名字看着没错却报数据源不存在，先查是不是用了不支持的写法
-- **2.7**：**「不报错但取错了东西」是最危险的一类 bug**。
-  只比对"成功/失败"的测试抓不住它，必须核对**返回的列名**
-- **1.7**：数据源整表驻留内存，占用约为文件大小的 5 倍
-- **1.9**：`packaging\package.ps1` 必须以 **UTF-8 带 BOM** 保存，
-  否则 PowerShell 读中文乱码、语法报错
-
-**排查方法（第五章）**：改完代码怎么自查；**本文件的断言由测试守着（第四章）** ——
-文档漂移了会有测试变红，不会没人知道。
