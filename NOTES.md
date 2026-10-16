@@ -45,18 +45,24 @@ The README is for users and talks about "what it can do"; this one is for mainta
 | `n between 1 and 10` | `n >= 1 and n <= 10` |
 | `c is null` | Not expressible for now (nulls are rare in CSV / tabular data) |
 
-### 1.3 Identifiers cannot be quoted
+### 1.3 Identifiers may be quoted (supported since 1-2)
 
-`` `t` ``, `"t"`, `[t]` — **none of them work**.
+`` `t` ``, `"t"`, `[t]` — **all work**; the delimiters are stripped by the lexer.
 
-**Symptom**: **the parser does not error**. It treats the quotes as part of the name (the parsed table name literally is `` `t` ``, `"t"`, `[t]`), so the error is deferred until the data source lookup, where the message reads "Data source not found: `` `t` ``".
+**Old behavior before 1-2**: **the parser did not error**. It treated the quotes as part of the name (the parsed table name literally was `` `t` ``), so the error was deferred until the data source lookup, where the message read "Data source not found: `` `t` ``".
 
-**Rationale**: identifiers are currently split on spaces and commas, with no quote escaping. Adding quotes just makes the quotes part of the name.
+**Why the resolution is "strip the quotes" rather than "reject the quotes"**: quotes are SQL **delimiters**, not part of the name.
+Writing `` from `销售` `` means "reference the data source named 销售" —
+an Excel column is named 销售, never `` `销售` ``. Stripping the delimiter is the intuitive semantics.
 
-**Impact**: column or table names containing spaces, commas, or keywords cannot be referenced (see 2.4 below).
+**Three delimiter styles supported**: backtick (MySQL), double quote (standard SQL), square bracket (SQL Server).
+The content inside is taken literally; the escape rule is "write a same-type quote twice".
 
-> ⚠️ **Troubleshooting hint**: the common thread in this class of problems is "**the parser lets it through, the error is deferred**."
-> If you assume the parser will stop it, you will go looking inside the parser — in entirely the wrong direction. See 2.4.
+**Still unsupported**: **nesting a same-type or other-type quote inside a delimiter** (e.g. `` `a"b` `` meaning the column `a"b`).
+This is an independent problem newly exposed after 1-2, see 2.6.
+
+> ⚠️ **Troubleshooting hint**: before 1-2 this class of problems shared the trait "**the parser lets it through, the error is deferred**."
+> The lexer now strips delimiters, so if you still get "data source not found", the name itself is wrong — not the quote handling.
 
 ### 1.4 Formula cells read the cached value only (xlsx data source)
 
@@ -313,39 +319,34 @@ so it was handled as "document it truthfully" rather than slipping in a feature.
 **Things to watch when fixing it** (left for the future): handling `as` and the `from` scanning of 2.3 live in **the same lexical layer**,
 so quote awareness has to be considered for both together; aliases also have to be referenceable in `where` / `order by`.
 
-### 2.2 Column names or aliases containing `from` fail to parse
+### 2.2 Column names or aliases containing `from` fail to parse (fixed in 1-2)
 
-> **Preamble**: because of 2.1, column aliases are currently unusable as a whole. But this `from`-scanning defect **stands on its own** —
-> it equally affects the case where **the column name itself** contains `from` (for instance the column-name part of `select city_from as ...`,
-> and string literals like `select 'from'`), so it is kept as a separate entry.
+> **This entry is fixed; the heading is kept so people upgrading from an older version can find it.** The fix is recorded below.
 
 ```sql
-select 'from' as x from t           -- ❌ error:Data Source not found:' as x from t
-select city_as from_x from t_from_x -- ❌ error:Data Source not found:_x from t_from_x
+select 'from' as x from t           -- ✅ now: table t
+select city_as from_x from t_from_x -- ✅ now: table t_from_x, column city_as from_x (intact)
 ```
 
-**Root cause (confirmed by measurement)**: when `SQLParser` locates the `from` keyword it **splits on the first `" from "`**,
-without distinguishing `from` inside quotes or inside an identifier.
+**Old behavior (before 1-2)**: when `SQLParser` located the `from` keyword it **split on the first `" from "`**,
+without distinguishing `from` inside quotes or inside an identifier. The parser itself did not error; it quietly sliced out a garbage table name:
 
-**The key point: the parser itself does not error.** It quietly slices out a garbage table name:
+| What you wrote | Old parsed table name | Now |
+|---|---|---|
+| `select 'from' as x from t` | `' as x from t` | `t` |
+| `select city_as from_x from t_from_x` | `_x from t_from_x` | `t_from_x` |
+| `select * from t_from_x` | `t_from_x` (normal) | `t_from_x` |
 
-| What you wrote | Table name parsed out |
-|---|---|
-| `select 'from' as x from t` | `' as x from t` |
-| `select city_as from_x from t_from_x` | `_x from t_from_x` |
-| `select * from t_from_x` | `t_from_x` (normal) |
+**Root cause (confirmed by measurement)**: the defect is not "containing `from` breaks it", it is
+"**splitting on the first ` from ` character position**" — so only the part appearing **before** ` from ` gets cut in half.
 
-**Note the last row**: a table name that itself contains `from` is fine. The defect is not "containing `from` breaks it",
-it is "**splitting on the first ` from `**" — so only the part that appears **before** ` from ` gets cut in half.
-`where 城市 = 'from'` is also fine (`from` is no longer searched for after `where`).
+**How 1-2 fixed it**: not by patching the old `indexOf`, but by splitting the parser into three layers.
+The lexical layer (`lex.Tokenizer`) emits tokens carrying their word class, and `from` **acts as a clause boundary only when it is a
+`TokenType.KEYWORD`**. `city_from` is a single complete `IDENTIFIER` token; the `from` inside it never enters the decision at all —
+the old approach simply has no place to live in the new structure.
 
-The error only appears when the execution layer goes to look up that "table" — hence the misleading wording "Data source not found" (see 2.4).
-
-Relevant locations: the two places in `SQLParser.java` that look for `from`.
-
-**Why it has not been fixed yet**: it requires introducing "quote-aware lexical scanning", which is the same underlying change as 1.3 (identifiers do not support quotes). Fix them together or not at all.
-
-**Workaround**: do not use the word `from` in column names. `where 城市 = 'from'` is fine (`from` is no longer searched for after `where`).
+**Why a keyword whitelist could not have fixed it**: `from_table` in `select * from from_table` is a legitimate table name.
+The criterion has to be "word boundary + positional state", never "which words appeared".
 
 ### 2.4 Error messages for unsupported syntax are misleading
 
@@ -357,11 +358,35 @@ select * from t join t2 on t.姓名 = t2.姓名
 
 The parsed table name is `t join t2 on t.姓名 = t2.姓名` — **the whole thing was taken as the table name**. No such data source is found, so it reports "Data source not found".
 
-**Root cause**: same origin as 2.2. Everything after `from` is swallowed whole, with no validity check on the clause boundary.
+**Root cause**: unknown clauses after `from` are swallowed whole, with no validity check on the clause boundary.
+**Note this is not the same thing as 2.2**: 2.2 was "the split happened at the wrong place", 2.4 is "unsupported syntax was never recognized".
+1-2 fixed 2.2, but 2.4 **still stands** — `join` / `union` / `distinct` are still swallowed into the table name.
 
-**Troubleshooting hint**: **when you hit "Data source not found" but the name looks fine, first check whether you used unsupported syntax** (`join`, `distinct`, quoted table names, etc.). The way to tell is whether the "table name" in the error is a long string — a normal table name does not contain spaces or `on`.
+**Troubleshooting hint**: **when you hit "Data source not found" but the name looks fine, first check whether you used unsupported syntax** (`join`, `distinct`, subqueries, `union`, etc.). The way to tell is whether the "table name" in the error is a long string — a normal table name does not contain spaces or `on`.
 
-**What has already improved**: `limit m, n` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.) What remains is concentrated in the `from` boundary problem.
+**What has already improved**: `limit m, n` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.)
+
+### 2.6 Quotes cannot be nested inside a delimiter (newly found in 1-2)
+
+Once 1.3 made delimited identifiers work, an **independent** problem surfaced:
+when **a quote appears inside a delimiter**, the lexical layer splits it wrong.
+
+```sql
+select `a"b`  from 对拍引号列名表   -- ❌ column a"b does exist, but reports Unknown column
+select "a"b"  from 对拍引号列名表   -- ❌ same
+select [a]b]  from 对拍引号列名表   -- ❌ right bracket inside a bracket delimiter
+```
+
+**Root cause**: after reading an opening delimiter, `Tokenizer` stops at **the next same-type character**,
+without implementing the SQL-standard escape "write a same-type quote twice to mean one"
+(single-quoted strings **already** implement this; delimiters do not).
+
+**Why this is a separate entry rather than folded into 1.3**: 1.3 answers "should the quotes be stripped",
+this one answers "how are inner quotes handled while stripping" — the two can be fixed independently, and merging them
+would make 1.3 look unfixed.
+
+**Blast radius**: 25 of the 584 differential-test statements are of this kind, all on the deliberately constructed
+`对拍引号列名表`. Real-world cases (a column named 销售 or 2024年销量) are unaffected.
 
 > **For whoever troubleshoots this**: the shared pattern in this class of problems is "**the parser lets it through and the error is deferred to the execution layer**."
 > Assuming the answer is in the parser — "why didn't it stop this?" — wastes time. First confirm what table name was actually parsed.

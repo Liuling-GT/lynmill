@@ -150,6 +150,14 @@ public final class ReadmeAudit {
         expectOk(S_SUPPORT, "avg", "select avg(amount) from sales");
         expectOk(S_SUPPORT, "min", "select min(amount) from sales");
         expectOk(S_SUPPORT, "max", "select max(amount) from sales");
+
+        // 【1-2 新增】定界标识符：引号是 SQL 的定界符，不是名字的一部分。
+        // 三种都支持 —— 反引号（MySQL）、双引号（标准 SQL）、方括号（SQL Server）。
+        // 用 sales 这个夹具名，是为了让「剥掉引号后能查到」这件事被真正验证：
+        // 若没剥引号，会报「数据源不存在：`sales`」而不是成功
+        expectOk(S_SUPPORT, "表名反引号 `t`", "select * from `sales`");
+        expectOk(S_SUPPORT, "表名双引号 \"t\"", "select * from \"sales\"");
+        expectOk(S_SUPPORT, "表名方括号 [t]", "select * from [sales]");
     }
 
     // ==================== 「不支持」表 ====================
@@ -171,9 +179,10 @@ public final class ReadmeAudit {
         expectFail(S_UNSUPPORTED, "join", "select * from sales join other on sales.id = other.id");
         expectFail(S_UNSUPPORTED, "子查询", "select * from (select * from sales) x");
         expectFail(S_UNSUPPORTED, "union", "select * from sales union select * from sales");
-        expectFail(S_UNSUPPORTED, "表名反引号 `t`", "select * from `sales`");
-        expectFail(S_UNSUPPORTED, "表名双引号 \"t\"", "select * from \"sales\"");
-        expectFail(S_UNSUPPORTED, "表名方括号 [t]", "select * from [sales]");
+        // 【1-2 修好了】三条「表名加引号」的原断言已删除 —— 定界符会在词法层剥掉，
+        // 这三条现在能成功。它们不是「悄悄变成支持」，而是本轮 L3 的修复目标，
+        // 所以同时挪到【支持】表那一段去断言（见 sectionSupported 的定界标识符一组）。
+        // 留在这里的只有真正仍不支持的：select distinct（D1，第 2 轮）。
     }
 
     // ==================== 「报错信息可能误导」一节 ====================
@@ -291,9 +300,16 @@ public final class ReadmeAudit {
      * 恰恰就是它要测的那个缺陷。所以清单只列解析器真的会切开的关键字：
      * {@code where} / {@code order by} / {@code limit} / {@code offset}。
      * {@code group by} 与 {@code join} 都不在其中 —— 它们会被整段吞进表名，
-     * 这正是 2.2 / 2.4 描述的现象。这份清单由
+     * 这正是 2.4 描述的现象。这份清单由
      * {@link ReadmeAuditTest#garbageTableNameMatchesRealParser()}
      * 逐条对着真解析器核对，不靠记忆维护。</p>
+     *
+     * <p><b>1-2 注</b>：D2 修好后 {@code from} 按 token 边界切，
+     * 「名字里含 from 就切错」的现象不复存在。本方法模拟的仍是
+     * 「哪些关键字会被切开」这一层语义（{@code union} / 子查询 / {@code distinct}
+     * 依然会被整段吞进表名），这部分没有变，所以量具继续有效。
+     * 但受 D2 影响的那几条夹具（表名带引号）已挪出对照清单 ——
+     * 它们现在能正常解析，不再是「吞进表名」的例子。</p>
      */
     static String garbageTableName(String sql) {
         int from = sql.toLowerCase().indexOf(" from ");

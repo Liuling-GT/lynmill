@@ -191,7 +191,9 @@ select count(*), avg(salary) from sample   -- 聚合
 select city, count(*) from sample where age > 20   -- 注意：无 GROUP BY，见下方限制
 ```
 
-> **注意：表名不要加引号。** 反引号、双引号、方括号都会被当成表名的一部分，报「数据源不存在」。写 `sample`，不要写 `` `sample` ``。
+> **表名可以加引号**（1-2 起支持）。`` `sample` ``、`"sample"`、`[sample]` 都会在解析时剥掉引号，等价于 `sample`。
+> 名字里含空格、逗号或 SQL 关键字时，加引号是必要的写法：`` from `对拍 引号 表` ``。
+> **但不能在引号里再套引号** —— 见下方「不支持」表。
 
 ---
 
@@ -208,6 +210,7 @@ select city, count(*) from sample where age > 20   -- 注意：无 GROUP BY，�
 | 排序 | `order by 单列或多列 [asc\|desc]`，如 `order by city asc, salary desc` |
 | 分页 | `limit n`、`limit n offset m`、`offset m`（服务端另有 page / pageSize 分页） |
 | 聚合 | `count(*)`、`count(列)`、`sum`、`avg`、`min`、`max` |
+| 定界标识符 | 表名或列名加 `` ` `` / `"` / `[]`，引号会被剥掉；名字含空格或关键字时用它 |
 
 ### 不支持（会报错）
 
@@ -220,7 +223,7 @@ select city, count(*) from sample where age > 20   -- 注意：无 GROUP BY，�
 | `limit m, n` | 参数顺序与标准相反、容易误读；请改用 `limit n offset m` |
 | `select distinct` | 不支持 |
 | `join` / 子查询 / `union` | 不支持 |
-| 表名加引号 | `` `t` ``、`"t"`、`[t]` 都不行 |
+| 引号里再套引号 | `` `a"b` ``、`"a"b"`、`[a]b]` 都不行。定界符内出现同类或其他引号时切分不正确 |
 
 > 上表曾经出过两类错误，都是文档写了而实现没有（或反之）：
 > `in` / `between` / `is null` 被误写成"支持"，`select a as 别名` 同样被误写成"支持"，

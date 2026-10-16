@@ -102,10 +102,11 @@ class ReadmeAuditTest {
                 "select * from sales join other on sales.id = other.id",
                 "select * from (select * from sales) x",
                 "select * from sales union select * from sales",
-                "select * from `sales`",
-                "select * from \"sales\"",
-                "select * from [sales]",
                 "select distinct city from sales",
+                // 【1-2 注】表名带引号的三条（`sales` / "sales" / [sales]）
+                // 原来也在这里对照，但 L3 修好后定界符会被剥掉、表名就是 sales，
+                // 不再是「吞进表名」的例子 —— 量具模拟的旧行为与真解析器不再重叠。
+                // 留着会让这条自检报「量具与真解析器对不上」，而其实是对照清单过时了。
         };
 
         int compared = 0;

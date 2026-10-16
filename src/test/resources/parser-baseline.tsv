@@ -38,7 +38,7 @@ OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=from]|sort=-|limit=
 OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=where]|sort=-|limit=-|offset=-	select * from t where a = 'where'
 OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=and]|sort=-|limit=-|offset=-	select * from t where a = 'and'
 OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=or]|sort=-|limit=-|offset=-	select * from t where a = 'or'
-IllegalArgumentException|ORDER BY 写法不受支持，形如 order by 列名 [asc|desc][, 列名 [asc|desc]]...	select * from t where a = 'order by x'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=order by x]|sort=-|limit=-|offset=-	select * from t where a = 'order by x'
 OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=limit 3]|sort=-|limit=-|offset=-	select * from t where a = 'limit 3'
 OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=x and y]|sort=-|limit=-|offset=-	select * from t where a = 'x and y'
 OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=)]|sort=-|limit=-|offset=-	select * from t where a = ')'
@@ -70,17 +70,17 @@ OK|table=t|cols=Count(*)|where=null|sort=-|limit=-|offset=-	select Count(*) from
 OK|table=t|cols=sum(a),avg(b),min(c),max(d)|where=null|sort=-|limit=-|offset=-	select sum(a), avg(b), min(c), max(d) from t
 OK|table=t|cols=count(*)|where=SimpleCondition[field=a, op==, value=1]|sort=-|limit=-|offset=-	select count(*) from t where a = 1
 OK|table=t|cols=sum(salary)|where=null|sort=-|limit=-|offset=-	select sum(salary) from t
-OK|table=' as x from t|cols='|where=null|sort=-|limit=-|offset=-	select 'from' as x from t
-OK|table=from t|cols=city_|where=null|sort=-|limit=-|offset=-	select city_from from t
-OK|table=_x from t_from_x|cols=city_as|where=null|sort=-|limit=-|offset=-	select city_as from_x from t_from_x
+OK|table=t|cols='from' as x|where=null|sort=-|limit=-|offset=-	select 'from' as x from t
+OK|table=t|cols=city_from|where=null|sort=-|limit=-|offset=-	select city_from from t
+OK|table=t_from_x|cols=city_as from_x|where=null|sort=-|limit=-|offset=-	select city_as from_x from t_from_x
 OK|table=t_from_x|cols=*|where=null|sort=-|limit=-|offset=-	select * from t_from_x
 OK|table=from_table|cols=*|where=null|sort=-|limit=-|offset=-	select * from from_table
-IllegalArgumentException|SELECT 与 FROM 之间没有指定列	select from_date from t
-OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value='a]|sort=[SortSpec[column=b', desc=false]]|limit=5|offset=-	select * from t where a = 'a order by b' limit 5
-OK|table=`t`|cols=*|where=null|sort=-|limit=-|offset=-	select * from `t`
-OK|table="t"|cols=*|where=null|sort=-|limit=-|offset=-	select * from "t"
-OK|table=[t]|cols=*|where=null|sort=-|limit=-|offset=-	select * from [t]
-OK|table=t|cols=`a`|where=null|sort=-|limit=-|offset=-	select `a` from t
+OK|table=t|cols=from_date|where=null|sort=-|limit=-|offset=-	select from_date from t
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=a order by b]|sort=-|limit=5|offset=-	select * from t where a = 'a order by b' limit 5
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=-	select * from `t`
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=-	select * from "t"
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=-	select * from [t]
+OK|table=t|cols=a|where=null|sort=-|limit=-|offset=-	select `a` from t
 OK|table=t join u on t.id = u.id|cols=*|where=null|sort=-|limit=-|offset=-	select * from t join u on t.id = u.id
 OK|table=t left join u on t.id = u.id|cols=*|where=null|sort=-|limit=-|offset=-	select * from t left join u on t.id = u.id
 OK|table=t union select * from u|cols=*|where=null|sort=-|limit=-|offset=-	select * from t union select * from u
@@ -99,15 +99,15 @@ IllegalArgumentException|WHERE 子句中不支持的运算符：a in (1,2)。支
 IllegalArgumentException|WHERE 子句中不支持的运算符：a between 1。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a between 1 and 10
 IllegalArgumentException|WHERE 子句中不支持的运算符：a is null。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a is null
 IllegalArgumentException|WHERE 子句中不支持的运算符：a like 'x%'。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a like 'x%'
-IllegalArgumentException|LIMIT 不支持 "limit 偏移,行数" 的写法，改用 "limit 行数 offset 偏移"	select * from t limit 2, 3
+IllegalArgumentException|LIMIT/OFFSET 写法不受支持。只支持三种："limit n"、"limit n offset m"、"offset m"	select * from t limit 2, 3
 IllegalArgumentException|LIMIT/OFFSET 写法不受支持。只支持三种："limit n"、"limit n offset m"、"offset m"	select * from t limit 3, 3 offset 5
-OK|table=t|cols=a|where=null|sort=-|limit=-|offset=-	select a, from t
+IllegalArgumentException|列名为空，检查是否多写了逗号	select a, from t
 IllegalArgumentException|列名为空，检查是否多写了逗号	select a,, b from t
-IllegalArgumentException|ORDER BY 写法不受支持，形如 order by 列名 [asc|desc][, 列名 [asc|desc]]...	select * from t order by
+IllegalArgumentException|ORDER BY 后面缺少排序列	select * from t order by
 IllegalArgumentException|ORDER BY 存在空的排序列，检查逗号是否写多了	select * from t order by a,
 IllegalArgumentException|ORDER BY 存在空的排序列，检查逗号是否写多了	select * from t order by ,a
 IllegalArgumentException|ORDER BY 写法不受支持，形如 order by 列名 [asc|desc][, 列名 [asc|desc]]...	select * from t order by a b c
-IllegalArgumentException|LIMIT/OFFSET 写法不受支持。只支持三种："limit n"、"limit n offset m"、"offset m"	select * from t order by a limit
+IllegalArgumentException|ORDER BY 写法不受支持，形如 order by 列名 [asc|desc][, 列名 [asc|desc]]...	select * from t order by a limit
 IllegalArgumentException|聚合查询中不能混用普通列：a。聚合结果只有一行，普通列没有行可引用；全部改用 count/sum/avg/max/min 这类聚合函数，或去掉聚合函数查明细	select a, count(*) from t
 IllegalArgumentException|聚合查询中不能混用普通列：name。聚合结果只有一行，普通列没有行可引用；全部改用 count/sum/avg/max/min 这类聚合函数，或去掉聚合函数查明细	select name, count(*) from t
 OK|table=t|cols=1,count(*)|where=null|sort=-|limit=-|offset=-	select 1, count(*) from t

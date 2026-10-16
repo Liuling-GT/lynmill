@@ -191,7 +191,9 @@ select count(*), avg(salary) from sample   -- aggregate
 select city, count(*) from sample where age > 20   -- note: no GROUP BY, see limitations below
 ```
 
-> **Note: don't quote table names.** Backticks, double quotes, and square brackets are all treated as part of the table name, producing a "data source not found" error. Write `sample`, not `` `sample` ``.
+> **Table names may be quoted** (supported since 1-2). `` `sample` ``, `"sample"`, `[sample]` all have their quotes stripped at parse time and are equivalent to `sample`.
+> Quoting is the necessary form when a name contains spaces, commas, or SQL keywords: `` from `对拍 引号 表` ``.
+> **But you cannot nest quotes inside a quote** — see the "Not Supported" table below.
 
 ---
 
@@ -208,6 +210,7 @@ This is a **lightweight query engine**, not a full SQL database. It supports a c
 | Sorting | `order by` one or more columns `[asc\|desc]`, e.g. `order by city asc, salary desc` |
 | Pagination | `limit n`, `limit n offset m`, `offset m` (the server also has separate page / pageSize pagination) |
 | Aggregation | `count(*)`, `count(column)`, `sum`, `avg`, `min`, `max` |
+| Delimited identifiers | Table or column names wrapped in `` ` `` / `"` / `[]`; the quotes are stripped. Use when a name contains spaces or keywords |
 
 ### Not Supported (reports an error)
 
@@ -220,7 +223,7 @@ This is a **lightweight query engine**, not a full SQL database. It supports a c
 | `limit m, n` | Argument order is reversed from the standard and easy to misread; use `limit n offset m` instead |
 | `select distinct` | Not supported |
 | `join` / subqueries / `union` | Not supported |
-| Quoted table names | `` `t` ``, `"t"`, `[t]` all fail |
+| Nested quotes inside a quote | `` `a"b` ``, `"a"b"`, `[a]b]` all fail. When a same-type or other-type quote appears inside a delimiter, the split is incorrect |
 
 > This table has previously contained two kinds of errors, where the docs claimed something the implementation didn't do (or vice versa):
 > `in` / `between` / `is null` were wrongly listed as "supported", `select a as alias` was likewise wrongly listed as "supported",

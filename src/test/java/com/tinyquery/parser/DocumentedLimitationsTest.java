@@ -91,19 +91,30 @@ class DocumentedLimitationsTest {
     }
 
     @Test
-    @DisplayName("限制 1.3：标识符不能加引号 —— 解析器会把它连引号一起当成表名")
-    void quotedIdentifiersNotSupported() {
-        // 注意这里断言的是「解析出来的表名带着引号」而不是「抛异常」。
-        // 解析器其实不报错，它把 `t` 连引号一起当成表名，
-        // 于是"数据源不存在：`t`" 这个误导性错误推迟到执行层才出现。
-        // 这个区分很重要：以为解析器会拦，就会去找解析器的错，方向全错
+    @DisplayName("已修复（1-2）：标识符可以加引号 —— 定界符会被剥掉")
+    void quotedIdentifiersAreStripped() {
+        // 【1-2 修好了】此前这三条断言的是「表名连引号一起当名字」：
+        // 解析器不报错，把 `t` 整个当表名，于是"数据源不存在：`t`"
+        // 这个误导性错误推迟到执行层才出现。
+        //
+        // 现在引号在词法层就被剥掉了 —— 引号是 SQL 的【定界符】，不是名字的一部分。
+        // 用户写 from `销售` 就是想引用「销售」这个数据源，
+        // Excel 里一列叫「销售」，不会叫「`销售`」。
+        //
+        // 三种定界符都支持：反引号（MySQL）、双引号（标准 SQL）、方括号（SQL Server）。
         assertAll(
-                () -> assertEquals("`t`", parser.parse("select * from `t`").tableName(),
-                        "反引号应被当表名的一部分"),
-                () -> assertEquals("\"t\"", parser.parse("select * from \"t\"").tableName(),
-                        "双引号应被当表名的一部分"),
-                () -> assertEquals("[t]", parser.parse("select * from [t]").tableName(),
-                        "方括号应被当表名的一部分"));
+                () -> assertEquals("t", parser.parse("select * from `t`").tableName(),
+                        "反引号应被剥掉"),
+                () -> assertEquals("t", parser.parse("select * from \"t\"").tableName(),
+                        "双引号应被剥掉"),
+                () -> assertEquals("t", parser.parse("select * from [t]").tableName(),
+                        "方括号应被剥掉"),
+                () -> assertEquals(List.of("a"),
+                        List.of(parser.parse("select `a` from t").selectColumns()),
+                        "列名上的定界符同样应被剥掉"),
+                () -> assertEquals("销售",
+                        parser.parse("select * from `销售`").tableName(),
+                        "中文表名加反引号 —— 这是最贴近真实用法的场景"));
     }
 
     // ==================== 二、已知缺陷（应工作但不工作） ====================
@@ -132,30 +143,37 @@ class DocumentedLimitationsTest {
     }
 
     @Test
-    @DisplayName("缺陷 2.2：名字里含 from 会被当成表名的一部分")
-    void nameContainingFromBreaksTableName() {
-        // 这是缺陷不是限制 —— 名字里出现 from 完全合法。
-        // 实测的真相：解析器不报错，它按第一个 " from " 切分，
-        // 于是表名变成了一堆垃圾，报错推迟到查数据源时。
+    @DisplayName("已修复（1-2）：名字里含 from 不再影响切分")
+    void nameContainingFromWorks() {
+        // 【1-2 修好了】此前解析器按第一个 " from " 字符位置切分，不看词边界，
+        // 于是名字里出现 from 就会把语句切错（D2）。
         //
-        // 下面三条都是【实测出来的】，不是推想的：
-        //   ① 字符串字面量里的 from  → 表名变成 "' as x from t"
-        //   ② 列名里的 from          → 从 from 处切，列名被腰斩，表名剩 "_x from t_from_x"
-        //   ③ 表名自己含 from        → 反而正常（切出来就是 t_from_x）
-        // ③ 值得留着：它说明这个缺陷不是"含 from 就坏"，而是
-        // "按第一个 ' from ' 切"，所以只有出现在 from 之前的部分会受害。
+        // 现在 from 只在它是【关键字 token】时才当子句边界。
+        // 词法层按位置判定词性：列名段里的 from 不是关键字，字符串里的更不是。
         //
-        // 修好之后这里要改成断言正确的表名，并删掉 NOTES.md 的 2.2
+        // 三条实测用例都保留着，但断言换成了正确的值：
+        //   ① 字符串字面量里的 from  → 表名 t（引号内是一个 STRING token）
+        //   ② 列名里的 from          → 表名 t_from_x，列名完整
+        //   ③ 表名自己含 from        → 表名 t_from_x（这条本来就对，必须保持）
         assertAll(
-                () -> assertEquals("' as x from t",
+                () -> assertEquals("t",
                         parser.parse("select 'from' as x from t").tableName(),
-                        "字符串字面量里的 from 会截断出错误的表名"),
-                () -> assertEquals("_x from t_from_x",
+                        "字符串字面量里的 from 不该被当子句边界"),
+                () -> assertEquals("t_from_x",
                         parser.parse("select city_as from_x from t_from_x").tableName(),
-                        "列名里的 from 会截断出错误的表名"),
+                        "列名里的 from 不该截断表名"),
+                () -> assertEquals(List.of("city_as from_x"),
+                        List.of(parser.parse("select city_as from_x from t_from_x").selectColumns()),
+                        "列名应完整保留，不再被腰斩"),
                 () -> assertEquals("t_from_x",
                         parser.parse("select * from t_from_x").tableName(),
-                        "表名自己含 from 反而是正常的 —— 缺陷只影响 from 之前的部分"));
+                        "表名自己含 from —— 这一条从来就是对的，修 D2 不能把它弄坏"),
+                () -> assertEquals("from_table",
+                        parser.parse("select * from from_table").tableName(),
+                        "表名以 from 开头也应正常"),
+                () -> assertEquals("t",
+                        parser.parse("select city_from from t").tableName(),
+                        "列名整体就叫 city_from"));
     }
 
     @Test

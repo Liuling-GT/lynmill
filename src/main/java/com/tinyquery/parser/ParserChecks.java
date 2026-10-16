@@ -36,8 +36,12 @@ import com.tinyquery.i18n.Messages;
  * </ul>
  * <p>分组只是标注归属，<b>当前三者都被 {@link SQLParser} 调用</b>，
  * 没有任何层间依赖 —— 1-1 不做解耦，解耦是 1-2 的事。</p>
+ *
+ * <p><b>1-2 起本类改为 public</b>：抽出的 {@code lex.Tokenizer} 也需要它。
+ * 没有给词法层另建一个报错类，是因为「解析器报啥错」应当是<b>唯一一份清单</b> ——
+ * 拆成两个类，以后想列全部报错就得去两个地方找，又会退回重构前的老问题。</p>
  */
-final class ParserChecks {
+public final class ParserChecks {
 
     private ParserChecks() {
         // 纯工具类
@@ -52,51 +56,51 @@ final class ParserChecks {
      * 值是错的却不报错 —— {@code where name = 'abc} 会得到值 {@code 'abc}
      * （前引号没被剥掉），字符串比较永不相等，用户看到的是空表而不是错误提示。</p>
      */
-    static IllegalArgumentException unterminatedQuote() {
+    public static IllegalArgumentException unterminatedQuote() {
         return new IllegalArgumentException(Messages.get("parse.unterminatedQuote"));
     }
 
     // ==================== 语法层（将来留在 Parser） ====================
 
     /** 整条语句里没有 select */
-    static IllegalArgumentException missingSelect() {
+    public static IllegalArgumentException missingSelect() {
         return new IllegalArgumentException(Messages.get("parse.missingSelect"));
     }
 
     /** 整条语句里没有 from */
-    static IllegalArgumentException missingFrom() {
+    public static IllegalArgumentException missingFrom() {
         return new IllegalArgumentException(Messages.get("parse.missingFrom"));
     }
 
     /** select 与 from 之间没有任何内容 */
-    static IllegalArgumentException noColumn() {
+    public static IllegalArgumentException noColumn() {
         return new IllegalArgumentException(Messages.get("parse.noColumn"));
     }
 
     /** 列清单里出现了空项，如 {@code select a, , b} */
-    static IllegalArgumentException emptyColumn() {
+    public static IllegalArgumentException emptyColumn() {
         return new IllegalArgumentException(Messages.get("parse.emptyColumn"));
     }
 
     /** from 之后没有表名 */
-    static IllegalArgumentException missingTable() {
+    public static IllegalArgumentException missingTable() {
         return new IllegalArgumentException(Messages.get("parse.missingTable"));
     }
 
     /** 条件里找不到任何受支持的运算符 */
-    static IllegalArgumentException unsupportedOperator(String expr) {
+    public static IllegalArgumentException unsupportedOperator(String expr) {
         return new IllegalArgumentException(
                 Messages.get("parse.unsupportedOperator", expr)
                         + Messages.get("parse.supportedOperators"));
     }
 
     /** 运算符左侧没有列名，如 {@code where = 1} */
-    static IllegalArgumentException missingColumnBeforeOp(String expr) {
+    public static IllegalArgumentException missingColumnBeforeOp(String expr) {
         return new IllegalArgumentException(Messages.get("parse.missingColumnBeforeOp", expr));
     }
 
     /** 运算符右侧没有值，如 {@code where a =} */
-    static IllegalArgumentException missingValueAfterOp(String expr) {
+    public static IllegalArgumentException missingValueAfterOp(String expr) {
         return new IllegalArgumentException(Messages.get("parse.missingValueAfterOp", expr));
     }
 
@@ -108,12 +112,12 @@ final class ParserChecks {
      * <p>不静默忽略 —— 否则表名会被污染成「t limit 3 offset 3」，
      * 用户看到的是「数据源不存在：t limit 3 offset 3」这种无从下手的报错。</p>
      */
-    static IllegalArgumentException limitOffsetUnsupported() {
+    public static IllegalArgumentException limitOffsetUnsupported() {
         return new IllegalArgumentException(Messages.get("parse.limitOffsetUnsupported"));
     }
 
     /** where 后没有表达式 */
-    static IllegalArgumentException whereMissingExpr() {
+    public static IllegalArgumentException whereMissingExpr() {
         return new IllegalArgumentException(Messages.get("parse.whereMissingExpr"));
     }
 
@@ -123,17 +127,17 @@ final class ParserChecks {
      * <p>参数顺序与标准写法相反，是最容易读错的一种。明确拒绝并指路，
      * 不静默接受 —— 静默接受会让用户以为写的是行数。</p>
      */
-    static IllegalArgumentException limitCommaUnsupported() {
+    public static IllegalArgumentException limitCommaUnsupported() {
         return new IllegalArgumentException(Messages.get("parse.limitCommaUnsupported"));
     }
 
     /** limit / offset 的数字超出 int 范围 */
-    static IllegalArgumentException numberOutOfRange(String clause, String raw) {
+    public static IllegalArgumentException numberOutOfRange(String clause, String raw) {
         return new IllegalArgumentException(Messages.get("parse.numberOutOfRange", clause, raw));
     }
 
     /** order by 的写法不受支持（含「出现了 order by 但匹配不上」） */
-    static IllegalArgumentException orderByUnsupported() {
+    public static IllegalArgumentException orderByUnsupported() {
         return new IllegalArgumentException(Messages.get("parse.orderByUnsupported"));
     }
 
@@ -142,12 +146,12 @@ final class ParserChecks {
      *
      * <p>早先逗号会留在列名里，用户看到的是「列 dept, 不存在」这种莫名其妙的报错。</p>
      */
-    static IllegalArgumentException orderByEmptyColumn() {
+    public static IllegalArgumentException orderByEmptyColumn() {
         return new IllegalArgumentException(Messages.get("parse.orderByEmptyColumn"));
     }
 
     /** order by 后面没跟列名 */
-    static IllegalArgumentException orderByMissingColumn() {
+    public static IllegalArgumentException orderByMissingColumn() {
         return new IllegalArgumentException(Messages.get("parse.orderByMissingColumn"));
     }
 
@@ -156,7 +160,7 @@ final class ParserChecks {
      *
      * <p>多半是漏了引号。宁可报错，也不做一次静默的字符串比较。</p>
      */
-    static IllegalArgumentException valueHasSpace(String value) {
+    public static IllegalArgumentException valueHasSpace(String value) {
         return new IllegalArgumentException(Messages.get("parse.valueHasSpace", value));
     }
 }
