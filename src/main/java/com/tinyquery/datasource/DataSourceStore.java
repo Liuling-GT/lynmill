@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.tinyquery.config.PathResolver;
 import com.tinyquery.datasource.spec.DataSourceConfig;
+import com.tinyquery.i18n.Messages;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -149,7 +150,8 @@ public class DataSourceStore {
             json = mapper.writeValueAsString(document);
         } catch (Exception e) {
             // 序列化失败属于程序缺陷，与磁盘无关，转成 IOException 让调用方统一处理
-            throw new IOException("数据源配置序列化失败", e);
+            // 原先硬编码中文，英文模式下会显示中文（单向漏翻）
+            throw new IOException(Messages.get("error.configSaveFailed"), e);
         }
 
         Path parent = file.getParent();

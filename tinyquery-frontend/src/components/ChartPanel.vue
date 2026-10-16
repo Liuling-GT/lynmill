@@ -179,8 +179,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { queryChart, stripErrorPrefix } from '../api/query'
+import { queryChart, stripErrorPrefix, downloadChartPdf } from '../api/query'
 
 const { t } = useI18n()
 
@@ -200,10 +201,18 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  // 当前数据源表名，导出 PDF 时用作报表标题与文件名
+  tableName: {
+    type: String,
+    default: '',
+  },
 })
 
 // 导出按钮在父组件的卡片头里，能否导出由这里算好再传出去
 const emit = defineEmits(['can-export'])
+
+// 正在导出 PDF。要访问后端取数并渲染，比 PNG 慢，需要给按钮一个忙碌态
+const exporting = ref(false)
 
 // 聚合方式。value 与后端 normalizeAggregation 的白名单一致。
 // label 存词条键 —— 切换语言时要跟着变，所以这里不能是常量数组
@@ -217,6 +226,11 @@ const AGGREGATION_VALUES = [
 
 const aggregations = computed(() =>
   AGGREGATION_VALUES.map((item) => ({ value: item.value, label: t(item.labelKey) })))
+
+// 聚合方式的展示名，供导出时拼标题用。
+// 单独建一份是因为上面那个 computed 是数组，按 value 取名字得先 find 一次
+const AGGREGATION_LABELS = computed(() =>
+  Object.fromEntries(AGGREGATION_VALUES.map((item) => [item.value, t(item.labelKey)])))
 
 const CHART_TYPE_VALUES = [
   { value: 'bar', labelKey: 'chart.typeBar' },
@@ -1227,6 +1241,126 @@ const exportPng = () => {
   document.body.removeChild(link)
 }
 
+/**
+ * 导出图表为 PDF。
+ *
+ * 与 PNG 的区别在于这里是「矢量」的：服务端拿着与屏幕相同的那份聚合数据
+ * 重新画一遍，柱子和弧线都是 PDF 的绘图指令，放大多少倍都是清晰的。
+ * PNG 是位图，放进文档里一放大就糊 —— 而那正是需要 PDF 的场景。
+ *
+ * 数据不在前端重新算，直接把当前图表的配置发给后端，由后端用同一套
+ * 聚合规则取数，避免两边算出不一样的结果。
+ */
+const exportPdf = async (options = {}) => {
+  if (!props.executedSql || !dimension.value) {
+    return
+  }
+  exporting.value = true
+  try {
+    // 饼图只用一个度量，与屏幕上保持一致
+    const measures =
+      aggregation.value === 'count'
+        ? []
+        : chartType.value === 'pie'
+          ? [measure.value].filter(Boolean)
+          : [measure.value, measure2.value].filter(Boolean)
+
+    await downloadChartPdf({
+      sql: props.executedSql,
+      dimension: dimension.value,
+      measures,
+      aggregation: aggregation.value,
+      topN: chartType.value === 'pie' ? PIE_TOP_N : BAR_TOP_N,
+      chartType: chartType.value,
+      chartTitle: buildExportTitle(),
+      tableName: props.tableName,
+      // 默认不附数据表，由导出前的弹框决定
+      includeTable: options.includeTable === true,
+      // 界面 ECharts 实际算出的 Y 轴范围与格数，让 PDF 的轴与屏幕完全一致
+      axisRanges: exportAxisRange(),
+      // 把界面上的观感原样带上，否则导出的图与屏幕上看到的不是同一张。
+      // 配色发的是【已经派生好的整排颜色】而不是主色：派生用的是黄金角
+      // 卷积运算，让后端再算一遍只会多一处可能与前端不一致的地方
+      palettes: exportPalettes(),
+      sectorColors: { ...sectorColors.value },
+      highlightMode: highlightMode.value,
+      highlighted: [...highlighted.value],
+      unifyScale: unifyScale.value,
+      keepFullPrecision: keepFullPrecision.value,
+    })
+    ElMessage.success(t('chart.exported'))
+  } catch (error) {
+    ElMessage.error(error.message)
+  } finally {
+    exporting.value = false
+  }
+}
+
+/**
+ * 导出时发给后端的配色：每个系列一整排颜色。
+ *
+ * 直接发 paletteOf 的结果而不是主色，理由见上：派生用到了 HSL 取模，
+ * 后端重算一遍就多一处可能不一致的地方，而前端本来就已经算好了。
+ * 柱状/折线只用每排第 0 个，饼图用整排，由后端按各自规则取用。
+ */
+const exportPalettes = () => {
+  const count = chartType.value === 'pie' ? 1 : seriesCount.value
+  return Array.from({ length: Math.max(1, count) }, (_, i) => [...paletteOf(i)])
+}
+
+// 当前图上实际画了几个系列。饼图恒为 1
+const seriesCount = computed(() => {
+  if (chartType.value === 'pie') {
+    return 1
+  }
+  return [measure.value, measure2.value].filter(Boolean).length || 1
+})
+
+/**
+ * 读界面上 ECharts 实际算出来的 Y 轴范围，交给后端照用。
+ *
+ * 为什么不发原始数据、让后端自己算轴范围：后端算出来的和 ECharts 算出来的
+ * 不是同一个数。ECharts 为了让刻度落在整数上会挑自己的步长，
+ * 同一组数据它给 18000 封顶、后端给 20000，柱子高度差一大截，
+ * 导出图与屏幕图摆在一起就是两张图 —— 而这正是用户反复反馈的点。
+ *
+ * 与其在后端复刻 ECharts 的取整算法（那是一份会随 ECharts 版本变化的实现细节，
+ * 复刻得再像也只是逼近），不如直接把界面的结果发过去。
+ * 「所见即所得」里，屏幕才是那个「所见」。
+ *
+ * 读不到就返回 null，后端退回自己的算法 —— 拿不到不该让导出失败。
+ */
+const exportAxisRange = () => {
+  if (!chart) {
+    return null
+  }
+  try {
+    const models = chart.getModel().getComponents('yAxis') || []
+    const ranges = []
+    for (const model of models) {
+      const scale = model.coordinateSystem && model.coordinateSystem.scale
+      if (!scale || !Number.isFinite(scale.min) || !Number.isFinite(scale.max)) {
+        continue
+      }
+      // 连格数一起发：轴范围相同、格数不同时网格线位置还是不一样。
+      // 18000 分 6 格是每 3000 一条线，分 4 格就成了每 4500 一条
+      const ticks = Number.isFinite(scale.splitNumber) ? scale.splitNumber : 5
+      ranges.push([scale.min, scale.max, ticks])
+    }
+    return ranges.length ? ranges : null
+  } catch (e) {
+    // 拿不到就算了，别因为它让整个导出挂掉
+    return null
+  }
+}
+
+// 导出用的图标题：维度 + 聚合方式，让脱离界面看 PDF 的人知道这张图在讲什么
+const buildExportTitle = () => {
+  const agg = AGGREGATION_LABELS.value[aggregation.value] || aggregation.value
+  const m = measure.value ? `${agg}(${measure.value})` : agg
+  return dimension.value ? `${dimension.value} — ${m}` : m
+}
+
 // 导出按钮在父组件，通过 ref 调过来
 // resize 供父组件在面板由隐藏转可见时调用 —— display:none 期间量不到宽高
 const resize = () => {
@@ -1235,7 +1369,7 @@ const resize = () => {
   }
 }
 
-defineExpose({ exportPng, resize })
+defineExpose({ exportPng, exportPdf, resize })
 
 // 从柱状图切到饼图时第二个度量不再渲染，但 ref 里还留着旧值，
 // 会让 loadChart 继续把它发出去。这里主动清掉。

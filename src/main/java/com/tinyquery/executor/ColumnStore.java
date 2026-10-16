@@ -1,5 +1,6 @@
 package com.tinyquery.executor;
 
+import com.tinyquery.i18n.Messages;
 import com.tinyquery.parser.NameSuggester;
 import com.tinyquery.parser.QueryHintException;
 
@@ -71,14 +72,19 @@ public class ColumnStore {
         List<Object> col = columns.get(columnName);
         if (col == null) {
             // 列名依旧大小写敏感，写错就是查不到；但如果只是大小写对不上，
-            // 顺带给一句提示：表里明明有 Salary 却看到「Unknown column:salary」
+            // 顺带给一句提示：表里明明有 Salary 却看到「列不存在：salary」
             // 是件很让人困惑的事
+            //
+            // 【本轮修正】文案原先硬编码成英文 "error:Unknown column:" + 列名，
+            // 于是中文模式下界面显示「Error: Unknown column:a``b」—— 中英混杂。
+            // 现走 Messages，中英各自成句。
             String suggestion = NameSuggester.suggest(columnName, columnNames);
             if (suggestion != null) {
-                throw new QueryHintException("error:Unknown column:" + columnName,
+                throw new QueryHintException("error:" + Messages.get("parse.unknownColumn", columnName),
                         NameSuggester.describe(columnName, suggestion));
             }
-            throw new IllegalArgumentException("error:Unknown column:" + columnName);
+            throw new IllegalArgumentException(
+                    "error:" + Messages.get("parse.unknownColumn", columnName));
         }
         return col;
     }

@@ -52,7 +52,7 @@ BROWSER_CANDIDATES = [
     "/usr/bin/chromium",
 ]
 
-JAR = ROOT / "target" / "tinyquery-1.1.0.jar"
+JAR = ROOT / "target" / "tinyquery-1.2.0.jar"
 
 # 工作目录。默认放系统临时目录，退出时清理
 WORK = Path(os.environ.get("LYNMILL_E2E_WORK", Path(os.environ.get("TEMP", "/tmp")) / "tq-locale-e2e"))

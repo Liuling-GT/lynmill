@@ -55,6 +55,13 @@ export const refreshDataSource = (name) =>
 // 测试数据源配置是否可用（不注册、不加载数据）
 export const testDataSource = (config) => request.post('/datasource/test', config)
 
+/*
+ * 探测配置项的可选值，供表单渲染下拉框（如 Excel 的工作表名）。
+ * 参数是「已填到一半的配置」，返回「字段名 → 可选值列表」。
+ * 后端只做常量级探测，可以放心反复调用
+ */
+export const probeDataSource = (config) => request.post('/datasource/probe', config)
+
 // 系统凭据存储是否可用（决定「保存密码」勾选框能否点）
 export const getCredentialStatus = () => request.get('/datasource/credential-status')
 

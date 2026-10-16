@@ -1,0 +1,133 @@
+# LynMill 解析器行为基线 —— 由 RecordBaseline 自动生成，请勿手改
+# 格式：<期望输出>\t<原SQL>
+# 用途：解析器分层重构期间钉住行为，见 ParserEquivalenceTest
+#
+# 变更记录（重录基线后需手工补回，RecordBaseline 只写前四行表头）
+#   1-1（9963271）：首次录制，114 条。
+#   1-2（e1ae9fa）：14 条 —— D2/D4/L3 修复目标 10 条、报错文案 3 条、
+#                   select a, from t 改为报错 1 条。
+#   本轮 L2：2 条 —— in (1,2) 与 between 1 and 10 由「不支持的运算符」
+#                   改为展开成 OrCondition / AndCondition。
+#   本轮 D1：1 条 —— select 'from' as x from t
+#                   旧 cols='from' as x（as 整段被当列名，别名不可用的根因）
+#                   新 cols='from'（别名 x 拆走；基线只记 selectColumns）
+#   本轮执行层 unquote 修复（定界标识符不再被当字符串常量剥引号）：
+#                   0 条 —— 那是执行层的事，解析器基线不该动。
+#                   实测确认 0 变化，正说明修复的作用面是收敛的。
+#   F1/F2（定界符内引号转义）与 F3（关键字做列名）不改基线 ——
+#   114 条里没有覆盖这两类，它们的验证在 DocumentedLimitationsTest 与 584 条对拍。
+#
+OK|table=huge|cols=*|where=null|sort=-|limit=-|offset=-	select * from huge
+OK|table=huge|cols=name|where=null|sort=-|limit=-|offset=-	select name from huge
+OK|table=huge|cols=name,salary|where=null|sort=-|limit=-|offset=-	select name , salary from huge
+OK|table=huge|cols=name,salary|where=null|sort=-|limit=-|offset=-	select name,salary from huge
+OK|table=huge|cols=name|where=null|sort=-|limit=-|offset=-	select   name   from   huge  
+OK|table=HUGE|cols=NAME|where=null|sort=-|limit=-|offset=-	SELECT NAME FROM HUGE
+OK|table=销售|cols=城市|where=null|sort=-|limit=-|offset=-	select 城市 from 销售
+OK|table=销售|cols=城市,销量|where=null|sort=-|limit=-|offset=-	select 城市, 销量 from 销售
+OK|table=t|cols=1,2|where=null|sort=-|limit=-|offset=-	select 1, 2 from t
+OK|table=t|cols='abc'|where=null|sort=-|limit=-|offset=-	select 'abc' from t
+OK|table=t|cols=city.name|where=null|sort=-|limit=-|offset=-	select city.name from t
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=1]|sort=-|limit=-|offset=-	select * from t where a = 1
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=x]|sort=-|limit=-|offset=-	select * from t where a = 'x'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op=>=, value=1]|sort=-|limit=-|offset=-	select * from t where a >= 1
+OK|table=t|cols=*|where=SimpleCondition[field=a, op=<=, value=1]|sort=-|limit=-|offset=-	select * from t where a <= 1
+OK|table=t|cols=*|where=SimpleCondition[field=a, op=!=, value=1]|sort=-|limit=-|offset=-	select * from t where a != 1
+OK|table=t|cols=*|where=SimpleCondition[field=a, op=<>, value=1]|sort=-|limit=-|offset=-	select * from t where a <> 1
+OK|table=t|cols=*|where=SimpleCondition[field=a, op=>, value=1]|sort=-|limit=-|offset=-	select * from t where a > 1
+OK|table=t|cols=*|where=SimpleCondition[field=a, op=<, value=1]|sort=-|limit=-|offset=-	select * from t where a < 1
+OK|table=t|cols=*|where=SimpleCondition[field=城市, op==, value=北京]|sort=-|limit=-|offset=-	select * from t where 城市 = '北京'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=it's]|sort=-|limit=-|offset=-	select * from t where a = 'it''s'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=有 空格 的值]|sort=-|limit=-|offset=-	select * from t where a = '有 空格 的值'
+OK|table=t|cols=*|where=AndCondition[left=SimpleCondition[field=a, op==, value=1], right=SimpleCondition[field=b, op==, value=2]]|sort=-|limit=-|offset=-	select * from t where a = 1 and b = 2
+OK|table=t|cols=*|where=OrCondition[left=SimpleCondition[field=a, op==, value=1], right=SimpleCondition[field=b, op==, value=2]]|sort=-|limit=-|offset=-	select * from t where a = 1 or b = 2
+OK|table=t|cols=*|where=OrCondition[left=AndCondition[left=SimpleCondition[field=a, op==, value=1], right=SimpleCondition[field=b, op==, value=2]], right=SimpleCondition[field=c, op==, value=3]]|sort=-|limit=-|offset=-	select * from t where a = 1 and b = 2 or c = 3
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=1]|sort=-|limit=-|offset=-	select * from t where (a = 1)
+OK|table=t|cols=*|where=OrCondition[left=SimpleCondition[field=a, op==, value=1], right=SimpleCondition[field=b, op==, value=2]]|sort=-|limit=-|offset=-	select * from t where (a = 1 or b = 2)
+OK|table=t|cols=*|where=AndCondition[left=SimpleCondition[field=a, op==, value=1], right=SimpleCondition[field=b, op==, value=2]]|sort=-|limit=-|offset=-	select * from t where (a = 1) and (b = 2)
+OK|table=t|cols=*|where=NotCondition[inner=SimpleCondition[field=a, op==, value=1]]|sort=-|limit=-|offset=-	select * from t where not a = 1
+OK|table=t|cols=*|where=NotCondition[inner=SimpleCondition[field=a, op==, value=1]]|sort=-|limit=-|offset=-	select * from t where not (a = 1)
+OK|table=t|cols=*|where=AndCondition[left=SimpleCondition[field=a, op==, value=1], right=OrCondition[left=SimpleCondition[field=b, op==, value=2], right=SimpleCondition[field=c, op==, value=3]]]|sort=-|limit=-|offset=-	select * from t where a = 1 and (b = 2 or c = 3)
+OK|table=t|cols=*|where=SimpleCondition[field=a, op=>, value=1]|sort=-|limit=-|offset=-	select * from t where a>(1)
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=from]|sort=-|limit=-|offset=-	select * from t where a = 'from'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=where]|sort=-|limit=-|offset=-	select * from t where a = 'where'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=and]|sort=-|limit=-|offset=-	select * from t where a = 'and'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=or]|sort=-|limit=-|offset=-	select * from t where a = 'or'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=order by x]|sort=-|limit=-|offset=-	select * from t where a = 'order by x'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=limit 3]|sort=-|limit=-|offset=-	select * from t where a = 'limit 3'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=x and y]|sort=-|limit=-|offset=-	select * from t where a = 'x and y'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=)]|sort=-|limit=-|offset=-	select * from t where a = ')'
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=not]|sort=-|limit=-|offset=-	select * from t where a = 'not'
+OK|table=t|cols=*|where=null|sort=[SortSpec[column=a, desc=false]]|limit=-|offset=-	select * from t order by a
+OK|table=t|cols=*|where=null|sort=[SortSpec[column=a, desc=false]]|limit=-|offset=-	select * from t order by a asc
+OK|table=t|cols=*|where=null|sort=[SortSpec[column=a, desc=true]]|limit=-|offset=-	select * from t order by a desc
+OK|table=t|cols=*|where=null|sort=[SortSpec[column=a, desc=false], SortSpec[column=b, desc=false]]|limit=-|offset=-	select * from t order by a, b
+OK|table=t|cols=*|where=null|sort=[SortSpec[column=a, desc=false], SortSpec[column=b, desc=true]]|limit=-|offset=-	select * from t order by a asc, b desc
+OK|table=t|cols=*|where=null|sort=[SortSpec[column=城市, desc=true]]|limit=-|offset=-	select * from t order by 城市 desc
+OK|table=t|cols=*|where=null|sort=[SortSpec[column=a, desc=true], SortSpec[column=b, desc=false], SortSpec[column=c, desc=false]]|limit=-|offset=-	select * from t order by a desc, b asc, c
+OK|table=t|cols=*|where=null|sort=-|limit=10|offset=-	select * from t limit 10
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=5	select * from t offset 5
+OK|table=t|cols=*|where=null|sort=-|limit=10|offset=5	select * from t limit 10 offset 5
+OK|table=t|cols=*|where=null|sort=-|limit=0|offset=-	select * from t limit 0
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=-	select * from t offset 0
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=1]|sort=[SortSpec[column=b, desc=true]]|limit=10|offset=-	select * from t where a = 1 order by b desc limit 10
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=1]|sort=[SortSpec[column=b, desc=true]]|limit=10|offset=5	select * from t where a = 1 order by b desc limit 10 offset 5
+OK|table=销售|cols=城市|where=SimpleCondition[field=销量, op=>=, value=100]|sort=[SortSpec[column=销量, desc=true]]|limit=10|offset=-	select 城市 from 销售 where 销量 >= 100 order by 销量 desc limit 10
+OK|table=销售|cols=*|where=SimpleCondition[field=城市, op==, value=北京]|sort=[SortSpec[column=销量, desc=true]]|limit=10|offset=-	select * from 销售 where 城市 = '北京' order by 销量 desc limit 10
+OK|table=t|cols=count(*)|where=null|sort=-|limit=-|offset=-	select count(*) from t
+OK|table=t|cols=sum(a)|where=null|sort=-|limit=-|offset=-	select sum(a) from t
+OK|table=t|cols=avg(a)|where=null|sort=-|limit=-|offset=-	select avg(a) from t
+OK|table=t|cols=max(a)|where=null|sort=-|limit=-|offset=-	select max(a) from t
+OK|table=t|cols=min(a)|where=null|sort=-|limit=-|offset=-	select min(a) from t
+OK|table=t|cols=count(*),sum(a)|where=null|sort=-|limit=-|offset=-	select count(*), sum(a) from t
+OK|table=t|cols=COUNT(*)|where=null|sort=-|limit=-|offset=-	select COUNT(*) from t
+OK|table=t|cols=Count(*)|where=null|sort=-|limit=-|offset=-	select Count(*) from t
+OK|table=t|cols=sum(a),avg(b),min(c),max(d)|where=null|sort=-|limit=-|offset=-	select sum(a), avg(b), min(c), max(d) from t
+OK|table=t|cols=count(*)|where=SimpleCondition[field=a, op==, value=1]|sort=-|limit=-|offset=-	select count(*) from t where a = 1
+OK|table=t|cols=sum(salary)|where=null|sort=-|limit=-|offset=-	select sum(salary) from t
+OK|table=t|cols='from'|where=null|sort=-|limit=-|offset=-	select 'from' as x from t
+OK|table=t|cols=city_from|where=null|sort=-|limit=-|offset=-	select city_from from t
+OK|table=t_from_x|cols=city_as from_x|where=null|sort=-|limit=-|offset=-	select city_as from_x from t_from_x
+OK|table=t_from_x|cols=*|where=null|sort=-|limit=-|offset=-	select * from t_from_x
+OK|table=from_table|cols=*|where=null|sort=-|limit=-|offset=-	select * from from_table
+OK|table=t|cols=from_date|where=null|sort=-|limit=-|offset=-	select from_date from t
+OK|table=t|cols=*|where=SimpleCondition[field=a, op==, value=a order by b]|sort=-|limit=5|offset=-	select * from t where a = 'a order by b' limit 5
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=-	select * from `t`
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=-	select * from "t"
+OK|table=t|cols=*|where=null|sort=-|limit=-|offset=-	select * from [t]
+OK|table=t|cols=a|where=null|sort=-|limit=-|offset=-	select `a` from t
+OK|table=t join u on t.id = u.id|cols=*|where=null|sort=-|limit=-|offset=-	select * from t join u on t.id = u.id
+OK|table=t left join u on t.id = u.id|cols=*|where=null|sort=-|limit=-|offset=-	select * from t left join u on t.id = u.id
+OK|table=t union select * from u|cols=*|where=null|sort=-|limit=-|offset=-	select * from t union select * from u
+OK|table=(select a from t) x|cols=*|where=null|sort=-|limit=-|offset=-	select * from (select a from t) x
+OK|table=t having count(*) > 1|cols=*|where=null|sort=-|limit=-|offset=-	select * from t having count(*) > 1
+OK|table=t|cols=distinct a|where=null|sort=-|limit=-|offset=-	select distinct a from t
+IllegalArgumentException|FROM 后面缺少表名	select a from
+IllegalArgumentException|SELECT 与 FROM 之间没有指定列	select from t
+IllegalArgumentException|FROM 后面缺少表名	select * from
+IllegalArgumentException|WHERE 后面缺少条件表达式	select * from t where
+IllegalArgumentException|WHERE 子句中不支持的运算符：a。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a
+IllegalArgumentException|运算符后面缺少值：a =	select * from t where a =
+IllegalArgumentException|运算符前面缺少列名：= 1	select * from t where = 1
+IllegalArgumentException|单引号未闭合，检查 SQL 中的引号是否成对	select * from t where a = 'x
+OK|table=t|cols=*|where=OrCondition[left=SimpleCondition[field=a, op==, value=1], right=SimpleCondition[field=a, op==, value=2]]|sort=-|limit=-|offset=-	select * from t where a in (1,2)
+OK|table=t|cols=*|where=AndCondition[left=SimpleCondition[field=a, op=>=, value=1], right=SimpleCondition[field=a, op=<=, value=10]]|sort=-|limit=-|offset=-	select * from t where a between 1 and 10
+IllegalArgumentException|WHERE 子句中不支持的运算符：a is null。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a is null
+IllegalArgumentException|WHERE 子句中不支持的运算符：a like 'x%'。支持的运算符：>=、<=、!=、<>、>、<、=	select * from t where a like 'x%'
+IllegalArgumentException|LIMIT/OFFSET 写法不受支持。只支持三种："limit n"、"limit n offset m"、"offset m"	select * from t limit 2, 3
+IllegalArgumentException|LIMIT/OFFSET 写法不受支持。只支持三种："limit n"、"limit n offset m"、"offset m"	select * from t limit 3, 3 offset 5
+IllegalArgumentException|列名为空，检查是否多写了逗号	select a, from t
+IllegalArgumentException|列名为空，检查是否多写了逗号	select a,, b from t
+IllegalArgumentException|ORDER BY 后面缺少排序列	select * from t order by
+IllegalArgumentException|ORDER BY 存在空的排序列，检查逗号是否写多了	select * from t order by a,
+IllegalArgumentException|ORDER BY 存在空的排序列，检查逗号是否写多了	select * from t order by ,a
+IllegalArgumentException|ORDER BY 写法不受支持，形如 order by 列名 [asc|desc][, 列名 [asc|desc]]...	select * from t order by a b c
+IllegalArgumentException|ORDER BY 写法不受支持，形如 order by 列名 [asc|desc][, 列名 [asc|desc]]...	select * from t order by a limit
+IllegalArgumentException|聚合查询中不能混用普通列：a。聚合结果只有一行，普通列没有行可引用；全部改用 count/sum/avg/max/min 这类聚合函数，或去掉聚合函数查明细	select a, count(*) from t
+IllegalArgumentException|聚合查询中不能混用普通列：name。聚合结果只有一行，普通列没有行可引用；全部改用 count/sum/avg/max/min 这类聚合函数，或去掉聚合函数查明细	select name, count(*) from t
+OK|table=t|cols=1,count(*)|where=null|sort=-|limit=-|offset=-	select 1, count(*) from t
+OK|table=t|cols='x',count(*)|where=null|sort=-|limit=-|offset=-	select 'x', count(*) from t
+IllegalArgumentException|值含空格，用单引号包裹：有 空格	select * from t where a = 有 空格
+IllegalArgumentException|LIMIT 数值超出范围：99999999999	select * from t limit 99999999999
+IllegalArgumentException|缺少 FROM 关键字	not a select
+IllegalArgumentException|OFFSET 数值超出范围：99999999999	select * from t limit 1 offset 99999999999

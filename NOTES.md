@@ -29,36 +29,51 @@ The README is for users and talks about "what it can do"; this one is for mainta
 
 **Note**: mixing a plain column with an aggregate, as in `select 城市, count(*) from t`, is **actively rejected**, and the error says why (an aggregate result has only one row, so a plain column has no row to reference). This is a deliberate check, not a parse failure.
 
-### 1.2 Only 7 comparison operators are supported
+### 1.2 Only 7 comparison operators plus `in` / `between` — no `is null` / `like`
 
-**Supported**: `>=` `<=` `!=` `<>` `>` `<` `=`
+**Supported**: `>=` `<=` `!=` `<>` `>` `<` `=`, plus `in (...)`, `not in (...)`,
+`between a and b`, `not between a and b`
 
-**Not supported**: `in (...)`, `between a and b`, `is null` / `is not null`, `like`, `not in`
+**Not supported**: `is null` / `is not null`, `like`
 
-**Rationale**: each of these needs its own lexical handling in the parser (`in` is followed by a parenthesized list, `between` has to swallow an `and`, `is null` is postfix), and the `and` / `or` splitting logic interferes with all of them. Doing it means redesigning condition parsing, and the payoff does not match the cost.
+**Why `in` / `between` were done but `is null` / `like` were not**
 
-**Rewrites**:
+The distinction is: **can it be rewritten into a form that is already supported?**
 
-| You want to write | Write instead |
+`in` / `between` can — they say the same thing in a different way, so the parser
+**rewrites them on the spot** into existing comparison combinations, and the layers
+below never learn that the user wrote `in`:
+
+| You want to write | What the parser turns it into |
 |---|---|
 | `c in ('a','b')` | `c = 'a' or c = 'b'` |
+| `c not in ('a','b')` | `c != 'a' and c != 'b'` |
 | `n between 1 and 10` | `n >= 1 and n <= 10` |
-| `c is null` | Not expressible for now (nulls are rare in CSV / tabular data) |
+| `n not between 1 and 10` | `n < 1 or n > 10` |
 
-### 1.3 Identifiers cannot be quoted
+(The usual name for "same meaning, different spelling" syntax is **syntactic sugar**.)
 
-`` `t` ``, `"t"`, `[t]` — **none of them work**.
+Once expanded into `OrCondition` / `AndCondition`, **the execution layer, charts,
+pagination and PDF export need not change a single line** — they only understand
+`SimpleCondition(field, op, value)` plus the three combinators. That is exactly why this
+route was chosen: new capability without a new execution path, so the risk is low.
 
-**Symptom**: **the parser does not error**. It treats the quotes as part of the name (the parsed table name literally is `` `t` ``, `"t"`, `[t]`), so the error is deferred until the data source lookup, where the message reads "Data source not found: `` `t` ``".
+`is null` needs **null semantics** (testing for "no value", while how comparison
+operators treat nulls is a separate set of rules), and `like` needs **pattern matching**
+(a wildcard matcher would have to actually run). Neither can be rewritten into anything
+that already exists, so they are genuinely new capabilities and stay on the unsupported
+list.
 
-**Rationale**: identifiers are currently split on spaces and commas, with no quote escaping. Adding quotes just makes the quotes part of the name.
+**One trap worth recording**: `between` must be handled **before the top-level AND
+split**. The `and` in `n between 1 and 10` belongs to `between`, not to logical
+conjunction; splitting on `and` first turns `between 1` into half a condition and
+reports "missing and". The position of the `tryParseBetween` call inside
+`Parser.parseCondition` is deliberate.
 
-**Impact**: column or table names containing spaces, commas, or keywords cannot be referenced (see 2.4 below).
+**Argument validation** (each has dedicated copy): `in ()` with an empty list errors,
+`in 'a','b'` missing parentheses errors, `between 1` missing `and` errors.
 
-> ⚠️ **Troubleshooting hint**: the common thread in this class of problems is "**the parser lets it through, the error is deferred**."
-> If you assume the parser will stop it, you will go looking inside the parser — in entirely the wrong direction. See 2.4.
-
-### 1.4 Formula cells read the cached value only (xlsx data source)
+### 1.3 Formula cells read the cached value only (xlsx data source)
 
 Excel formula cells are **not evaluated**; only the cached value computed the last time Excel saved the file is read.
 
@@ -66,13 +81,13 @@ Excel formula cells are **not evaluated**; only the cached value computed the la
 
 **Symptom**: if the file was generated programmatically and the formulas were never opened by Excel, the cached value may be empty → that cell reads as empty. **This is expected behavior, not a missed read.**
 
-### 1.5 Other xlsx boundaries
+### 1.4 Other xlsx boundaries
 
 - **`.xlsx` only**; `.xls` errors out explicitly and tells you to save as `.xlsx`
 - **Merged cells keep only the top-left value** (matching how Excel displays them; the remaining positions are empty)
 - Styles and colors are not read (we only care about the data)
 
-### 1.5b PDF data source: built, measured, then removed
+### 1.4b PDF data source: built, measured, then removed
 
 **Conclusion**: LynMill **does not offer a PDF data source**. A version that read "tables with ruled borders only" was once implemented (hand-written parsing, zero dependencies, about 3,100 lines of main code + 550 lines of tests) and was **deliberately deleted** after being measured against real files. Why is recorded here, because "it can read some of them" always sounds better than "unsupported" — it is not.
 
@@ -126,12 +141,12 @@ If it is ever redone, the conclusions below still hold, so nobody has to step on
 
 Find the original Excel/CSV and import that directly (most reliable); when only the PDF exists, use Acrobat / WPS "PDF to Excel" and **check it over yourself** before importing — conversion tools are guessing too, and the check is not optional.
 
-### 1.5c Build identity: `build-info.properties` is generated at packaging time
+### 1.4c Build identity: `build-info.properties` is generated at packaging time
 
 **Current state**: at packaging time the antrun `generate-build-info` execution in the pom generates `target/classes/build-info.properties` with three lines:
 
 ```
-build.version=1.1.0
+build.version=1.2.0
 build.time=2026-10-10 15:02
 build.commit=e0dce58
 ```
@@ -151,7 +166,7 @@ By the same token, when running in development mode directly (`mvn spring-boot:r
 
 **Why not "compare timestamps inside the jar"**: a jar is a zip, and the timestamp on every entry is **the moment it was written into the jar**, not the file's original modification time. So "the time of `index.html` inside the jar" is always exactly the packaging moment, and it **cannot tell you whether the frontend is older than the jar**. That approach does not work; the only option is to bake a copy of the metadata in at packaging time.
 
-### 1.6 There is no `application.properties`; configuration lives in the startup class
+### 1.5 There is no `application.properties`; configuration lives in the startup class
 
 **Current state**: there is **no** `application.properties` under `src/main/resources/` (and no `.yml` either). Every configuration item is set by `TinyQueryApplication` via `System.setProperty` before `SpringApplication.run`.
 
@@ -169,7 +184,7 @@ By the same token, when running in development mode directly (`mvn spring-boot:r
 
 **When adding a new configuration item**: first decide whether it is **static** (like `spring.mvc.throw-exception-if-no-handler-found`) or **computed at runtime**. Static ones can go in a configuration file; runtime ones belong in `TinyQueryApplication`, following the same "command line > system property > default" precedence.
 
-### 1.7 Data sources stay resident in memory in full, at roughly 5× the file size
+### 1.6 Data sources stay resident in memory in full, at roughly 5× the file size
 
 **Current state**: once a data source is opened, **the entire table stays on the heap** — no cap, no eviction, no LRU.
 The only way to release it is to delete the data source or restart the program.
@@ -213,7 +228,7 @@ The current positioning is a local lightweight tool, and users have an intuition
 
 ---
 
-### 1.8 Release packages ship a **trimmed** runtime, and the module list is maintained by hand
+### 1.7 Release packages ship a **trimmed** runtime, and the module list is maintained by hand
 
 **Current state**: at packaging time `jlink` first produces a runtime containing only the required modules (about 47 MB),
 which `jpackage --runtime-image` then packages in. The release package dropped from about 176 MB to about 94 MB.
@@ -263,7 +278,7 @@ The value of these two scripts has been verified by **fault injection**: deliber
 deliberately trimming `jdk.crypto.ec` + `jdk.localedata` pins the failure to exactly those two.
 **An acceptance script that has never gone red does not count as an acceptance script.**
 
-### 1.9 `packaging\package.ps1` must be saved as UTF-8 **with BOM**
+### 1.8 `packaging\package.ps1` must be saved as UTF-8 **with BOM**
 
 **Current state**: the file has a BOM, and the top of the file carries a prominent warning.
 
@@ -284,70 +299,11 @@ python packaging/check-ps1-encoding.py
 It scans every `.ps1` under `packaging/` and reports an error, with the fix, for any file that is "UTF-8 without BOM and contains non-ASCII".
 **Run it after touching a `.ps1`** — including after editing with automated tools, since those can eat the BOM too.
 
+---
+
 ## 2. Known Defects (Should Work But Currently Does Not)
 
-
-### 2.1 Column aliases (`as`) are not supported at all
-
-```sql
-select city as c from sales      -- ❌ error:Unknown column:city as c
-select city c from sales         -- ❌ error:Unknown column:city c
-select 城市 as 城市名 from t       -- ❌ error:Unknown column:城市 as 城市名
-```
-
-**Root cause (confirmed by measurement)**: the parser treats the whole of `city as c` as **a single column name**.
-`selectColumns` holds the string `"city as c"`, and the execution layer goes looking for that name in the table and naturally does not find it.
-
-A full-text search confirms: there is **no code in `SQLParser` that handles `as` at all**, and there never has been since the initial commit —
-**this is not a regression, it was never implemented.**
-
-**Why nobody noticed before**: the README's [Supported] table listed it as "supported"
-(written in when the README was rewritten in `8cc9c9f`; the same commit also wrongly listed `in` / `between` / `is null`
-as "supported"). Users who follow it get an `Unknown column:city as c` —
-the column name looks fine, so it is hard to connect it to "aliases are unsupported". **This entry is the textbook case of documentation and implementation drifting apart.**
-
-**Current state**: this round the README has been brought back in line with the implementation (moved to [Not supported]).
-Implementing column aliases is a **new feature**; no user has asked for it, and there is no prompting for it anywhere in the frontend or the copy —
-so it was handled as "document it truthfully" rather than slipping in a feature.
-
-**Things to watch when fixing it** (left for the future): handling `as` and the `from` scanning of 2.3 live in **the same lexical layer**,
-so quote awareness has to be considered for both together; aliases also have to be referenceable in `where` / `order by`.
-
-### 2.2 Column names or aliases containing `from` fail to parse
-
-> **Preamble**: because of 2.1, column aliases are currently unusable as a whole. But this `from`-scanning defect **stands on its own** —
-> it equally affects the case where **the column name itself** contains `from` (for instance the column-name part of `select city_from as ...`,
-> and string literals like `select 'from'`), so it is kept as a separate entry.
-
-```sql
-select 'from' as x from t           -- ❌ error:Data Source not found:' as x from t
-select city_as from_x from t_from_x -- ❌ error:Data Source not found:_x from t_from_x
-```
-
-**Root cause (confirmed by measurement)**: when `SQLParser` locates the `from` keyword it **splits on the first `" from "`**,
-without distinguishing `from` inside quotes or inside an identifier.
-
-**The key point: the parser itself does not error.** It quietly slices out a garbage table name:
-
-| What you wrote | Table name parsed out |
-|---|---|
-| `select 'from' as x from t` | `' as x from t` |
-| `select city_as from_x from t_from_x` | `_x from t_from_x` |
-| `select * from t_from_x` | `t_from_x` (normal) |
-
-**Note the last row**: a table name that itself contains `from` is fine. The defect is not "containing `from` breaks it",
-it is "**splitting on the first ` from `**" — so only the part that appears **before** ` from ` gets cut in half.
-`where 城市 = 'from'` is also fine (`from` is no longer searched for after `where`).
-
-The error only appears when the execution layer goes to look up that "table" — hence the misleading wording "Data source not found" (see 2.4).
-
-Relevant locations: the two places in `SQLParser.java` that look for `from`.
-
-**Why it has not been fixed yet**: it requires introducing "quote-aware lexical scanning", which is the same underlying change as 1.3 (identifiers do not support quotes). Fix them together or not at all.
-
-**Workaround**: do not use the word `from` in column names. `where 城市 = 'from'` is fine (`from` is no longer searched for after `where`).
-
-### 2.4 Error messages for unsupported syntax are misleading
+### 2.1 Error messages for unsupported syntax are misleading
 
 **Symptom**: when you write unsupported syntax, the error message may say "**Data source not found**", when the data source is in fact fine.
 
@@ -357,16 +313,27 @@ select * from t join t2 on t.姓名 = t2.姓名
 
 The parsed table name is `t join t2 on t.姓名 = t2.姓名` — **the whole thing was taken as the table name**. No such data source is found, so it reports "Data source not found".
 
-**Root cause**: same origin as 2.2. Everything after `from` is swallowed whole, with no validity check on the clause boundary.
+**Root cause**: unknown clauses after `from` are swallowed whole, with no validity check on the clause boundary — the parser **does not implement** `join` / `union` / subqueries / `group by` at all, so there is genuinely nowhere to stop.
 
-**Troubleshooting hint**: **when you hit "Data source not found" but the name looks fine, first check whether you used unsupported syntax** (`join`, `distinct`, quoted table names, etc.). The way to tell is whether the "table name" in the error is a long string — a normal table name does not contain spaces or `on`.
+> **Do not confuse this with "the split happened at the wrong place".** There used to be a
+> second cause: the old parser split on the first `" from "` **by character position**, so
+> a column or alias merely *containing* `from` produced a garbage table name. That cause
+> disappeared in 1-2 with the parser rewrite (`select 'from' as x from t` parses now).
+> **What remains is a different cause, unrelated to that one.**
 
-**What has already improved**: `limit m, n` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.) What remains is concentrated in the `from` boundary problem.
+**Troubleshooting hint**: **when you hit "Data source not found" but the name looks fine, first check whether you used unsupported syntax** (`join`, `distinct`, subqueries, `union`, etc.). The way to tell is whether the "table name" in the error is a long string — a normal table name does not contain spaces or `on`.
 
-> **For whoever troubleshoots this**: the shared pattern in this class of problems is "**the parser lets it through and the error is deferred to the execution layer**."
-> Assuming the answer is in the parser — "why didn't it stop this?" — wastes time. First confirm what table name was actually parsed.
+**Which unsupported syntax gives which message**:
 
----
+| You wrote | Message you get | Says what's wrong? |
+|---|---|---|
+| `join` / `union` / `group by` / subquery | Data source not found | ❌ misleading |
+| `select distinct a` | Column not found: `distinct a` | ❌ misleading |
+| `limit m, n` | dedicated message | ✅ |
+| `is null` / `like` | dedicated message listing supported operators | ✅ |
+| plain columns mixed with aggregates | dedicated message | ✅ |
+
+**What has already improved**: `limit m, n`, `is null`, `like` and mixing plain columns with aggregates are now **stopped at parse time**, with dedicated error messages, instead of falling into "Data source not found". **`group by` is not among them** — it is still swallowed into the table name and reported as "Data source not found". (This line used to claim `group by` was covered too; corrected 2026-10-11 by measurement — the claim had never been true, and two test fixtures were hiding it.)
 
 ## 3. Behaviors Easily Misdiagnosed as Bugs
 
@@ -511,6 +478,61 @@ fc-list :lang=zh | wc -l      # 0 means no Chinese font is installed
 and it **deliberately fails** when the font is missing — that is a safety net, so do not loosen it just to "make the build pass".
 There is also a separate self-check, `packaging/check-font-recommends.sh`, verifying that the deb Recommends logic is not broken.
 
+### 3.5 Which quoting forms are legal inside a delimiter
+
+**This is not a defect** — it is a semantics note. Users write these forms and want to
+know why one errors and another does not.
+
+Quote characters of a **different** kind may be nested freely (a backtick may contain
+single or double quotes). A same-type quote written **bare** is illegal and must be
+doubled. Brackets use the SQL Server `]]` rule.
+
+This cannot be settled by opinion, because "the quoting form itself is illegal" and
+"the parser has a bug" both show up as an error. The table below is the result of
+running each form against **real SQLite 3**:
+
+| Form | Real SQLite | tinyquery | Verdict |
+|---|---|---|---|
+| `` `a"b` `` | column `a"b` | column `a"b` | ✅ match |
+| `` `a'b` `` | column `a'b` | column `a'b` | ✅ match |
+| `` `a``b` `` | column ``a`b`` | column ``a`b`` | ✅ match |
+| ```` ```a``` ```` | column `` `a` `` | column `` `a` `` | ✅ match |
+| `` [a`b] `` | column ``a`b`` | column ``a`b`` | ✅ match |
+| `[a``b]` | error (`no such column: a``b`) | error | ✅ match |
+| ```` ``a`` ```` | syntax error | error | ✅ match |
+| `` `a`b` `` | unrecognized token | error | ✅ match |
+
+> **The one people trip over**: `` [a`b] `` works but `[a``b]` does **not**.
+> Brackets do **not** treat backticks as special, so `[a``b]` asks for a column
+> literally named `` a``b `` (two backticks), and the table only has `` a`b `` (one).
+> SQLite behaves identically — correct behaviour, not a defect. Inside brackets only
+> `]` needs doubling.
+
+### 3.6 "No error, but the wrong thing came back" — the most dangerous class of bug
+
+**Remember this pattern when troubleshooting.**
+
+There was once a defect where the query succeeded, the row count was right, and yet
+**a different column came back** (a column named `'''` read as `'`). Zero errors, the UI
+looked perfectly normal. The cause was the execution layer treating a delimited
+identifier as a string constant and stripping its quotes.
+
+**Why it is the most dangerous class**: there is no error to chase, the user may act on
+wrong data, and **a test that only compares "success/failure" cannot catch it at all** —
+that defect passed the whole differential run, because the criterion at the time only
+looked at "expected ok / actual ok".
+
+**Two rules that came out of it**:
+
+1. **The criterion must check the returned column names**, not just success/failure.
+   Expected column names in the differential run now come from **real SQLite**.
+2. **Do not hand-roll "strip the delimiter + decode the escape" rules.** A hand-written
+   rule inevitably drifts from the lexical layer — in measurement it was wrong in both
+   directions: over-decoding produced 16 false positives, under-decoding 8. Switching
+   to SQLite as the oracle made both ends correct.
+
+**A test guards this**: `DocumentedLimitationsTest.delimitedIdentifierKeepsItsOwnQuotes`.
+
 ---
 
 ## 4. The Assertions in This File Are Guarded by Tests
@@ -519,17 +541,17 @@ Every "we think it behaves like this" above has a corresponding test:
 
 | Entry | Test class |
 |---|---|
-| Parser-related limitations and defects (1.1–1.5, 2.1–2.4, 3.x) | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
-| Startup configuration and user data directory (1.6) | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
-| Memory footprint and pre-check (1.7) | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
-| The trimmed runtime still connects to databases, reads Chinese, and renders charts (1.8) | `packaging/verify-package.py` (standalone acceptance, **needs real databases**) |
-| Crypto/charset/localization modules intact after trimming (1.8) | `packaging/verify-crypto.py` (standalone acceptance) |
-| The `.ps1` BOM has not been eaten (1.9) | `packaging/check-ps1-encoding.py` (standalone self-check) |
+| Parser-related limitations and defects (1.1–1.4, 2.1, 3.x) | `src/test/java/com/tinyquery/parser/DocumentedLimitationsTest.java` |
+| Startup configuration and user data directory (1.5) | `src/test/java/com/tinyquery/config/StartupConfigurationTest.java` |
+| Memory footprint and pre-check (1.6) | `src/test/java/com/tinyquery/datasource/loader/MemoryGuardTest.java` |
+| The trimmed runtime still connects to databases, reads Chinese, and renders charts (1.7) | `packaging/verify-package.py` (standalone acceptance, **needs real databases**) |
+| Crypto/charset/localization modules intact after trimming (1.7) | `packaging/verify-crypto.py` (standalone acceptance) |
+| The `.ps1` BOM has not been eaten (1.8) | `packaging/check-ps1-encoding.py` (standalone self-check) |
 | The tray menu font can display Chinese (3.4) | `src/test/java/com/tinyquery/desktop/TrayIconInstallerTest.java` |
 | The deb adds a Chinese-font Recommends (3.4) | `packaging/check-font-recommends.sh` (standalone self-check, **runs on Linux only**) |
 | The README's two tables match real behavior (all) | `src/test/java/com/tinyquery/audit/ReadmeAuditTest.java` (runs in `mvn test`) + `ReadmeAudit.java` (the assertions, and a `main` for manual runs) |
 
-The **measured numbers** in 1.7 are produced by `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java`,
+The **measured numbers** in 1.6 are produced by `src/test/java/com/tinyquery/bench/MemoryFootprintTool.java`,
 and can be re-run at any time to re-check (`mvn test-compile`, then run the main method directly, or run it from the IDE).
 
 3.4's second self-check is **not in Maven**: it needs `dpkg-deb`, which does not exist on Windows,
@@ -537,7 +559,7 @@ and putting it in Maven would either make Windows builds go red or force it to b
 It is invoked proactively by `packaging/package-linux.sh` before building the deb/rpm, and packaging aborts if the self-check fails —
 so "it broke" does not wait until a user has installed the package to surface. Run it manually with: `bash packaging/check-font-recommends.sh`.
 
-The three self-checks for 1.8 / 1.9 are likewise **not in Maven**, each for a different reason:
+The three self-checks for 1.7 / 1.8 are likewise **not in Maven**, each for a different reason:
 
 - `verify-package.py` needs **real databases** (MySQL/PostgreSQL started via docker, ports configurable).
   Putting it in Maven would turn machines without databases running red, and people would habitually skip it — and skipping equals not having it
@@ -559,8 +581,8 @@ It **goes through the real HTTP entry point**, printing "claimed behavior" and "
 > **Wiring it up exposed a false green inside the tool itself** (2026-10-11): the `group by` entry's fixture was
 > `select city, count(*) ... group by city`, which trips the "plain column mixed with aggregate" rule first and picks up
 > *that* rule's dedicated message — so it showed ✅, hiding the truth that **`group by` has no dedicated message at all**.
-> `DocumentedLimitationsTest` had two false greens of the same kind (limitation 1.1 and defect 2.4).
-> All three are corrected, and the "has a dedicated message" claim in the README and in NOTES 2.4 was corrected with them.
+> `DocumentedLimitationsTest` had two false greens of the same kind (limitation 1.1 and defect 2.1).
+> All three are corrected, and the "has a dedicated message" claim in the README and in NOTES 2.1 was corrected with them.
 > **A fixture must test only the one thing it claims to test** — incidentally exercising another rule hides the truth.
 
 > **The measuring instrument needs its own test**: the `garbageTableName` helper used to decide
@@ -570,7 +592,7 @@ It **goes through the real HTTP entry point**, printing "claimed behavior" and "
 > entry by entry, deriving the expected values on the spot rather than maintaining them from memory.
 
 > **Why this tool exists at all**: during the 2026-10 review, the README's [Supported] table was found to list
-> `select a as 别名` as "supported" when the implementation had never had it (recorded as 2.1).
+> `select a as 别名` as "supported" when the implementation had never had it (that defect was fixed in 1-2, and the entry was deleted per convention).
 > That error had been there for a long time, since the README was rewritten in `8cc9c9f`, and **no test ever went red because of it**.
 > Section 4 of this file covers "limitations", whereas the README covers "capabilities" —
 > and the latter had never been guarded by anything.
@@ -597,7 +619,8 @@ Only when both are done is the work complete.
 1. **Run the full test suite**: `mvn test` (the frontend has to be built first, see README)
 2. **Changed SQL parsing or execution**: run `DocumentedLimitationsTest`, and sync the README's
    "SQL Support Scope and Limitations" table and this file
-3. **Changed the parser**: confirm that the descriptions in 2.1 / 2.2 of this file are still accurate
+3. **Changed the parser**: confirm that the descriptions of the two parser-related entries in
+   this file are still accurate — limitation **1.1** (`group by` unsupported) and defect **2.1** (misleading errors)
 4. **Changed copy or i18n**: follow the "how to verify after changes" section of `TinyQuery-Data/06-开发文档/i18n-术语表与风格规范.md`
 5. **Run the javadoc reference check once after finishing**:
 
@@ -617,7 +640,7 @@ Only when both are done is the work complete.
 
 7. **"I changed it and nothing happened" → check the version number first, do not suspect the code first**.
 
-   After the program starts, the bottom of the settings page shows a build identity line such as `1.1.0 · e0dce58 · 2026-10-10 15:02`;
+   After the program starts, the bottom of the settings page shows a build identity line such as `1.2.0 · e0dce58 · 2026-10-10 15:02`;
    there is also a "build version" line in the startup log. Compare it against **the time of your most recent packaging run**:
 
    - **They match** → what you are looking at is the latest code; the problem is elsewhere
@@ -652,7 +675,7 @@ Only when both are done is the work complete.
    ```
 
    `verify-package.py` runs **the packaged launcher** (not `java -jar`),
-   so only it can verify the bundled runtime. See 1.8 and 1.9 of this file.
+   so only it can verify the bundled runtime. See 1.7 and 1.8 of this file.
 
 ---
 
@@ -660,5 +683,14 @@ Only when both are done is the work complete.
 
 - **Location**: `NOTES.md` in the repository root. Developer-facing docs live in the repository and are versioned with the code
 - **New entries**: decide first whether it is a "defect" or a "limitation", and put it in the right section — putting it in the wrong one makes people change things with the wrong expectation
-- **After fixing it**: **delete the entry**; do not leave a "fixed" tombstone behind. History is in git
+- **After fixing it**: **delete the entry**; do not leave a "fixed" tombstone behind.
+  History is in git. What got fixed belongs in the CHANGELOG and README; this file only
+  describes what will trip you up **today**.
+  - Exception: if an entry contains something **independent of whether it is fixed**
+    (a semantics note, a troubleshooting lesson, a measured comparison table), move that
+    part to section 3 rather than deleting it along with the entry
+  - After deleting, **check other entries' cross-references**: a deleted entry's number
+    gets reused, so references to the old number must be updated too
 - **When a limitation becomes a defect**: if one day you decide it should work, move it from section 1 to section 2 and write down why you changed your mind
+- **Write "1-2", not "this round"**: round numbers are a temporary development label;
+  a few months later nobody knows which round "this round" was

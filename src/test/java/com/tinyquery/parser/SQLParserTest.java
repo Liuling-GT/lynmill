@@ -7,7 +7,6 @@ import com.tinyquery.parser.where.OrCondition;
 import com.tinyquery.parser.where.SimpleCondition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -614,18 +613,45 @@ class SQLParserTest {
                 () -> parser.parse("delete from t"));
     }
 
-    // ==================== 已知缺陷 ====================
+    // ==================== 引号感知 ====================
 
-    @Disabled("已知缺陷：值内部含 order by 会被误判为排序子句。"
-            + "ORDER_BY_PATTERN 锚定在语句末尾，无法区分引号内外的 order by。"
-            + "修复方向：匹配前统计该位置之前的单引号个数，为奇数则视为引号内，不予剥离")
+    // 【1-2 修好了，本测试从 @Disabled 转为启用】
+    // 此前它被 @Disabled 标着「已知缺陷」，注释里写的修复方向是
+    // 「匹配前统计该位置之前的单引号个数，为奇数则视为引号内」——
+    // 那是给旧的正则实现打的补丁思路。
+    //
+    // 1-2 没有走补丁路线：词法层把 'a order by b' 整体扫成一个 STRING token，
+    // 排序子句只在 order / by 是 KEYWORD token 时才成立。
+    // 引号内的内容是 STRING，压根不参与判断 —— 缺陷消失，而不是被绕开。
     @Test
-    @DisplayName("值内部含 order by 不应被识别为排序子句（当前会误判）")
+    @DisplayName("值内部含 order by 不应被识别为排序子句")
     void orderByInsideStringLiteral() {
         QueryStatement stmt = parser.parse("select * from t where note = 'a order by b'");
 
         assertFalse(stmt.hasOrderBy(), "引号内的 order by 不应被当作排序子句");
         assertEquals("t", stmt.tableName());
+    }
+
+    @Test
+    @DisplayName("值内部含 order by，且语句真的有排序子句时，两者互不干扰")
+    void orderByInsideLiteralPlusRealOrderBy() {
+        QueryStatement stmt =
+                parser.parse("select * from t where note = 'a order by b' order by age desc");
+
+        assertTrue(stmt.hasOrderBy(), "真的 order by 应被识别");
+        assertEquals(1, stmt.sort().size());
+        assertEquals("age", stmt.sort().first().column());
+        assertEquals("a order by b", assertInstanceOf(SimpleCondition.class, stmt.condition()).value(),
+                "值里的 order by 应完整保留");
+    }
+
+    @Test
+    @DisplayName("值内部含 from 不会截断表名")
+    void fromInsideStringLiteral() {
+        QueryStatement stmt = parser.parse("select * from t where note = 'from here'");
+
+        assertEquals("t", stmt.tableName(), "引号内的 from 不该影响表名");
+        assertEquals("from here", assertInstanceOf(SimpleCondition.class, stmt.condition()).value());
     }
 
     // ==================== 括号 ====================

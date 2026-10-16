@@ -23,7 +23,7 @@ export default {
   // ==================== 应用外壳 ====================
   app: {
     title: 'LynMill',
-    subtitle: '本地查询引擎 · V1.1.0',
+    subtitle: '本地查询引擎 · V1.2.0',
     nav: {
       query: '查询',
       datasource: '数据源',
@@ -113,6 +113,11 @@ export default {
     testPassed: '测试通过',
     testFailed: '测试未通过',
     registered: '数据源注册成功：{name}',
+    probe: '探测',
+    probeHint: '根据已填的文件路径列出可选项',
+    probeFound: '探测到 {count} 个可选项',
+    probeEmpty: '没有探测到可选项，请先填写文件路径',
+    sheetAutoHint: '留空则用第一张工作表',
     error: {
       typeRequired: '请选择数据源类型',
       nameRequired: '请填写数据源名称',
@@ -137,17 +142,40 @@ export default {
     rows: '{count} 行',
     summary: '共 {total} 行，当前显示第 {from}-{to} 行',
     placeholderColumn: '第 {n} 列',
-    export: '导出 CSV',
+    export: '导出',
+    exportCsv: '导出 CSV',
+    exportXlsx: '导出 Excel (.xlsx)',
+    exportPdf: '导出 PDF',
     exporting: '导出中…',
     exportFailed: '导出失败',
     exportHttpError: '导出失败：服务端返回 {status}',
+
+    // 导出 PDF 前的版面选择。文案要说清「为什么让我选」——
+    // 用户不知道 A4 纵向放不下 16 列，直接弹个设置框会让人莫名其妙
+    layoutTitle: '导出 PDF 的版面',
+    layoutSummary: '当前结果共 {columns} 列、{rows} 行。列数较多时纵向排版会把列名截断，可在这里选择排版方式。',
+    layoutPortrait: '纵向',
+    layoutLandscape: '横向',
+    layoutWithScale: '{direction} · 字号 {percent}%',
+    layoutFits: '全部放得下',
+    layoutTruncated: '{count} 列会被截断',
+    layoutRecommended: '推荐',
+    layoutConfirm: '按此导出',
   },
 
   // ==================== 图表 ====================
   chart: {
     title: '图表',
     subtitle: '按维度聚合，基于全量数据，不受表格分页影响',
+    // 图表卡片头那个按钮的文案。缺了它按钮会显示成英文 ——
+    // vue-i18n 解析不到 chart.export 就退回键名，界面上就是 "Export"
+    export: '导出',
     exportPng: '导出 PNG',
+    exportPdf: '导出 PDF',
+    exportPdfTitle: '导出图表 PDF',
+    includeTable: '在图下方附数据表',
+    includeTableHint: '不勾选则只导出图表本身，图表会占满整页。需要对照具体数值时再勾上。',
+    exported: '已导出',
     emptyHint: '请先执行一次查询，图表将基于该次查询的结果绘制',
     loading: '正在聚合…',
     dimension: '维度',

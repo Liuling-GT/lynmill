@@ -67,12 +67,49 @@ public class XlsxLoader implements DataLoader {
                 FieldSpec.text(FIELD_PATH, Messages.get("field.filePath"), true,
                         Messages.get("field.xlsxPathDesc"),
                         "data/sample.xlsx"),
-                // 工作表名留空即第一张表。不给下拉是因为要列出来就得先打开文件，
-                // 而字段清单是纯静态的、在没选文件时就要渲染出来
-                FieldSpec.text(FIELD_SHEET_NAME, Messages.get("field.sheetName"), false,
+                // 工作表名留空即第一张表。
+                //
+                // 【为什么不是 ENUM】要列出工作表名就得先打开文件，而字段清单是
+                // 静态的、在用户还没选文件时就要渲染出来 —— 所以选项不可能在这里
+                // 给出。改成「可探测字段」：前端在输入框旁边放一个探测按钮，
+                // 点了才去问后端要选项（见 probeOptions）。
+                // 平时仍可手输，留空取第一张表。
+                FieldSpec.probeableText(FIELD_SHEET_NAME, Messages.get("field.sheetName"), false,
                         Messages.get("field.sheetNameDesc"),
                         "")
         );
+    }
+
+    /**
+     * 探测工作表名，供表单的下拉框使用。
+     *
+     * <p>只读工作簿元数据（workbook.xml），不解析单元格 —— 几百兆的表
+     * 也能秒回，用户可以放心反复点。</p>
+     *
+     * <p>路径没填或文件不合法时返回空 map，而不是抛异常：用户很可能在还没选文件
+     * 时就点了探测，那不是错误，只是「还没东西可探」。真正的错误（文件不存在、
+     * 不是 xlsx）由 {@code test} 按钮负责报给用户。</p>
+     */
+    @Override
+    public Map<String, List<String>> probeOptions(DataSourceConfig config) {
+        if (config == null) {
+            return Map.of();
+        }
+        File file = resolveReadableFile(config);
+        if (file == null) {
+            return Map.of();
+        }
+        try {
+            List<String> sheets = sheetNames(file.getAbsolutePath());
+            return sheets.isEmpty()
+                    ? Map.of()
+                    : Map.of(FIELD_SHEET_NAME, sheets);
+        } catch (RuntimeException e) {
+            // 探测是「顺手的辅助功能」，不该把表单搞成一个报错框。
+            // 需要明确错误信息时用户会点「连接测试」
+            log.debug("探测工作表名失败：{}", e.getMessage());
+            return Map.of();
+        }
     }
 
     // ==================== 自检 ====================
@@ -165,9 +202,17 @@ public class XlsxLoader implements DataLoader {
     /**
      * 单元格值归一化。
      *
-     * <p>只处理两件事：空串当 null（与 CSV 的补空行为一致），
-     * 其余原样透传。数字、布尔、日期文本都已经在
-     * {@link XlsxReader} 里转成合适的类型了，这里不再猜。</p>
+     * <p>走与 CSV / MySQL 完全相同的 {@link ValueNormalizer}，不做自己的那一套。</p>
+     *
+     * <p><b>为什么必须共用。</b>本方法原先只是「空串当 null，其余原样透传」，
+     * 于是 Excel 的数值单元格保持着 XlsxReader 产出的 Long / Double 类型
+     * 进入了查询引擎，而引擎的比较与聚合是按 Integer / BigDecimal 写的 ——
+     * 后果是 Excel 的每一个数值列都被判成文本列，图表里选不到度量、
+     * 数值维度也不分桶；同一份数据存成 CSV 导入却完全正常。</p>
+     *
+     * <p>这类「同一份数据、换个数据源就坏」的问题很难从症状联想到类型归一，
+     * 所以这里不只是补类型转换，而是直接复用同一个归一器：
+     * 只要值在进入引擎之前已经统一，引擎就不必知道数据是从哪来的。</p>
      */
     private static Object normalize(Object value) {
         if (value == null) {
@@ -176,7 +221,7 @@ public class XlsxLoader implements DataLoader {
         if (value instanceof String s && s.isEmpty()) {
             return null;
         }
-        return value;
+        return ValueNormalizer.normalize(value);
     }
 
     // ==================== 文件校验 ====================

@@ -14,7 +14,7 @@
 
     <groupId>com.Liuling</groupId>
     <artifactId>tinyquery</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <packaging>jar</packaging>
 
     <name>LynMill</name>
@@ -44,7 +44,7 @@
         <connection>scm:git:https://github.com/Liuling-GT/lynmill.git</connection>
         <developerConnection>scm:git:https://github.com/Liuling-GT/lynmill.git</developerConnection>
         <url>https://github.com/Liuling-GT/lynmill</url>
-        <tag>v1.1.0</tag>
+        <tag>v1.2.0</tag>
     </scm>
 
     <properties>

@@ -137,10 +137,64 @@ public record QueryEngine(ColumnStore store) {
         return buildRow(cols, rowIndex);
     }
 
+    /**
+     * 按 SELECT 列表投影单行，<b>保留原始类型</b>，供 Excel 导出使用。
+     *
+     * <p>与 {@link #projectRow} 的唯一区别是不把值转成字符串。CSV 里一切都是文本，
+     * 但 Excel 里如果数字被写成文本，用户既不能求和也不能排序 —— 导出就失去了
+     * 意义。日期同理：写成文本就没法按时间轴排序。</p>
+     *
+     * <p>常量项（{@code select 1, count(*)} 里的 1）没有原始对象可给，
+     * 按字面量语义还原成 Integer。</p>
+     *
+     * @param stmt  已解析的语句
+     * @param cols  预先解析好的投影列（见 prepareColumns）
+     * @param rowIndex 行号
+     */
+    public Object[] projectRowTyped(QueryStatement stmt, ProjectionColumns cols, int rowIndex) {
+        int colCount = cols.names().length;
+        Object[] row = new Object[colCount];
+        for (int i = 0; i < colCount; i++) {
+            switch (cols.kinds()[i]) {
+                case COL_NUMBER_LITERAL -> row[i] = parseNumericLiteral(cols.literals()[i]);
+                // 字符串常量保持字符串，不要被 Excel 当成数字
+                case COL_STRING_LITERAL -> row[i] = cols.literals()[i];
+                // 其余直接给原始对象，让 XlsxWriter 按类型分流
+                default -> row[i] = cols.columns().get(i).get(rowIndex);
+            }
+        }
+        return row;
+    }
+
+    // 数字字面量还原成数值对象。解析失败就退回字符串，不让导出因此失败
+    private static Object parseNumericLiteral(String text) {
+        if (text == null) {
+            return null;
+        }
+        try {
+            java.math.BigDecimal d = new java.math.BigDecimal(text.trim());
+            // 整数用整数类型，避免 Excel 里显示成 1.0
+            return d.scale() <= 0 ? (Object) d.longValueExact() : (Object) d;
+        } catch (ArithmeticException | NumberFormatException e) {
+            return text;
+        }
+    }
+
 
 
     // 解析结果表的列名
     private List<String> resolveColumnNames(QueryStatement stmt) {
+        // D1：别名优先。别名是用户明确指定的表头，比任何推导出来的名字都权威 ——
+        // 聚合、常量、明细三条路径都一样，所以放在最前面统一处理。
+        // 没写别名的位置 headerAt 会返回列表达式本身，等价于原来的行为
+        if (stmt.hasAliases()) {
+            List<String> names = new ArrayList<>(stmt.selectColumns().length);
+            for (int i = 0; i < stmt.selectColumns().length; i++) {
+                names.add(unquote(stmt.headerAt(i)));
+            }
+            return names;
+        }
+
         // 聚合：直接用表达式原文作为表头，如 count(*) / avg(粉丝数)。
         // 常量项要剥引号：原文是 '总计'，表头应当是 总计
         if (stmt.isAggregate()) {
@@ -160,9 +214,15 @@ public record QueryEngine(ColumnStore store) {
         }
 
         List<String> names = new ArrayList<>(colNames.length);
-        for (String colName : colNames) {
-            // 字符串字面量作为列名时去掉引号，与结果行的取值保持一致
-            names.add(unquote(colName));
+        for (int i = 0; i < colNames.length; i++) {
+            // 字符串字面量作为列名时去掉引号，与结果行的取值保持一致。
+            //
+            // 【本轮修正】但**定界标识符**不能走这条路：它的 text 已经是最终列名，
+            // 首尾的单引号是名字的一部分，不是字符串字面量的定界符。
+            // 早先不加区分地 unquote，于是列名 ''' 被剥成 '。
+            // 实测：`` `'''` `` 在真实 SQLite 里取到列 '''，我们却取到 '。
+            String raw = stmt.delimitedColumnAt(i);
+            names.add(raw != null ? raw : unquote(colNames[i]));
         }
         return names;
     }
@@ -227,9 +287,17 @@ public record QueryEngine(ColumnStore store) {
     }
 
     /**
-     * 从样本推断列类型
-     * ValueNormalizer 只产出 Integer / BigDecimal / String 三种，
-     * 因此非数值一律视为字符串。遇到第一个「有值」的单元格即可定论
+     * 从样本推断列类型。遇到第一个「有值」的单元格即可定论。
+     *
+     * <p><b>为什么用 {@code instanceof Number} 而不是列举具体类型。</b>
+     * 这里原先写的是「是 Integer 或 BigDecimal 就是 number」，依据是本类早期
+     * 只有 MySQL 一个数据源、值都经 ValueNormalizer 归一成这两种类型。
+     * 但 Excel 加载器（XlsxReader）直接产出 Long 与 Double ——
+     * 于是 Excel 的每一个数值列都被判成 string，症状是图表里选不到度量、
+     * 数值维度也不分桶，而同一份数据用 CSV 导入却完全正常。</p>
+     *
+     * <p>教训：判定「是不是数值」应该按语义（Number）而不是按某条上游路径的
+     * 具体产出类型。上游换了实现，这里不该跟着坏。</p>
      *
      * <p>「有值」的判定统一走 isPresent：null、空串、纯空格串都算无值。
      * 早先这里只跳过 null，于是列首的一个空串就把整列钉成 string ——
@@ -242,7 +310,7 @@ public record QueryEngine(ColumnStore store) {
             if (!isPresent(value)) {
                 continue;
             }
-            return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
+            return value instanceof Number ? "number" : "string";
         }
 
         // 样本里全是空值。退回扫描整列，避免因为头部空值把数值列误判成 empty
@@ -251,7 +319,7 @@ public record QueryEngine(ColumnStore store) {
             if (!isPresent(value)) {
                 continue;
             }
-            return (value instanceof Integer || value instanceof BigDecimal) ? "number" : "string";
+            return value instanceof Number ? "number" : "string";
         }
         return "empty";
     }

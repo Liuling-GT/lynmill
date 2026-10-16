@@ -150,20 +150,44 @@ public final class ReadmeAudit {
         expectOk(S_SUPPORT, "avg", "select avg(amount) from sales");
         expectOk(S_SUPPORT, "min", "select min(amount) from sales");
         expectOk(S_SUPPORT, "max", "select max(amount) from sales");
+
+        // 【1-2 新增】定界标识符：引号是 SQL 的定界符，不是名字的一部分。
+        // 三种都支持 —— 反引号（MySQL）、双引号（标准 SQL）、方括号（SQL Server）。
+        // 用 sales 这个夹具名，是为了让「剥掉引号后能查到」这件事被真正验证：
+        // 若没剥引号，会报「数据源不存在：`sales`」而不是成功
+        expectOk(S_SUPPORT, "表名反引号 `t`", "select * from `sales`");
+        expectOk(S_SUPPORT, "表名双引号 \"t\"", "select * from \"sales\"");
+        expectOk(S_SUPPORT, "表名方括号 [t]", "select * from [sales]");
+
+        // 【L2 新增】in / between 在解析期展开成等价的比较组合：
+        //   city in ('北京','上海')  → city = '北京' or city = '上海'
+        //   amount between 1 and 2   → amount >= 1 and amount <= 2
+        // 用能真正命中的数据（sales 里有北京/上海），否则「成功但 0 行」
+        // 无法区分「展开对了」和「条件恒假」
+        expectOk(S_SUPPORT, "in (...)", "select * from sales where city in ('北京', '上海')");
+        expectOk(S_SUPPORT, "not in (...)", "select * from sales where city not in ('北京')");
+        expectOk(S_SUPPORT, "between", "select * from sales where amount between 1 and 100000");
+        expectOk(S_SUPPORT, "not between", "select * from sales where amount not between 1 and 100000");
+
+        // 【D1 新增】列别名
+        expectOk(S_SUPPORT, "select a as 别名", "select city as 城市 from sales");
+        expectOk(S_SUPPORT, "select a as 别名（聚合）", "select count(*) as 行数 from sales");
     }
 
     // ==================== 「不支持」表 ====================
 
     private void sectionUnsupported() {
-        // 2026-10 复核发现这条原来被错误地放在「支持」表里，现在放到这里并断言
-        // 它确实失败 —— 将来若实现了别名，此处会红
-        expectFail(S_UNSUPPORTED, "select a as 别名", "select city as 城市 from sales");
+        // 【D1 实现了】"select a as 别名" 原在此处断言「应失败」，现已删除 ——
+        // 别名能用了，同时挪到【支持】表去断言（见 sectionSupported）。
         // 夹具原来是 select city, count(*) ... group by city，那条会先撞上
         // 「普通列混聚合」规则 —— 测的是那条规则，不是 group by。
         // 纯 group by（下面这条）才是真正要测的东西。
         expectFail(S_UNSUPPORTED, "group by", "select count(*) from sales group by city");
-        expectFail(S_UNSUPPORTED, "in (...)", "select * from sales where city in ('北京', '上海')");
-        expectFail(S_UNSUPPORTED, "between", "select * from sales where amount between 1 and 2");
+        // 【L2 改为支持】in (...) 与 between 的原断言已删除 ——
+        // 它们现在在解析期展开成 = / or / and 组合，能正常执行。
+        // 同样挪到【支持】表那一段去断言（见 sectionSupported 的运算符糖一组）。
+        // 注意 is null / like 仍在此处：它们要的是空值语义与模式匹配，
+        // 不是「写法糖」，展开不出来。
         expectFail(S_UNSUPPORTED, "is null", "select * from sales where city is null");
         expectFail(S_UNSUPPORTED, "like", "select * from sales where city like '北%'");
         expectFail(S_UNSUPPORTED, "limit m, n", "select * from sales limit 1, 2");
@@ -171,9 +195,10 @@ public final class ReadmeAudit {
         expectFail(S_UNSUPPORTED, "join", "select * from sales join other on sales.id = other.id");
         expectFail(S_UNSUPPORTED, "子查询", "select * from (select * from sales) x");
         expectFail(S_UNSUPPORTED, "union", "select * from sales union select * from sales");
-        expectFail(S_UNSUPPORTED, "表名反引号 `t`", "select * from `sales`");
-        expectFail(S_UNSUPPORTED, "表名双引号 \"t\"", "select * from \"sales\"");
-        expectFail(S_UNSUPPORTED, "表名方括号 [t]", "select * from [sales]");
+        // 【1-2 修好了】三条「表名加引号」的原断言已删除 —— 定界符会在词法层剥掉，
+        // 这三条现在能成功。它们不是「悄悄变成支持」，而是本轮 L3 的修复目标，
+        // 所以同时挪到【支持】表那一段去断言（见 sectionSupported 的定界标识符一组）。
+        // 留在这里的只有真正仍不支持的：select distinct（D1，第 2 轮）。
     }
 
     // ==================== 「报错信息可能误导」一节 ====================
@@ -291,9 +316,16 @@ public final class ReadmeAudit {
      * 恰恰就是它要测的那个缺陷。所以清单只列解析器真的会切开的关键字：
      * {@code where} / {@code order by} / {@code limit} / {@code offset}。
      * {@code group by} 与 {@code join} 都不在其中 —— 它们会被整段吞进表名，
-     * 这正是 2.2 / 2.4 描述的现象。这份清单由
+     * 这正是 2.4 描述的现象。这份清单由
      * {@link ReadmeAuditTest#garbageTableNameMatchesRealParser()}
      * 逐条对着真解析器核对，不靠记忆维护。</p>
+     *
+     * <p><b>1-2 注</b>：D2 修好后 {@code from} 按 token 边界切，
+     * 「名字里含 from 就切错」的现象不复存在。本方法模拟的仍是
+     * 「哪些关键字会被切开」这一层语义（{@code union} / 子查询 / {@code distinct}
+     * 依然会被整段吞进表名），这部分没有变，所以量具继续有效。
+     * 但受 D2 影响的那几条夹具（表名带引号）已挪出对照清单 ——
+     * 它们现在能正常解析，不再是「吞进表名」的例子。</p>
      */
     static String garbageTableName(String sql) {
         int from = sql.toLowerCase().indexOf(" from ");

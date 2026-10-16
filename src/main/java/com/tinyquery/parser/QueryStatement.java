@@ -7,8 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-public record QueryStatement(String[] selectColumns, String tableName, Condition condition,
-                             SortSpecs sort, Integer limit, Integer offset) {
+public record QueryStatement(String[] selectColumns, String[] aliases, boolean[] delimitedFlags,
+                             String tableName, Condition condition, SortSpecs sort,
+                             Integer limit, Integer offset) {
 
     public QueryStatement {
         // limit 为 null 表示不限制行数。注意不是"稍后由引擎套一个默认上限" ——
@@ -20,6 +21,62 @@ public record QueryStatement(String[] selectColumns, String tableName, Condition
         if (offset != null && offset < 0) {
             throw new IllegalArgumentException(Messages.get("parse.offsetNegative", offset));
         }
+        // 别名与列一一对应，没有别名时该位为 null。
+        // 长度不等说明 Parser 出了问题 —— 与其在取表头时抛越界，
+        // 不如在这里就拦下，报错能指到构造点
+        if (aliases != null && aliases.length != selectColumns.length) {
+            throw new IllegalArgumentException(
+                    Messages.get("parse.aliasCountMismatch", aliases.length, selectColumns.length));
+        }
+    }
+
+    /**
+     * 第 i 列的结果表头：有别名用别名，否则用列表达式本身。
+     *
+     * <p>D1 引入别名之后，表头的取值只在这一处决定 ——
+     * 明细投影、聚合、常量项三条路径都走它，避免各写一份 again。</p>
+     */
+    public String headerAt(int i) {
+        if (aliases != null && i < aliases.length && aliases[i] != null) {
+            return aliases[i];
+        }
+        return selectColumns[i];
+    }
+
+    /** 是否用了别名（用于测试与前端提示） */
+    public boolean hasAliases() {
+        if (aliases == null) {
+            return false;
+        }
+        for (String a : aliases) {
+            if (a != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 第 i 列若是<b>定界标识符</b>（`` `x` `` / {@code "x"} / {@code [x]}），
+     * 返回它剥掉定界符之后的真实列名；否则返回 {@code null}。
+     *
+     * <p>为什么需要这个区分：定界标识符的「名字」在词法层就已经确定，
+     * 它可能**本身就以单引号开头结尾**（列名就叫 {@code '''}）。
+     * 执行层有一处 {@code unquote} 会把首尾单引号当字符串字面量的定界符剥掉，
+     * 那条规则对**字符串常量**是对的，对**定界标识符**是错的 ——
+     * 会把列名 {@code '''} 变成 {@code '}。</p>
+     *
+     * <p>所以这里把「这一列的原始列名是什么」明确暴露出来，
+     * 让执行层不必靠字面形态去猜。</p>
+     */
+    public String delimitedColumnAt(int i) {
+        if (delimitedFlags == null || i >= delimitedFlags.length || !delimitedFlags[i]) {
+            return null;
+        }
+        if (aliases != null && i < aliases.length && aliases[i] != null) {
+            return aliases[i];
+        }
+        return selectColumns[i];
     }
 
     public boolean hasWhere() {

@@ -93,11 +93,21 @@ class BuildInfoTest {
         @DisplayName("测试环境读取到的是构建产物里的值，不是占位符")
         void readsResolvedValues() {
             // 测试跑在 target/classes 上，那里是 antrun 生成的文件 ——
-            // 如果生成逻辑坏了（比如又写回占位符），这条会红
-            assertEquals("1.1.0", BuildInfo.version(),
-                    "版本号应当来自 pom 的 project.version");
-            assertFalse(BuildInfo.version().startsWith("@"),
+            // 如果生成逻辑坏了（比如又写回占位符），这条会红。
+            //
+            // 【注意】这里**不写死具体版本号**。原先写死 "1.1.0"，
+            // 于是每次发版都要改这一行 —— 而这条测试真正要保证的是
+            // 「值被替换过」，不是「值等于某个特定数字」。
+            // 写死版本号只会让发版时莫名其妙红一次，逼人改测试，
+            // 反而削弱了它作为「生成逻辑坏没坏」哨兵的可信度。
+            String version = BuildInfo.version();
+
+            assertFalse(version == null || version.isBlank(), "版本号不该为空");
+            assertFalse(version.startsWith("@"),
                     "占位符没被替换 —— 检查 pom 里 generate-build-info 的执行");
+            assertFalse(version.endsWith("@"), "占位符没被替换：" + version);
+            assertTrue(version.matches("\\d+\\.\\d+\\.\\d+.*"),
+                    "版本号应当是 pom 的 project.version，形如 1.2.0，实际是：" + version);
         }
 
         @Test

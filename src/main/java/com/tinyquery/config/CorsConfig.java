@@ -17,6 +17,19 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
+    /**
+     * 允许前端 JS 读取的响应头。
+     *
+     * <p>跨域响应里，浏览器默认只把少数几个「安全」响应头交给 JS，
+     * {@code Content-Disposition} 不在其中 —— 它在其他响应头被隐藏时会变成
+     * {@code null}。导出功能要靠这个头拿文件名，拿不到就只能退化成
+     * {@code export.csv} 这种兜底名，用户看到的是一次「文件名不对」的导出。</p>
+     *
+     * <p>这个头不是安全敏感信息（就是服务端自己生成的文件名），
+     * 暴露它不影响上面那道「只放行本机来源」的边界。</p>
+     */
+    static final String[] EXPOSED_HEADERS = {"Content-Disposition"};
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")          // 对所有 /api 开头的接口生效
@@ -27,6 +40,7 @@ public class CorsConfig implements WebMvcConfigurer {
                 .allowedOriginPatterns("http://localhost:[*]", "http://127.0.0.1:[*]")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
+                .exposedHeaders(EXPOSED_HEADERS)  // 见上方说明：导出要靠它读文件名
                 .maxAge(3600);                  // 预检请求缓存 1 小时
     }
 }
